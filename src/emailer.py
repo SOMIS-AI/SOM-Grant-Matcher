@@ -1,17 +1,23 @@
 """
 Email Notification Module
-Sends an HTML digest via Gmail SMTP.
+Sends an HTML digest via SendGrid API.
 
-Requires Railway Pro plan (SMTP ports 465/587 are blocked on Hobby/Free plans).
-Optional: Set DASHBOARD_URL in Railway Variables to link directly to the dashboard.
+Required environment variables (set in Azure Application Settings):
+  SENDGRID_API_KEY    - SendGrid API key
+  SENDGRID_FROM_EMAIL - Verified sender email address
+  ALERT_RECIPIENTS    - Comma-separated recipient list
+Optional:
+  DASHBOARD_URL       - Full URL to your Azure Web App dashboard
 """
 
 import logging
-import smtplib
 import os
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail, To
 
 logger = logging.getLogger(__name__)
 
@@ -350,28 +356,28 @@ def build_text_body(matched_results: list, run_date: str, dashboard_url: str = "
 
 def send_email(config: dict, matched_results: list):
     """
-    Send HTML digest via Gmail SMTP.
-    Required Railway Variables:
-      GMAIL_SENDER        - Gmail address to send from
-      GMAIL_APP_PASSWORD  - 16-character Gmail App Password
+    Send HTML digest via SendGrid API.
+    Required Azure Application Settings:
+      SENDGRID_API_KEY    - SendGrid API key
+      SENDGRID_FROM_EMAIL - Verified sender email address
       ALERT_RECIPIENTS    - Comma-separated recipient list
-    Optional Railway Variables:
-      DASHBOARD_URL       - Full URL to your Railway deployment
+    Optional:
+      DASHBOARD_URL       - Full URL to your Azure Web App dashboard
     """
     if not matched_results:
         logger.info("No matches to email.")
         return
 
-    sender       = os.environ.get("GMAIL_SENDER",       config["email"].get("sender", ""))
-    app_password = os.environ.get("GMAIL_APP_PASSWORD", config["email"].get("app_password", ""))
-    recipients   = config["email"]["recipients"]
+    api_key    = os.environ.get("SENDGRID_API_KEY",    config["email"].get("sendgrid_api_key", ""))
+    from_email = os.environ.get("SENDGRID_FROM_EMAIL", config["email"].get("sender", ""))
+    recipients = config["email"]["recipients"]
     subject_prefix = config["email"].get("subject_prefix", "[Grant Match]")
     dashboard_url  = os.environ.get("DASHBOARD_URL", "")
 
-    if not sender or sender == "set-via-railway-variable":
-        raise ValueError("GMAIL_SENDER environment variable is not set in Railway Variables.")
-    if not app_password or app_password == "set-via-railway-variable":
-        raise ValueError("GMAIL_APP_PASSWORD environment variable is not set in Railway Variables.")
+    if not api_key:
+        raise ValueError("SENDGRID_API_KEY environment variable is not set.")
+    if not from_email:
+        raise ValueError("SENDGRID_FROM_EMAIL environment variable is not set.")
 
     run_date      = datetime.utcnow().strftime("%B %d, %Y")
     total_grants  = len(matched_results)
@@ -387,29 +393,24 @@ def send_email(config: dict, matched_results: list):
 
     html_kb = len(html_body.encode("utf-8")) / 1024
     logger.info(f"Email body size: {html_kb:.1f} KB HTML / {len(text_body)/1024:.1f} KB plain text")
-    if html_kb > 10240:
-        logger.warning(f"Email is {html_kb:.0f} KB — may be near Gmail limits if many grants matched.")
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"]    = sender
-    msg["To"]      = ", ".join(recipients)
-    msg.attach(MIMEText(text_body, "plain"))
-    msg.attach(MIMEText(html_body, "html"))
+    message = Mail(
+        from_email=from_email,
+        to_emails=[To(r) for r in recipients],
+        subject=subject,
+        plain_text_content=text_body,
+        html_content=html_body,
+    )
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender, app_password)
-            server.sendmail(sender, recipients, msg.as_string())
-        logger.info(f"Email sent via Gmail to {len(recipients)} recipient(s): {', '.join(recipients)}")
-    except smtplib.SMTPAuthenticationError:
-        logger.error(
-            "Gmail authentication failed. Make sure GMAIL_APP_PASSWORD in Railway Variables "
-            "is the 16-character App Password (no spaces), not your regular Gmail password."
+        sg = SendGridAPIClient(api_key)
+        response = sg.send(message)
+        logger.info(
+            f"Email sent via SendGrid to {len(recipients)} recipient(s): {', '.join(recipients)} "
+            f"(status {response.status_code})"
         )
-        raise
-    except smtplib.SMTPException as e:
-        logger.error(f"Failed to send email: {e}")
+    except Exception as e:
+        logger.error(f"Failed to send email via SendGrid: {e}")
         raise
 
 
@@ -778,10 +779,8 @@ def send_diagnostic_email(config: dict, matcher_diag: dict, scraper_health: dict
     Uses DIAGNOSTIC_RECIPIENTS env var if set, otherwise falls back to the
     first address in ALERT_RECIPIENTS.
     """
-    import os
-
-    sender       = os.environ.get("GMAIL_SENDER",       config["email"].get("sender", ""))
-    app_password = os.environ.get("GMAIL_APP_PASSWORD", config["email"].get("app_password", ""))
+    api_key    = os.environ.get("SENDGRID_API_KEY",    config["email"].get("sendgrid_api_key", ""))
+    from_email = os.environ.get("SENDGRID_FROM_EMAIL", config["email"].get("sender", ""))
 
     # Diagnostic email goes to admin only — not all grant alert recipients
     diag_recipients_str = os.environ.get("DIAGNOSTIC_RECIPIENTS", "")
@@ -796,11 +795,11 @@ def send_diagnostic_email(config: dict, matcher_diag: dict, scraper_health: dict
         logger.warning("No diagnostic email recipients configured. Skipping diagnostic email.")
         return
 
-    if not sender or sender == "set-via-railway-variable":
-        logger.warning("GMAIL_SENDER not set — skipping diagnostic email.")
+    if not api_key:
+        logger.warning("SENDGRID_API_KEY not set — skipping diagnostic email.")
         return
-    if not app_password or app_password == "set-via-railway-variable":
-        logger.warning("GMAIL_APP_PASSWORD not set — skipping diagnostic email.")
+    if not from_email:
+        logger.warning("SENDGRID_FROM_EMAIL not set — skipping diagnostic email.")
         return
 
     run_date = datetime.utcnow().strftime("%B %d, %Y")
@@ -818,18 +817,21 @@ def send_diagnostic_email(config: dict, matcher_diag: dict, scraper_health: dict
     html_body = build_diagnostic_html(matcher_diag, scraper_health, run_date)
     text_body = build_diagnostic_text(matcher_diag, scraper_health, run_date)
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"]    = sender
-    msg["To"]      = ", ".join(recipients)
-    msg.attach(MIMEText(text_body, "plain"))
-    msg.attach(MIMEText(html_body, "html"))
+    message = Mail(
+        from_email=from_email,
+        to_emails=[To(r) for r in recipients],
+        subject=subject,
+        plain_text_content=text_body,
+        html_content=html_body,
+    )
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender, app_password)
-            server.sendmail(sender, recipients, msg.as_string())
-        logger.info(f"Diagnostic email sent to {len(recipients)} recipient(s): {', '.join(recipients)}")
+        sg = SendGridAPIClient(api_key)
+        response = sg.send(message)
+        logger.info(
+            f"Diagnostic email sent via SendGrid to {len(recipients)} recipient(s): {', '.join(recipients)} "
+            f"(status {response.status_code})"
+        )
     except Exception as e:
-        logger.error(f"Failed to send diagnostic email: {e}")
+        logger.error(f"Failed to send diagnostic email via SendGrid: {e}")
         # Don't raise — diagnostic email failure shouldn't stop the main flow

@@ -2,18 +2,18 @@
 # ============================
 # Edit this file to configure the app before running.
 
-# --- Email Settings (Gmail) ---
+# --- Email Settings (SendGrid) ---
 # IMPORTANT: Leave these as placeholders!
-# Set the real values in Railway's Variables dashboard (never put secrets in this file).
-# Required Railway Variables:
-#   GMAIL_SENDER        → your Gmail address
-#   GMAIL_APP_PASSWORD  → your 16-character Gmail App Password
+# Set the real values in Azure Application Settings (never put secrets in this file).
+# Required Azure Application Settings:
+#   SENDGRID_API_KEY    → your SendGrid API key
+#   SENDGRID_FROM_EMAIL → verified sender address in your SendGrid account
 #   ALERT_RECIPIENTS    → comma-separated list, e.g. you@org.edu,colleague@org.edu
 email:
-  sender: "set-via-railway-variable"
-  app_password: "set-via-railway-variable"
+  sender: "set-via-azure-app-settings"
+  sendgrid_api_key: "set-via-azure-app-settings"
   recipients:
-    - "set-via-railway-variable"
+    - "set-via-azure-app-settings"
   subject_prefix: "[Grant Match]"
 
 # --- Faculty Profile Scraping ---

@@ -39,9 +39,9 @@ def load_config(config_path: str = "config/config.yaml") -> dict:
     variables if present. This allows safe deployment to Railway (or any
     cloud) without storing secrets in the GitHub repo.
 
-    Environment variables (set in Railway dashboard under Variables):
-      GMAIL_SENDER        - Gmail address to send from
-      GMAIL_APP_PASSWORD  - Gmail App Password
+    Environment variables (set in Azure Application Settings):
+      SENDGRID_API_KEY    - SendGrid API key
+      SENDGRID_FROM_EMAIL - Verified sender email address
       ALERT_RECIPIENTS    - Comma-separated list of recipient emails
     """
     import os
@@ -49,12 +49,12 @@ def load_config(config_path: str = "config/config.yaml") -> dict:
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
-    # Override email secrets from environment variables if set
-    if os.environ.get("GMAIL_SENDER"):
-        config["email"]["sender"] = os.environ["GMAIL_SENDER"]
+    # Override email settings from environment variables if set
+    if os.environ.get("SENDGRID_FROM_EMAIL"):
+        config["email"]["sender"] = os.environ["SENDGRID_FROM_EMAIL"]
 
-    if os.environ.get("GMAIL_APP_PASSWORD"):
-        config["email"]["app_password"] = os.environ["GMAIL_APP_PASSWORD"]
+    if os.environ.get("SENDGRID_API_KEY"):
+        config["email"]["sendgrid_api_key"] = os.environ["SENDGRID_API_KEY"]
 
     if os.environ.get("ALERT_RECIPIENTS"):
         recipients = [r.strip() for r in os.environ["ALERT_RECIPIENTS"].split(",") if r.strip()]

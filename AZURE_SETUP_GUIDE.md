@@ -6,17 +6,21 @@
 
 - An **Azure account** — portal.azure.com (free tier available)
 - A **GitHub account** with the repo already pushed (done)
-- A **Gmail account** with an App Password
+- A **SendGrid account** — sendgrid.com (free tier: 100 emails/day)
 
 ---
 
-## PART 1 — Set Up Gmail App Password
+## PART 1 — Set Up SendGrid
 
-1. Go to https://myaccount.google.com → **Security**
-2. Enable **2-Step Verification** if not already on
-3. Go to **Security → App passwords**
-4. App name: `Grant Matcher` → click **Create**
-5. Copy the 16-character password — you'll need it in Part 3
+1. Go to https://sendgrid.com and create a free account
+2. Verify your sender email address:
+   - Go to **Settings → Sender Authentication → Single Sender Verification**
+   - Click **Create a Sender** and fill in your details
+   - Check your inbox and click the verification link
+3. Create an API key:
+   - Go to **Settings → API Keys → Create API Key**
+   - Name: `Grant Matcher`, Permission: **Restricted** → enable **Mail Send**
+   - Click **Create & View** — copy the key immediately (it won't be shown again)
 
 ---
 
@@ -48,8 +52,8 @@ In Azure, secrets are stored as **Application Settings** (equivalent to Railway 
 
 | Name | Value |
 |---|---|
-| `GMAIL_SENDER` | your-gmail@gmail.com |
-| `GMAIL_APP_PASSWORD` | your 16-character app password (no spaces) |
+| `SENDGRID_API_KEY` | your SendGrid API key |
+| `SENDGRID_FROM_EMAIL` | your verified sender address in SendGrid |
 | `ALERT_RECIPIENTS` | comma-separated emails, e.g. `you@org.edu,colleague@org.edu` |
 | `WEBSITES_PORT` | `8080` |
 
@@ -124,8 +128,8 @@ Step 1/3 — Loading faculty profiles...
 ### Send a test email
 1. Go to **Configuration** → **General settings**
 2. Set **Startup Command** to: `python main.py --test-email`
-3. Click **Save** — the app will restart and send a test email
-4. Check your inbox, then **remove the startup command** and save again
+3. Click **Save** — the app will restart, send a test email via SendGrid, then exit
+4. Check your inbox, then **remove the startup command** and save again to resume normal operation
 
 ---
 
@@ -157,7 +161,7 @@ Go to Azure portal → your Web App → **Configuration** → **Application sett
 
 | Problem | Solution |
 |---|---|
-| "Gmail authentication failed" | Check `GMAIL_APP_PASSWORD` in Application Settings — no spaces |
+| "Failed to send email via SendGrid" | Check `SENDGRID_API_KEY` in Application Settings; verify sender address is verified in SendGrid |
 | App keeps restarting | Check Log stream for Python errors |
 | No emails after first run | Normal if no new grants matched — check logs for "No keyword matches" |
 | GitHub Actions deploy fails | Check that `AZURE_WEBAPP_PUBLISH_PROFILE` secret is set correctly |
