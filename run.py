@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Launcher: Flask dashboard (foreground) + grant matcher (background thread).
-Railway sets the PORT environment variable - we respect that as well as DASHBOARD_PORT.
+Azure Web Apps sets WEBSITES_PORT; also supports PORT and DASHBOARD_PORT overrides.
 """
 import logging
 import os
@@ -24,7 +24,7 @@ log = logging.getLogger("run")
 log.info("Starting UMSOM Grant Matcher Dashboard")
 log.info(f"Working directory: {ROOT}")
 log.info(f"Python: {sys.version}")
-log.info(f"ENV PORT={os.environ.get('PORT')} DASHBOARD_PORT={os.environ.get('DASHBOARD_PORT')}")
+log.info(f"ENV PORT={os.environ.get('PORT')} WEBSITES_PORT={os.environ.get('WEBSITES_PORT')} DASHBOARD_PORT={os.environ.get('DASHBOARD_PORT')}")
 
 
 def start_matcher():
@@ -51,7 +51,7 @@ def start_matcher():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT") or os.environ.get("DASHBOARD_PORT") or 8080)
+    port = int(os.environ.get("WEBSITES_PORT") or os.environ.get("PORT") or os.environ.get("DASHBOARD_PORT") or 8080)
     log.info(f"Will bind Flask to port {port}")
 
     threading.Thread(target=start_matcher, daemon=True, name="matcher").start()
