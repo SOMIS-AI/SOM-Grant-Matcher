@@ -1,0 +1,15 @@
+version: "3.9"
+
+services:
+  grant-matcher:
+    build: .
+    container_name: umsom-grant-matcher
+    restart: unless-stopped         # Auto-restart on crash or server reboot
+    volumes:
+      - ./data:/app/data            # Persist faculty cache + seen grants across restarts
+      - ./logs:/app/logs            # Persist logs
+      - ./config:/app/config        # Mount config so you can edit without rebuilding
+    environment:
+      - TZ=America/New_York
+    # Optional: override command for one-off runs
+    # command: python main.py --run-once

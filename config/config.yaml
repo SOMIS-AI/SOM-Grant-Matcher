@@ -1,0 +1,250 @@
+# Grant Matcher Configuration
+# ============================
+# Edit this file to configure the app before running.
+
+# --- Email Settings (Gmail) ---
+# IMPORTANT: Leave these as placeholders!
+# Set the real values in Railway's Variables dashboard (never put secrets in this file).
+# Required Railway Variables:
+#   GMAIL_SENDER        → your Gmail address
+#   GMAIL_APP_PASSWORD  → your 16-character Gmail App Password
+#   ALERT_RECIPIENTS    → comma-separated list, e.g. you@org.edu,colleague@org.edu
+email:
+  sender: "set-via-railway-variable"
+  app_password: "set-via-railway-variable"
+  recipients:
+    - "set-via-railway-variable"
+  subject_prefix: "[Grant Match]"
+
+# --- Faculty Profile Scraping ---
+faculty:
+  profiles_url: "https://www.medschool.umaryland.edu/faculty/faculty-profiles/"
+  cache_file: "data/faculty_profiles.json"
+  rescrape_interval_hours: 168           # Re-scrape faculty profiles every 7 days
+
+# --- Grants.gov API ---
+grants:
+  api_url: "https://api.grants.gov/v1/api/search2"
+  check_interval_hours: 24               # How often to check for new grants
+  seen_grants_file: "data/seen_grants.json"
+  max_results_per_check: 100             # Grants to fetch per run
+  # Only alert on these statuses (posted = currently open)
+  statuses:
+    - "posted"
+    - "forecasted"
+
+# --- Matching Settings ---
+matching:
+  min_keyword_length: 4                  # Ignore keywords shorter than this
+  semantic_matching: true                # Enable semantic embedding matching (requires sentence-transformers)
+  semantic_threshold: 0.40              # Cosine similarity threshold for semantic matches (0-1)
+                                          # Tuned for all-MiniLM-L6-v2 model (embedder.py v5).
+                                          # PubMedBert (v4) was too domain-specific — median 0.83+,
+                                          # zero discrimination. MiniLM max scores are 0.40-0.57
+                                          # for genuine matches. 0.40 captures strong semantic
+                                          # matches without flooding. Monitor and adjust up if noisy.
+  # Common words to exclude from keyword matching
+  # ── Confidence scoring (new) ─────────────────────────────────────────────
+  # Keywords appearing in more than this % of all faculty are auto-suppressed
+  # as dynamic stop words (too generic to be meaningful match signals).
+  # Example: "education" in 25% of faculty → suppressed. "glioblastoma" in 0.1% → kept.
+  max_kw_prevalence_pct: 0.08          # Lowered from 0.15. At 15%, only "disease" was suppressed.
+                                          # At 8%, broad terms like "cancer", "therapy", "clinical"
+                                          # will also be caught, reducing false matches on broad grants.
+
+  # Minimum confidence score to include a match in results and the email digest.
+  # 0 = include all matches (no filtering). Raise to 20-30 to suppress weak matches.
+  min_confidence_score: 35              # Raised from 20. At 20%, the filter barely removed anything
+                                          # (avg confidence was 31-43%). At 35%, weak single-keyword
+                                          # matches are suppressed while genuine multi-keyword matches pass.
+
+  # v4.1 — New parameters
+  max_matches_per_grant: 50              # Cap faculty matches per grant. Keeps email digest manageable
+                                          # and prevents broad grants from matching 500+ faculty.
+                                          # Highest-confidence matches are kept.
+  min_idf_for_match: 1.5                 # Minimum IDF for a grant keyword to count toward matching.
+                                          # Keywords below this are too common across faculty.
+                                          # IDF 1.5 ≈ keyword appears in ~60% of faculty.
+
+  # ── Static stop words ─────────────────────────────────────────────────────
+  # These are always excluded regardless of IDF score.
+  # The dynamic stop word system (max_kw_prevalence_pct above) handles most
+  # generic terms automatically — only add truly universal terms here.
+  # ── Static stop words ─────────────────────────────────────────────────────
+  # Words that are ALWAYS excluded from keyword matching regardless of IDF score.
+  # Two-level protection:
+  #   1. Exact match: if the entire keyword equals a stop word it is dropped.
+  #   2. Phrase-level check (in matcher.py): if EVERY token in a multi-word keyword
+  #      is a stop word the whole phrase is dropped — catches "community health centers",
+  #      "service delivery", "program evaluation", etc.
+  # When adding here, also consider whether it should be a standalone term
+  # or whether it may appear meaningfully inside a specific phrase
+  # (e.g. "prevention" alone is too broad, but "cancer prevention" keeps "cancer").
+  stop_words:
+    # ── Core grant/admin boilerplate ──
+    - "grant"
+    - "grants"
+    - "funding"
+    - "award"
+    - "awards"
+    - "program"
+    - "programs"
+    - "project"
+    - "projects"
+    - "initiative"
+    - "initiatives"
+    - "center"
+    - "centers"
+    - "national"
+    - "federal"
+    - "support"
+    - "supporting"
+    # ── Generic research process terms ──
+    - "research"
+    - "study"
+    - "studies"
+    - "analysis"
+    - "data"
+    - "methods"
+    - "methodology"
+    - "approach"
+    - "approaches"
+    - "process"
+    - "processes"
+    - "framework"
+    - "model"
+    - "models"
+    - "tool"
+    - "tools"
+    - "assessment"
+    - "evaluation"
+    - "measurement"
+    - "testing"
+    - "examining"
+    - "exploring"
+    - "identifying"
+    - "understanding"
+    - "evidence"
+    # ── Institution / organization terms ──
+    - "university"
+    - "science"
+    - "sciences"
+    - "medical"
+    - "medicine"
+    - "clinical"
+    # ── Patient / population terms (too broad alone) ──
+    - "patient"
+    - "patients"
+    - "human"
+    - "care"
+    - "health"
+    - "healthcare"
+    - "community"
+    - "communities"
+    - "population"
+    - "populations"
+    - "individual"
+    - "individuals"
+    - "family"
+    - "families"
+    - "provider"
+    - "providers"
+    - "workforce"
+    # ── Action verbs (generic grant language) ──
+    - "improving"
+    - "improvement"
+    - "advancing"
+    - "promoting"
+    - "reducing"
+    - "preventing"
+    - "prevention"
+    - "addressing"
+    - "enhancing"
+    - "strengthening"
+    - "increasing"
+    - "decreasing"
+    - "developing"
+    - "utilizing"
+    - "applying"
+    - "using"
+    - "based"
+    # ── Outcome / quality terms ──
+    - "outcomes"
+    - "quality"
+    - "effectiveness"
+    - "excellence"
+    - "innovative"
+    - "innovation"
+    - "innovations"
+    - "integrated"
+    - "translational"
+    - "collaborative"
+    - "collaboration"
+    # ── Disease / treatment (too broad alone — specific diseases kept via phrases) ──
+    - "disease"
+    - "treatment"
+    - "conditions"
+    - "chronic"
+    - "education"
+    - "training"
+    - "intervention"
+    - "interventions"
+    # ── Admin / delivery ──
+    - "service"
+    - "services"
+    - "delivery"
+    - "access"
+    - "equity"
+    - "disparities"
+    - "capacity"
+    - "building"
+    - "system"
+    - "systems"
+    - "practice"
+    - "practices"
+    - "policy"
+    - "policies"
+    - "management"
+    - "implementation"
+    - "development"
+    - "precision"
+    - "writing"
+    # ── Developmental (standalone too generic) ──
+    - "developmental"
+
+# --- Logging ---
+logging:
+  level: "INFO"                          # DEBUG, INFO, WARNING, ERROR
+  log_file: "logs/grant_matcher.log"
+  max_log_size_mb: 10
+  backup_count: 3
+
+# --- NIH RePORTER & Federal RePORTER APIs ---
+nih_reporter:
+  enabled: false                           # DISABLED: Returns awarded projects, not open opportunities
+  federal_reporter_enabled: false          # DISABLED: Returns awarded projects, not open opportunities
+  max_results_per_check: 100               # Max results per API call
+
+# --- External Grant Sources (Foundations, Portals, Listing Services) ---
+# All sources are enabled by default. To disable specific ones, add them
+# to disabled_sources. Or set enabled_sources to only run a specific subset.
+external_sources:
+  enabled: true
+  # disabled_sources:                      # Uncomment and list source keys to disable
+  #   - "wellcome_trust"                   # Example: disable Wellcome Trust
+  #   - "gates"                            # Example: disable Gates Foundation
+  #
+  # Available source keys:
+  #   Tier 3 — Major Biomedical Research Funders:
+  #     burroughs_wellcome, hhmi, aha, acs, damon_runyon, alexs_lemonade,
+  #     doris_duke, rwjf, keck, beckman, march_of_dimes, alzheimers_assoc,
+  #     aacr, simons, czi, gates, wellcome_trust
+  #
+  #   Tier 3 — Application Portals:
+  #     proposal_central, science_philanthropy_alliance
+  #
+  #   Tier 3 — Free Listing Services:
+  #     pnd_rfps, nih_guide, dod_cdmrp, nsf_funding
+  #
+  #   Tier 4 — Medical School Pages:
+  #     stanford_rmg, ucla_dgsom, miami_miller, aamc_grants
