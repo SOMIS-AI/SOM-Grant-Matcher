@@ -25,6 +25,7 @@ CFG_FILE  = Path(os.environ.get("CONFIG_FILE","config/config.yaml"))
 
 DASHBOARD_USER = os.environ.get("DASHBOARD_USER", "admin")
 DASHBOARD_PASS = os.environ.get("DASHBOARD_PASS", "changeme")
+APP_ENV        = os.environ.get("APP_ENV", "production")
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -1357,6 +1358,13 @@ tr:hover td{background:rgba(255,255,255,.018)}
 </style>
 </head>
 <body>
+
+{% if app_env == 'dev' %}
+<div style="position:fixed;top:0;left:0;right:0;z-index:9999;background:#dc2626;color:#fff;text-align:center;font-size:13px;font-weight:600;padding:6px;letter-spacing:.05em;font-family:monospace;">
+  ⚠ DEV ENVIRONMENT — changes here are not production
+</div>
+<div style="height:32px"></div>
+{% endif %}
 
 <!-- ═══ Sidebar ═══ -->
 <aside class="sidebar">
@@ -2761,7 +2769,7 @@ setInterval(()=>{ if(currentPage==='overview') loadOverview(); }, 60000);
 @app.route("/")
 @login_required
 def index():
-    return render_template_string(DASHBOARD_HTML)
+    return render_template_string(DASHBOARD_HTML, app_env=APP_ENV)
 
 
 if __name__ == "__main__":
