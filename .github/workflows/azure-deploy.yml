@@ -34,6 +34,7 @@ jobs:
         with:
           context: .
           push: true
+          provenance: false
           tags: ghcr.io/${{ env.OWNER }}/${{ env.IMAGE_NAME }}:latest
 
       - name: Notify Azure to pull new image
