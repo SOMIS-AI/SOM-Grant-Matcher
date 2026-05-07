@@ -8,7 +8,6 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}   # Set in GitHub repo → Settings → Variables
   IMAGE_NAME: som-grant-matcher
   OWNER: somis-ai
 
@@ -37,9 +36,5 @@ jobs:
           push: true
           tags: ghcr.io/${{ env.OWNER }}/${{ env.IMAGE_NAME }}:latest
 
-      - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          images: ghcr.io/${{ env.OWNER }}/${{ env.IMAGE_NAME }}:latest
+      - name: Notify Azure to pull new image
+        run: curl -X POST "${{ secrets.AZURE_WEBHOOK_URL }}"
