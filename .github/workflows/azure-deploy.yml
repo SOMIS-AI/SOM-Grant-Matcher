@@ -54,7 +54,7 @@ jobs:
             WEBHOOK_URL="${{ secrets.AZURE_WEBHOOK_URL }}"
           fi
           if [ -n "$WEBHOOK_URL" ]; then
-            curl -X POST "$WEBHOOK_URL"
+            curl -v -X POST "$WEBHOOK_URL"
           else
             echo "No webhook URL configured for this branch — skipping."
           fi
