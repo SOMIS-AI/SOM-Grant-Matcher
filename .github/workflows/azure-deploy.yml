@@ -44,3 +44,11 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/${{ env.OWNER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+
+      - name: Notify Azure to pull new image
+        run: |
+          if [ "${{ github.ref_name }}" = "dev" ]; then
+            curl -X POST "${{ secrets.AZURE_WEBHOOK_URL_DEV }}"
+          else
+            curl -X POST "${{ secrets.AZURE_WEBHOOK_URL }}"
+          fi
