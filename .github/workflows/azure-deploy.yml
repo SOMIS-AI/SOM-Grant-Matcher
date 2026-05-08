@@ -45,16 +45,3 @@ jobs:
           push: true
           provenance: false
           tags: ghcr.io/${{ env.OWNER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-
-      - name: Notify Azure to pull new image
-        run: |
-          if [ "${{ github.ref_name }}" = "dev" ]; then
-            WEBHOOK_URL="${{ secrets.AZURE_WEBHOOK_URL_DEV }}"
-          else
-            WEBHOOK_URL="${{ secrets.AZURE_WEBHOOK_URL }}"
-          fi
-          if [ -n "$WEBHOOK_URL" ]; then
-            curl -v -X POST "$WEBHOOK_URL"
-          else
-            echo "No webhook URL configured for this branch — skipping."
-          fi
