@@ -21,6 +21,40 @@ from sendgrid.helpers.mail import Mail, To
 
 logger = logging.getLogger(__name__)
 
+
+# ── Recipient resolution ─────────────────────────────────────────────────────
+# Recipients are configured per delivery cadence via Azure Application Settings:
+#   DAILY_RECIPIENTS   - comma-separated; receive the daily 6am digest
+#   WEEKLY_RECIPIENTS  - comma-separated; receive the Tuesday 6am 7-day roundup
+#   DIAGNOSTIC_RECIPIENTS - admin-only diagnostic email (handled separately below)
+# The legacy ALERT_RECIPIENTS variable has been retired in favour of these.
+
+def _parse_env_recipients(var_name: str) -> list:
+    """Parse a comma-separated recipient env var into a clean list of addresses."""
+    raw = os.environ.get(var_name, "")
+    return [r.strip() for r in raw.split(",") if r.strip()]
+
+
+def get_daily_recipients() -> list:
+    """Recipients of the daily digest (DAILY_RECIPIENTS env var)."""
+    return _parse_env_recipients("DAILY_RECIPIENTS")
+
+
+def get_weekly_recipients() -> list:
+    """Recipients of the weekly Tuesday roundup (WEEKLY_RECIPIENTS env var)."""
+    return _parse_env_recipients("WEEKLY_RECIPIENTS")
+
+
+def get_restart_recipients() -> list:
+    """Admins who get a health email when the app starts/restarts (RESTART_RECIPIENTS)."""
+    return _parse_env_recipients("RESTART_RECIPIENTS")
+
+
+def get_manual_recipients() -> list:
+    """Default recipients for a manually-triggered digest (MANUAL_RECIPIENTS env var)."""
+    return _parse_env_recipients("MANUAL_RECIPIENTS")
+
+
 # UMSOM logo embedded as base64 so it renders in all email clients without
 # needing a publicly-hosted URL.
 LOGO_SRC = "data:image/gif;base64,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"
@@ -354,13 +388,21 @@ def build_text_body(matched_results: list, run_date: str, dashboard_url: str = "
     return "\n".join(lines)
 
 
-def send_email(config: dict, matched_results: list):
+def send_email(config: dict, matched_results: list, recipients: list = None):
     """
     Send HTML digest via SendGrid API.
+
+    Args:
+      config:          loaded config dict
+      matched_results: list of {"grant": ..., "matches": [...]} entries
+      recipients:      explicit recipient list for this digest. The scheduler
+                       passes DAILY_RECIPIENTS or WEEKLY_RECIPIENTS so each
+                       cadence goes to the right group. If None, falls back to
+                       config["email"]["recipients"] (used by --test-email).
+
     Required Azure Application Settings:
       SENDGRID_API_KEY    - SendGrid API key
       SENDGRID_FROM_EMAIL - Verified sender email address
-      ALERT_RECIPIENTS    - Comma-separated recipient list
     Optional:
       DASHBOARD_URL       - Full URL to your Azure Web App dashboard
     """
@@ -370,10 +412,14 @@ def send_email(config: dict, matched_results: list):
 
     api_key    = os.environ.get("SENDGRID_API_KEY",    config["email"].get("sendgrid_api_key", ""))
     from_email = os.environ.get("SENDGRID_FROM_EMAIL", config["email"].get("sender", ""))
-    recipients = config["email"]["recipients"]
+    if recipients is None:
+        recipients = config["email"].get("recipients", [])
     subject_prefix = config["email"].get("subject_prefix", "[Grant Match]")
     dashboard_url  = os.environ.get("DASHBOARD_URL", "")
 
+    if not recipients:
+        logger.info("No recipients for this digest — skipping send.")
+        return
     if not api_key:
         raise ValueError("SENDGRID_API_KEY environment variable is not set.")
     if not from_email:
@@ -412,6 +458,91 @@ def send_email(config: dict, matched_results: list):
     except Exception as e:
         logger.error(f"Failed to send email via SendGrid: {e}")
         raise
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RESTART / HEALTH EMAIL — Sent on startup so admins can confirm a deploy is live
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def send_restart_email(config: dict, info_rows: list, recipients: list = None,
+                       subject: str = None):
+    """
+    Send a lightweight startup/health notification (e.g. after a deploy or
+    restart) so admins can confirm the app came back up. This does NOT run the
+    matching pipeline — it only reports that the process started.
+
+    Args:
+      info_rows:  list of (label, value) tuples rendered as a small table.
+      recipients: explicit list; defaults to RESTART_RECIPIENTS.
+      subject:    optional subject override.
+    """
+    api_key    = os.environ.get("SENDGRID_API_KEY",    config["email"].get("sendgrid_api_key", ""))
+    from_email = os.environ.get("SENDGRID_FROM_EMAIL", config["email"].get("sender", ""))
+    if recipients is None:
+        recipients = get_restart_recipients()
+
+    if not recipients:
+        logger.info("No RESTART_RECIPIENTS configured — skipping restart email.")
+        return
+    if not api_key:
+        logger.warning("SENDGRID_API_KEY not set — skipping restart email.")
+        return
+    if not from_email:
+        logger.warning("SENDGRID_FROM_EMAIL not set — skipping restart email.")
+        return
+
+    run_date = datetime.utcnow().strftime("%B %d, %Y %H:%M UTC")
+    subject = subject or f"[Grant Matcher] App started / restarted — {run_date}"
+
+    rows_html = "".join(
+        f'<tr><td style="padding:5px 16px 5px 0;color:#666;font-size:13px;">{label}</td>'
+        f'<td style="padding:5px 0;font-weight:600;font-size:13px;">{value}</td></tr>'
+        for label, value in info_rows
+    )
+    html_body = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:Arial,sans-serif;">
+  <div style="max-width:640px;margin:0 auto;padding:24px 16px;">
+    <div style="background:#1a2e45;border-radius:8px 8px 0 0;padding:18px 24px;">
+      <h1 style="margin:0;font-size:17px;color:#ffffff;">Grant Matcher — Restart Notification</h1>
+      <p style="margin:6px 0 0;color:#a8c4e0;font-size:13px;">{run_date}</p>
+    </div>
+    <div style="background:#fff;border:1px solid #ddd;border-top:none;border-radius:0 0 8px 8px;padding:16px 24px;">
+      <p style="font-size:13px;color:#333;margin:0 0 12px;">
+        The UMSOM Grant Matcher process has started. No grant emails are sent on restart —
+        the next faculty notification will go out at the scheduled time shown below.
+      </p>
+      <table style="border-collapse:collapse;width:100%;">{rows_html}</table>
+    </div>
+    <p style="text-align:center;color:#999;font-size:11px;margin-top:12px;">
+      Sent to RESTART_RECIPIENTS for deployment/health monitoring.
+    </p>
+  </div>
+</body>
+</html>"""
+
+    text_body = "Grant Matcher — Restart Notification\n" + f"{run_date}\n" + "=" * 50 + "\n"
+    text_body += "The process has started. No grant emails are sent on restart.\n\n"
+    text_body += "\n".join(f"  {label}: {value}" for label, value in info_rows)
+
+    message = Mail(
+        from_email=from_email,
+        to_emails=[To(r) for r in recipients],
+        subject=subject,
+        plain_text_content=text_body,
+        html_content=html_body,
+    )
+    try:
+        sg = SendGridAPIClient(api_key)
+        response = sg.send(message)
+        logger.info(
+            f"Restart email sent via SendGrid to {len(recipients)} recipient(s): "
+            f"{', '.join(recipients)} (status {response.status_code})"
+        )
+    except Exception as e:
+        logger.error(f"Failed to send restart email via SendGrid: {e}")
+        # Don't raise — a restart-notice failure shouldn't crash the scheduler.
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

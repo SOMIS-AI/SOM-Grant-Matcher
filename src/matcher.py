@@ -49,7 +49,7 @@ import re
 import sqlite3
 import time
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
 
@@ -846,6 +846,102 @@ def find_matches(grants, faculty, config=None):
 def get_last_diagnostic() -> dict:
     """Return diagnostic data from the most recent find_matches() run."""
     return _last_diagnostic
+
+
+def load_recent_matched_results(days: int) -> list:
+    """
+    Rebuild the {"grant": ..., "matches": [...]} structure (as produced by
+    find_matches and consumed by emailer.send_email) from the persisted
+    match_results.json, limited to matches recorded in the last `days` days.
+
+    Used to build the weekly Tuesday roundup so weekly recipients see every
+    grant matched over the past 7 days — not just whatever was newly found on
+    the morning the email is sent. Faculty are de-duplicated per grant, keeping
+    the highest-confidence entry; matches within each grant are sorted by
+    confidence descending.
+
+    Returns a list ordered by each grant's best confidence (descending).
+    Returns [] if the store is missing/empty or nothing falls in the window.
+    """
+    try:
+        if not Path(MATCHES_FILE).exists():
+            return []
+        with open(MATCHES_FILE) as f:
+            entries = json.load(f)
+    except Exception as e:
+        logger.warning(f"Could not read {MATCHES_FILE} for roundup: {e}")
+        return []
+
+    if not isinstance(entries, list):
+        return []
+
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    # Group entries by grant, keeping best confidence per faculty member.
+    grants_by_id: dict = {}          # grant_id -> grant dict
+    matches_by_grant: dict = {}      # grant_id -> {faculty_name -> match dict}
+
+    for e in entries:
+        ts = e.get("timestamp", "")
+        try:
+            if datetime.fromisoformat(ts) < cutoff:
+                continue
+        except (ValueError, TypeError):
+            continue  # unparseable timestamp — skip rather than guess
+
+        gid = e.get("grant_id", "") or e.get("grant_link", "") or e.get("grant_title", "")
+        if not gid:
+            continue
+
+        if gid not in grants_by_id:
+            grants_by_id[gid] = {
+                "id":            e.get("grant_id", ""),
+                "title":         e.get("grant_title", ""),
+                "agency":        e.get("grant_agency", ""),
+                "number":        e.get("grant_number", ""),
+                "link":          e.get("grant_link", ""),
+                "close_date":    e.get("grant_close_date", ""),
+                "open_date":     e.get("grant_open_date", ""),
+                "award_ceiling": e.get("grant_award_ceiling", ""),
+                "synopsis":      e.get("grant_synopsis", ""),
+            }
+            matches_by_grant[gid] = {}
+
+        fac_key = e.get("faculty_name", "") or e.get("faculty_email", "")
+        if not fac_key:
+            continue
+        match = {
+            "faculty_name":       e.get("faculty_name", ""),
+            "faculty_url":        e.get("faculty_url", ""),
+            "faculty_department": e.get("faculty_department", ""),
+            "faculty_email":      e.get("faculty_email", ""),
+            "matched_keywords":   e.get("matched_keywords", []),
+            "match_score":        e.get("match_score", 0),
+            "match_type":         e.get("match_type", "keyword"),
+            "similarity_score":   e.get("similarity_score", 0.0),
+            "confidence_score":   e.get("confidence_score", 0),
+        }
+        existing = matches_by_grant[gid].get(fac_key)
+        if existing is None or match["confidence_score"] > existing["confidence_score"]:
+            matches_by_grant[gid][fac_key] = match
+
+    results = []
+    for gid, grant in grants_by_id.items():
+        matches = sorted(
+            matches_by_grant[gid].values(),
+            key=lambda m: -m["confidence_score"],
+        )
+        if matches:
+            results.append({"grant": grant, "matches": matches})
+
+    # Order grants by their best (first) match confidence, descending.
+    results.sort(key=lambda r: -(r["matches"][0]["confidence_score"] if r["matches"] else 0))
+
+    logger.info(
+        f"Roundup: rebuilt {len(results)} grant(s) with matches from the last {days} days "
+        f"({MATCHES_FILE})"
+    )
+    return results
 
 
 # -- Persistence --------------------------------------------------------------

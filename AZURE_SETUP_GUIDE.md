@@ -50,12 +50,22 @@ In Azure, secrets are stored as **Application Settings** (equivalent to Railway 
 2. In the left menu, click **Configuration** → **Application settings**
 3. Click **+ New application setting** for each of the following:
 
-| Name | Value |
-|---|---|
-| `SENDGRID_API_KEY` | your SendGrid API key |
-| `SENDGRID_FROM_EMAIL` | your verified sender address in SendGrid |
-| `ALERT_RECIPIENTS` | comma-separated emails, e.g. `you@org.edu,colleague@org.edu` |
-| `WEBSITES_PORT` | `8080` |
+| Name | Value | Required |
+|---|---|---|
+| `SENDGRID_API_KEY` | your SendGrid API key | ✅ |
+| `SENDGRID_FROM_EMAIL` | your verified sender address in SendGrid | ✅ |
+| `DAILY_RECIPIENTS` | comma-separated emails for the **daily** 6am digest, e.g. `you@org.edu` | one of daily/weekly |
+| `WEEKLY_RECIPIENTS` | comma-separated emails for the **Tuesday** 6am 7-day roundup | one of daily/weekly |
+| `DIAGNOSTIC_RECIPIENTS` | comma-separated admin emails for the diagnostic report (defaults to first daily/weekly address) | optional |
+| `RESTART_RECIPIENTS` | comma-separated admin emails that get a **health email on every restart/deploy** (the only email sent on restart) | optional |
+| `MANUAL_RECIPIENTS` | default recipients for the on-demand `--send-digest` command | optional |
+| `NOTIFY_TIMEZONE` | IANA timezone for the send time (default `America/New_York`) | optional |
+| `NOTIFY_HOUR` | hour of day 0–23 to send (default `6`) | optional |
+| `WEEKLY_WEEKDAY` | weekday for the weekly roundup, Mon=0 … Sun=6 (default `1` = Tuesday) | optional |
+| `WEBSITES_PORT` | `8080` | ✅ |
+
+> The legacy `ALERT_RECIPIENTS` setting is **retired** — if you have it, delete it and use
+> `DAILY_RECIPIENTS` / `WEEKLY_RECIPIENTS` instead.
 
 4. Click **Save** at the top
 
@@ -121,15 +131,31 @@ Now `data/faculty_profiles.json` and `data/seen_grants.json` will persist across
 ```
 Starting UMSOM Grant Matcher Dashboard
 Grant Matcher background thread started
-Starting grant matching cycle
-Step 1/3 — Loading faculty profiles...
+Scheduler started — daily digest at 06:00 America/New_York; weekly roundup on Tuesday. No email on startup/restart.
+Next scheduled run: 2026-05-24T06:00:00-04:00 (18.2h away)
 ```
+(The pipeline does **not** run at startup — it waits for the next scheduled fire time. Use the
+test-email step below to verify mail delivery immediately.)
 
 ### Send a test email
 1. Go to **Configuration** → **General settings**
 2. Set **Startup Command** to: `python main.py --test-email`
 3. Click **Save** — the app will restart, send a test email via SendGrid, then exit
 4. Check your inbox, then **remove the startup command** and save again to resume normal operation
+
+### Send a manual digest (last 24h / N days)
+Use this to send recent grants & matches to an ad-hoc address on demand. It reads
+already-stored results, so it won't disturb the scheduled emails or the seen-grants tracker.
+1. Go to **Configuration** → **General settings**
+2. Set **Startup Command** to: `python main.py --send-digest --to someone@org.edu`
+   (add `--days 7` for the last week; omit `--to` to use `MANUAL_RECIPIENTS`)
+3. Click **Save** — the app restarts, sends the digest, then exits
+4. **Remove the startup command** and save again to resume normal scheduling
+
+### Restart notifications
+If you set `RESTART_RECIPIENTS`, those admins get a short health email **every time the app
+restarts** (including each deploy) confirming it came back up and showing the next scheduled
+run time — a quick way to verify a commit deployed successfully.
 
 ---
 
@@ -138,14 +164,21 @@ Step 1/3 — Loading faculty profiles...
 Once deployed, the app runs automatically:
 
 ```
-Every 24 hours:
-  ✓ Checks Grants.gov for newly posted grants
-  ✓ Compares them against faculty research keywords
-  ✓ If matches found → sends HTML email digest
+Daily at 6am ET (NOTIFY_HOUR / NOTIFY_TIMEZONE):
+  ✓ Checks 30+ sources for newly posted grants
+  ✓ Matches them against faculty research keywords (keyword + AI)
+  ✓ If matches found → sends the daily digest to DAILY_RECIPIENTS
+  ✓ Sends the diagnostic report to the admin
+
+Tuesdays at 6am ET (WEEKLY_WEEKDAY):
+  ✓ Additionally sends a 7-day roundup to WEEKLY_RECIPIENTS
 
 Every 7 days:
-  ✓ Re-scrapes UMSOM faculty profiles
+  ✓ Re-scrapes UMSOM faculty profiles (cache-driven)
 ```
+
+**No email is sent on startup or restart** — the scheduler only fires at the configured
+wall-clock time. If the app is down at 6am, that day is skipped (grants surface on the next run).
 
 Every push to `main`/`master` on GitHub triggers an automatic redeploy.
 
@@ -153,7 +186,10 @@ Every push to `main`/`master` on GitHub triggers an automatic redeploy.
 
 ## Updating Recipients
 
-Go to Azure portal → your Web App → **Configuration** → **Application settings** → edit `ALERT_RECIPIENTS`
+Go to Azure portal → your Web App → **Configuration** → **Application settings** → edit
+`DAILY_RECIPIENTS` (daily 6am) and/or `WEEKLY_RECIPIENTS` (Tuesday 6am roundup), then **Save**.
+The change takes effect on the next scheduled run. To shift the send time or weekday, edit
+`NOTIFY_HOUR`, `NOTIFY_TIMEZONE`, or `WEEKLY_WEEKDAY`.
 
 ---
 

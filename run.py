@@ -7,7 +7,6 @@ import logging
 import os
 import sys
 import threading
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -31,21 +30,14 @@ def start_matcher():
     try:
         import main as m
         config_path = os.environ.get("CONFIG_PATH", "config/config.yaml")
-        force_scrape = os.environ.get("FORCE_SCRAPE", "").lower() in ("1", "true", "yes")
         config = m.load_config(config_path)
         # Do NOT call m.setup_logging() here — logging is already configured by run.py
         # Calling it again adds a second handler and causes every line to print twice
         logger = logging.getLogger("main")
         logger.info("Grant Matcher background thread started")
-        check_interval = config["grants"]["check_interval_hours"] * 3600
-        while True:
-            try:
-                m.run_cycle(config, force_scrape=force_scrape)
-                force_scrape = False
-            except Exception as e:
-                logger.error(f"Run cycle error: {e}", exc_info=True)
-            logger.info(f"Sleeping {config['grants']['check_interval_hours']}h...")
-            time.sleep(check_interval)
+        # The scheduler fires daily at NOTIFY_HOUR in NOTIFY_TIMEZONE and never
+        # sends email on startup/restart — it only waits for the next fire time.
+        m.run_scheduler(config)
     except Exception as e:
         logging.getLogger("main").error(f"Matcher fatal error: {e}", exc_info=True)
 
