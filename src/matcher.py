@@ -340,6 +340,21 @@ _AGENCY_BLOCK = {
     "humanities", "national endowment for the humanities",
 }
 
+# Specific non-biomedical topic phrases that occasionally slip past the agency
+# and vocabulary checks (e.g. an AI/security or agriculture grant that mentions
+# "pathogen" or "molecular"). These are phrase-specific to avoid false positives
+# with legitimate biomedical titles (e.g. "cell proliferation" ≠ "proliferation risk").
+_NONBIO_TITLE_TERMS = {
+    "nonproliferation",
+    "proliferation risk",          # e.g. "Mitigating Proliferation Risks Posed by AI…"
+    "weapons of mass destruction",
+    "crop protection",
+    "pest management",
+    "agronomy",
+    "rangeland",
+    "tribal students",
+}
+
 # Minimum vocabulary — at least one of these must appear in the grant text
 # for a non-allow-listed agency to pass the relevance filter
 _BIOMEDICAL_VOCAB = re.compile(
@@ -394,6 +409,12 @@ def _is_biomedically_relevant(grant: dict, min_vocab_hits: int = 1) -> tuple[boo
     for blocked in _AGENCY_BLOCK:
         if blocked in agency or blocked in title:
             return False, f"blocked agency/title term: '{blocked}'"
+
+    # 1b. Non-biomedical topic phrases — reject even if the agency is allow-listed
+    #     (e.g. a DARPA AI/WMD grant or a USDA crop grant that mentions "pathogen").
+    for term in _NONBIO_TITLE_TERMS:
+        if term in title:
+            return False, f"non-biomedical topic term: '{term}'"
 
     # 2. Agency allow-list — fast accept
     for allowed in _AGENCY_ALLOW:
@@ -473,61 +494,20 @@ def _keyword_matches_for_grant(grant, faculty, stop_words, min_kw_len,
     return results
 
 
-# -- Pass 2: Semantic matching ------------------------------------------------
-
-def _semantic_matches_for_grant(grant, faculty, threshold, already_matched,
-                                 idf_table):
-    """
-    Run semantic similarity matching for one grant.
-    Only returns faculty NOT already found by keyword pass.
-    Returns dict keyed by faculty_name.
-    """
-    try:
-        from embedder import find_semantic_matches, is_available
-        if not is_available():
-            return {}
-    except ImportError:
-        return {}
-
-    grant_text  = normalize(grant["searchable_text"])
-    grant_title = normalize(grant["title"])
-
-    sem_results = find_semantic_matches(
-        grant, faculty,
-        threshold=threshold,
-        already_matched_names=already_matched,
-    )
-
-    out = {}
-    for r in sem_results:
-        sim = r["similarity_score"]
-        confidence = _compute_confidence(
-            [], idf_table, grant_text, grant_title,
-            similarity_score=sim, match_type="semantic"
-        )
-        out[r["faculty_name"]] = Match(
-            faculty_name       = r["faculty_name"],
-            faculty_url        = r["faculty_url"],
-            faculty_department = r["faculty_department"],
-            faculty_email      = r["faculty_email"],
-            matched_keywords   = [],
-            match_score        = 0,
-            match_type         = "semantic",
-            similarity_score   = sim,
-            confidence_score   = confidence,
-        )
-    return out
-
-
 # -- Merge & sort -------------------------------------------------------------
 
 def _merge_match_dicts(keyword_matches, semantic_matches, idf_table,
-                        grant_text, grant_title):
+                        grant_text, grant_title, sim_by_name=None, sem_threshold=None):
     """
-    Merge keyword and semantic matches.
-    Faculty found by both get match_type="both" and a recalculated confidence.
-    Results sorted by confidence_score descending.
+    Merge keyword and semantic matches into a single ranked list.
+
+    keyword_matches and semantic_matches are disjoint by name (the semantic pass
+    only adds faculty the keyword pass missed). A keyword match whose faculty ALSO
+    has cosine similarity >= sem_threshold is upgraded to match_type="both" and
+    rescored with the agreement boost — this is what lets the strongest matches
+    (flagged by BOTH channels) rank highest. Sorted by confidence descending.
     """
+    sim_by_name = sim_by_name or {}
     all_names = set(keyword_matches) | set(semantic_matches)
     merged = []
 
@@ -535,25 +515,19 @@ def _merge_match_dicts(keyword_matches, semantic_matches, idf_table,
         kw  = keyword_matches.get(name)
         sem = semantic_matches.get(name)
 
-        if kw and sem:
-            confidence = _compute_confidence(
-                kw.matched_keywords, idf_table, grant_text, grant_title,
-                similarity_score=sem.similarity_score, match_type="both"
-            )
-            merged.append(Match(
-                faculty_name       = kw.faculty_name,
-                faculty_url        = kw.faculty_url,
-                faculty_department = kw.faculty_department,
-                faculty_email      = kw.faculty_email,
-                matched_keywords   = kw.matched_keywords,
-                match_score        = kw.match_score,
-                match_type         = "both",
-                similarity_score   = sem.similarity_score,
-                confidence_score   = confidence,
-            ))
-        elif kw:
-            merged.append(kw)
-        elif sem:
+        if kw is not None:
+            sim = sim_by_name.get(name, 0.0)
+            if sem_threshold is not None and sim >= sem_threshold:
+                confidence = _compute_confidence(
+                    kw.matched_keywords, idf_table, grant_text, grant_title,
+                    similarity_score=sim, match_type="both"
+                )
+                merged.append(kw._replace(
+                    match_type="both", similarity_score=sim, confidence_score=confidence
+                ))
+            else:
+                merged.append(kw)
+        elif sem is not None:
             merged.append(sem)
 
     # Sort by confidence desc, then match_type priority, then similarity
@@ -611,6 +585,9 @@ def find_matches(grants, faculty, config=None):
     idf_table      = build_idf_table(faculty)
     dynamic_stops  = get_dynamic_stop_words(idf_table, len(faculty), max_prevalence)
     _diag["stop_words_suppressed"] = sorted(dynamic_stops)
+
+    # Name → faculty lookup for building semantic matches without re-scanning
+    faculty_by_name = {f.get("name", ""): f for f in faculty}
 
     faculty_with_embeddings = sum(1 for f in faculty if f.get("embedding"))
     if sem_enabled and faculty_with_embeddings == 0:
@@ -674,54 +651,75 @@ def find_matches(grants, faculty, config=None):
             grant, faculty, stop_words, min_kw_len, idf_table, dynamic_stops
         )
 
+        # ── Semantic pass: one cosine-similarity vector for ALL faculty ──────
+        # sim_by_name powers two things: (1) semantic-only matches for faculty the
+        # keyword pass missed, and (2) upgrading keyword matches that also clear the
+        # threshold to match_type="both" (the agreement boost). See _merge_match_dicts.
+        sim_by_name = {}
         semantic_matches = {}
         sem_score_info = None
         if sem_enabled:
-            semantic_matches = _semantic_matches_for_grant(
-                grant, faculty, sem_threshold,
-                already_matched=set(keyword_matches.keys()),
-                idf_table=idf_table,
-            )
-            # ── Semantic diagnostic: log score distribution ──────────────────
             try:
-                from embedder import find_semantic_matches, embed_texts, grant_to_text, is_available
-                import numpy as np
+                from embedder import grant_similarity_map, is_available
                 if is_available():
-                    grant_emb_text = grant_to_text(grant)
-                    grant_emb = embed_texts([grant_emb_text])
-                    if grant_emb is not None:
-                        candidates = [f for f in faculty if f.get("embedding")]
-                        if candidates:
-                            faculty_matrix = np.array([f["embedding"] for f in candidates], dtype=np.float32)
-                            grant_vec = grant_emb[0]
-                            sims = faculty_matrix @ grant_vec
-                            sorted_sims = sorted(enumerate(sims), key=lambda x: x[1], reverse=True)
-                            top_20 = [(float(s), candidates[i].get("name","")) for i,s in sorted_sims[:20]]
-                            all_sims = [float(s) for _,s in sorted_sims]
-                            sem_score_info = {
-                                "grant_title": grant["title"][:80],
-                                "max": round(float(max(all_sims)), 4) if all_sims else 0,
-                                "p95": round(float(np.percentile(all_sims, 95)), 4) if all_sims else 0,
-                                "p90": round(float(np.percentile(all_sims, 90)), 4) if all_sims else 0,
-                                "median": round(float(np.median(all_sims)), 4) if all_sims else 0,
-                                "above_threshold": sum(1 for s in all_sims if s >= sem_threshold),
-                                "above_050": sum(1 for s in all_sims if s >= 0.50),
-                                "above_055": sum(1 for s in all_sims if s >= 0.55),
-                                "above_060": sum(1 for s in all_sims if s >= 0.60),
-                                "above_065": sum(1 for s in all_sims if s >= 0.65),
-                                "top_5": [(name, score) for score, name in top_20[:5]],
-                            }
-                            _diag["semantic_score_distributions"].append(sem_score_info)
-                            logger.info(
-                                f"  Semantic scores: max={sem_score_info['max']:.3f} "
-                                f"p95={sem_score_info['p95']:.3f} "
-                                f"above {sem_threshold}={sem_score_info['above_threshold']}"
-                            )
-            except Exception as e:
-                logger.debug(f"  Semantic diagnostic skipped: {e}")
+                    sim_by_name = grant_similarity_map(grant, faculty)
+            except ImportError:
+                sim_by_name = {}
+
+            if sim_by_name:
+                # (1) Semantic-only matches: above threshold and not keyword-matched
+                for name, sim in sim_by_name.items():
+                    if sim < sem_threshold or name in keyword_matches:
+                        continue
+                    fac = faculty_by_name.get(name)
+                    if fac is None:
+                        continue
+                    confidence = _compute_confidence(
+                        [], idf_table, grant_text, grant_title,
+                        similarity_score=sim, match_type="semantic"
+                    )
+                    semantic_matches[name] = Match(
+                        faculty_name       = name,
+                        faculty_url        = fac.get("url", ""),
+                        faculty_department = fac.get("department", ""),
+                        faculty_email      = fac.get("email", ""),
+                        matched_keywords   = [],
+                        match_score        = 0,
+                        match_type         = "semantic",
+                        similarity_score   = sim,
+                        confidence_score   = confidence,
+                    )
+
+                # ── Semantic diagnostic: score distribution ───────────────────
+                try:
+                    import numpy as np
+                    vals  = list(sim_by_name.values())
+                    items = sorted(sim_by_name.items(), key=lambda x: -x[1])
+                    sem_score_info = {
+                        "grant_title": grant["title"][:80],
+                        "max": round(float(max(vals)), 4) if vals else 0,
+                        "p95": round(float(np.percentile(vals, 95)), 4) if vals else 0,
+                        "p90": round(float(np.percentile(vals, 90)), 4) if vals else 0,
+                        "median": round(float(np.median(vals)), 4) if vals else 0,
+                        "above_threshold": sum(1 for s in vals if s >= sem_threshold),
+                        "above_050": sum(1 for s in vals if s >= 0.50),
+                        "above_055": sum(1 for s in vals if s >= 0.55),
+                        "above_060": sum(1 for s in vals if s >= 0.60),
+                        "above_065": sum(1 for s in vals if s >= 0.65),
+                        "top_5": [(name, round(float(s), 4)) for name, s in items[:5]],
+                    }
+                    _diag["semantic_score_distributions"].append(sem_score_info)
+                    logger.info(
+                        f"  Semantic scores: max={sem_score_info['max']:.3f} "
+                        f"p95={sem_score_info['p95']:.3f} "
+                        f"above {sem_threshold}={sem_score_info['above_threshold']}"
+                    )
+                except Exception as e:
+                    logger.debug(f"  Semantic diagnostic skipped: {e}")
 
         all_matches = _merge_match_dicts(
-            keyword_matches, semantic_matches, idf_table, grant_text, grant_title
+            keyword_matches, semantic_matches, idf_table, grant_text, grant_title,
+            sim_by_name=sim_by_name, sem_threshold=sem_threshold,
         )
 
         # ── Confidence histogram (before filtering) ──────────────────────────

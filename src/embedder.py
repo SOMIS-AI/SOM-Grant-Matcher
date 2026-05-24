@@ -264,6 +264,36 @@ def embed_faculty_batch(faculty_list: list[dict]) -> bool:
 
 # ── Similarity search ──────────────────────────────────────────────────────────
 
+def grant_similarity_map(grant: dict, faculty_list: list[dict]) -> dict:
+    """
+    Return {faculty_name: cosine_similarity} for every faculty member that has an
+    embedding, computed with a single matrix multiply. Empty dict if the model or
+    embeddings are unavailable.
+
+    This is the shared similarity source for the matcher: it powers both the
+    semantic-only matches AND the "both" upgrade (keyword matches that also clear
+    the similarity threshold), replacing the older approach that excluded
+    keyword-matched faculty from the semantic pass.
+    """
+    model = _load_model()
+    if model is None:
+        return {}
+
+    candidates = [f for f in faculty_list if f.get("embedding")]
+    if not candidates:
+        return {}
+
+    grant_emb = embed_texts([grant_to_text(grant)])
+    if grant_emb is None:
+        return {}
+    grant_vec = grant_emb[0]
+
+    faculty_matrix = np.array([f["embedding"] for f in candidates], dtype=np.float32)
+    # Embeddings are L2-normalised, so dot product == cosine similarity.
+    sims = faculty_matrix @ grant_vec
+    return {f.get("name", ""): float(s) for f, s in zip(candidates, sims)}
+
+
 def find_semantic_matches(
     grant: dict,
     faculty_list: list[dict],

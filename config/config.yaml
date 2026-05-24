@@ -75,9 +75,11 @@ matching:
                                           # matches are suppressed while genuine multi-keyword matches pass.
 
   # v4.1 — New parameters
-  max_matches_per_grant: 50              # Cap faculty matches per grant. Keeps email digest manageable
+  max_matches_per_grant: 20              # Cap faculty matches per grant. Keeps email digest manageable
                                           # and prevents broad grants from matching 500+ faculty.
-                                          # Highest-confidence matches are kept.
+                                          # Highest-confidence matches are kept. Lowered from 50 —
+                                          # broad infrastructure grants (cancer informatics, NCORP,
+                                          # DoW prostate) were filling 50 slots down to ~38% confidence.
   min_idf_for_match: 1.5                 # Minimum IDF for a grant keyword to count toward matching.
                                           # Keywords below this are too common across faculty.
                                           # IDF 1.5 ≈ keyword appears in ~60% of faculty.
@@ -246,9 +248,30 @@ nih_reporter:
 # to disabled_sources. Or set enabled_sources to only run a specific subset.
 external_sources:
   enabled: true
-  # disabled_sources:                      # Uncomment and list source keys to disable
-  #   - "wellcome_trust"                   # Example: disable Wellcome Trust
-  #   - "gates"                            # Example: disable Gates Foundation
+  # Sources confirmed to have NEVER returned a result (their pages are
+  # JavaScript-rendered or their structure changed, so requests-based scraping
+  # gets an empty shell). Disabled to cut ~36s of dead runtime per cycle and
+  # de-noise the scraper-health report. Re-enable individually if a working
+  # scraper is implemented (e.g. via a headless browser or an official API/feed).
+  disabled_sources:
+    - "pnd_rfps"
+    - "dod_cdmrp"
+    - "burroughs_wellcome"
+    - "hhmi"
+    - "damon_runyon"
+    - "doris_duke"
+    - "rwjf"
+    - "keck"
+    - "beckman"
+    - "march_of_dimes"
+    - "gates"
+    - "wellcome_trust"
+    - "koch_foundation"
+    - "yield_giving"
+    - "science_philanthropy_alliance"
+    - "ucla_dgsom"
+    - "miami_miller"
+    - "aamc_grants"
   #
   # Available source keys:
   #   Tier 3 — Major Biomedical Research Funders:

@@ -94,6 +94,35 @@ def clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+# Navigation / UI boilerplate that leaks out of the profile pages and must never
+# be treated as a research keyword (e.g. "Update Your Profile", "Faculty Profiles
+# Sync", "Download", "Email"). These were showing up as dynamic stop words in the
+# diagnostic, which means they were being ingested as keywords. Filter at the source.
+_BOILERPLATE_KW = {
+    "academic title", "appointment", "primary appointment", "primary",
+    "title", "download", "email", "profile", "profiles", "faculty profiles",
+    "faculty profiles sync", "profiles sync", "home faculty profiles",
+    "view full profile", "view profile", "full profile",
+    "update", "update your", "update your profile", "your profile",
+    "umaryland", "university of maryland", "school of medicine",
+    "quick links", "skip to", "search",
+}
+
+
+def _is_boilerplate_kw(kw: str) -> bool:
+    """True if a candidate keyword is page navigation/UI boilerplate, not research."""
+    k = re.sub(r"\s+", " ", (kw or "").strip().lower())
+    if not k or k in _BOILERPLATE_KW:
+        return True
+    if "profile" in k and any(w in k for w in ("update", "sync", "home", "view", "faculty")):
+        return True
+    if k.startswith("update your") or k.startswith("your "):
+        return True
+    if "umaryland" in k:
+        return True
+    return False
+
+
 # ── Pass 1: Department pages ──────────────────────────────────────────────────
 
 def scrape_department_page(session: requests.Session, url: str) -> list[dict]:
@@ -152,7 +181,8 @@ def scrape_department_page(session: requests.Session, url: str) -> list[dict]:
 
         elif re.match(r"^keywords?\s*:", line, re.IGNORECASE):
             kw_text = re.sub(r"^keywords?\s*:\s*", "", line, flags=re.IGNORECASE)
-            keywords = [k.strip() for k in re.split(r"[,;]", kw_text) if k.strip() and len(k.strip()) > 2]
+            keywords = [k.strip() for k in re.split(r"[,;]", kw_text)
+                        if k.strip() and len(k.strip()) > 2 and not _is_boilerplate_kw(k)]
             if current_name:
                 faculty.append({
                     "name": current_name,
@@ -1123,7 +1153,8 @@ def _merge_keywords(faculty: dict, new_keywords: list[str], source: str) -> None
     """
     existing = faculty.get("keywords") or []
     existing_lower = {k.lower() for k in existing}
-    added = [k for k in new_keywords if k.lower() not in existing_lower]
+    added = [k for k in new_keywords
+             if k.lower() not in existing_lower and not _is_boilerplate_kw(k)]
     faculty["keywords"] = existing + added
 
     # Track all sources
