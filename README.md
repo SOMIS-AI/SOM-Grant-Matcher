@@ -184,6 +184,22 @@ python main.py --send-digest --days 7 --to someone@org.edu,another@org.edu
 
 On Azure, trigger it the same way as the test email: temporarily set the **Startup Command** to `python main.py --send-digest --to someone@org.edu`, save (the app restarts and runs it), then clear the Startup Command to resume normal scheduling.
 
+#### Manual digest cheat-sheet
+
+- **What it does:** sends a one-off match digest covering the last N days. Reads stored results only — never scrapes, never marks grants seen, never affects the scheduled daily/weekly emails.
+- **Default window:** `--days 1` (last 24 hours). Use `--days 7` for a week, etc.
+- **Who receives it (precedence):** `--to a@b.com,c@d.com`  →  else `MANUAL_RECIPIENTS`  →  else `DAILY_RECIPIENTS`  →  else nothing is sent.
+- **`MANUAL_RECIPIENTS` does nothing on its own** — it is only the default recipient list for this command. Setting it never triggers a send; you must run `--send-digest`.
+- **No matches in the window → no email** (it logs "no matches found in the last N days").
+- **Local:** `python main.py --send-digest [--days N] [--to ...]`
+- **Azure:** set **Startup Command** → save (restarts, runs, exits) → **clear the Startup Command and save again** to resume the scheduler. ⚠️ Until you clear it, the app keeps re-running the digest instead of the scheduler. ⚠️ Triggering it restarts the app, so `RESTART_RECIPIENTS` will also get a restart email.
+
+| You want… | Command |
+|---|---|
+| Last 24h to the default list | `python main.py --send-digest` |
+| Last 24h to a specific person | `python main.py --send-digest --to dean@org.edu` |
+| Last 7 days to two people | `python main.py --send-digest --days 7 --to a@org.edu,b@org.edu` |
+
 > **Note on timing:** the matcher fires once per day at a **fixed wall-clock time** (`NOTIFY_HOUR`, default 6am, in `NOTIFY_TIMEZONE`, default `America/New_York`). It does **not** send anything on startup or restart — it simply waits for the next fire time. If the app happens to be down at the fire time, that day is skipped (unseen grants surface on the next successful run).
 
 ---

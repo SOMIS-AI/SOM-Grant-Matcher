@@ -152,6 +152,20 @@ already-stored results, so it won't disturb the scheduled emails or the seen-gra
 3. Click **Save** — the app restarts, sends the digest, then exits
 4. **Remove the startup command** and save again to resume normal scheduling
 
+#### Manual digest cheat-sheet
+- **Window:** default last 24h; add `--days N` for a longer window.
+- **Recipients (precedence):** `--to a@b.com,c@d.com` → else `MANUAL_RECIPIENTS` → else `DAILY_RECIPIENTS` → else nothing is sent.
+- **`MANUAL_RECIPIENTS` is just the default address list** — setting it never sends anything by itself; you must run the `--send-digest` command.
+- **No matches in the window → no email is sent** (it logs and exits).
+- ⚠️ **Always clear the Startup Command in step 4** — until you do, the app keeps running the one-off digest instead of the scheduler.
+- ⚠️ This restarts the app, so `RESTART_RECIPIENTS` (if set) will also get a restart email.
+
+| You want… | Startup Command |
+|---|---|
+| Last 24h to `MANUAL_RECIPIENTS` | `python main.py --send-digest` |
+| Last 24h to a specific person | `python main.py --send-digest --to dean@org.edu` |
+| Last 7 days to two people | `python main.py --send-digest --days 7 --to a@org.edu,b@org.edu` |
+
 ### Restart notifications
 If you set `RESTART_RECIPIENTS`, those admins get a short health email **every time the app
 restarts** (including each deploy) confirming it came back up and showing the next scheduled
