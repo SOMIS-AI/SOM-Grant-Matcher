@@ -7,12 +7,14 @@ Automatically monitors [Grants.gov](https://www.grants.gov) for new funding oppo
 ## How It Works
 
 ```
-Every 24 hours:
-  1. Scrape UMSOM faculty profiles → extract research keywords per faculty member
-     (cached for 7 days to be polite to the server)
-  2. Fetch newly posted grants from Grants.gov (free public API, no key needed)
-  3. Match grant titles/descriptions against faculty keywords
-  4. Send one HTML digest email listing all matches
+Once a day at 6am ET (configurable):
+  1. Scrape UMSOM faculty profiles → extract & enrich research keywords per faculty
+     member (cached for 7 days to be polite to the server)
+  2. Fetch newly posted grants from 30+ sources (Grants.gov + foundations, portals, etc.)
+  3. Match grants to faculty using hybrid keyword + semantic (AI embedding) matching,
+     scored 0–100 by confidence
+  4. Email a match digest to faculty recipients (when there are matches),
+     plus an admin-only diagnostic report
 ```
 
 ---
@@ -21,33 +23,53 @@ Every 24 hours:
 
 ### Prerequisites
 - Python 3.11+ (or Docker)
-- A Gmail account with an App Password
+- A [SendGrid](https://sendgrid.com) account with an API key and a verified sender
 
-### 1. Set Up Gmail App Password
+### 1. Set Up SendGrid
 
-Gmail requires an "App Password" (not your regular password) for SMTP access:
+Email is sent via the SendGrid API (not SMTP). You need two things:
 
-1. Go to your Google Account → **Security**
-2. Enable **2-Step Verification** if not already on
-3. Go to **Security → App passwords**
-4. Click "Select app" → choose **Mail**
-5. Click "Select device" → choose **Other** → type "Grant Matcher"
-6. Click **Generate** — copy the 16-character password (e.g. `abcd efgh ijkl mnop`)
+1. **An API key** — in the SendGrid dashboard go to **Settings → API Keys → Create API Key**
+   (a "Restricted Access" key with **Mail Send** permission is sufficient). Copy the key — it is
+   shown only once.
+2. **A verified sender** — under **Settings → Sender Authentication**, verify the "from" address
+   (Single Sender Verification) or authenticate your domain. The `SENDGRID_FROM_EMAIL` you use
+   must match a verified sender or SendGrid will reject the message.
 
 ### 2. Configure the App
 
-Edit `config/config.yaml`:
+**Secrets are never stored in `config.yaml`** — they are supplied at runtime via environment
+variables (in Azure: **Configuration → Application Settings**). `config.yaml` only holds
+placeholders, which the app overrides from the environment on startup (`main.py:load_config`).
 
-```yaml
-email:
-  sender: "your-gmail@gmail.com"
-  app_password: "abcd efgh ijkl mnop"   # The 16-char app password from above
-  recipients:
-    - "you@yourinstitution.edu"
-    - "colleague@yourinstitution.edu"
+Set these environment variables / Application Settings:
+
+| Variable | Required | Description |
+|---|---|---|
+| `SENDGRID_API_KEY` | ✅ | Your SendGrid API key |
+| `SENDGRID_FROM_EMAIL` | ✅ | Verified sender address (the "from" address) |
+| `DAILY_RECIPIENTS` | ✅* | Comma-separated recipients of the **daily** digest, sent every day at the scheduled time |
+| `WEEKLY_RECIPIENTS` | ✅* | Comma-separated recipients of the **weekly** 7-day roundup, sent only on the configured weekday (default Tuesday) |
+| `DIAGNOSTIC_RECIPIENTS` | optional | Comma-separated recipients of the admin diagnostic email. Defaults to the **first** address in the daily/weekly lists. |
+| `RESTART_RECIPIENTS` | optional | Comma-separated admins who receive a **restart/health email** when the app starts (e.g. after a deploy). This is the **only** email sent on restart. |
+| `MANUAL_RECIPIENTS` | optional | Default recipients for a **manually-triggered** digest (see "Manual digest" below). |
+| `NOTIFY_TIMEZONE` | optional | IANA timezone for the fire time. Default `America/New_York`. |
+| `NOTIFY_HOUR` | optional | Hour of day (0–23) to send. Default `6` (6am). |
+| `WEEKLY_WEEKDAY` | optional | Weekday for the weekly roundup, `Mon=0 … Sun=6`. Default `1` (Tuesday). |
+| `DASHBOARD_URL` | optional | Full URL to your dashboard, linked in emails |
+
+*At least one of `DAILY_RECIPIENTS` / `WEEKLY_RECIPIENTS` should be set, or no faculty-facing email is sent. They are independent groups — a person only gets the cadence whose list they're on. (The legacy `ALERT_RECIPIENTS` variable has been **retired**.)
+
+To run locally, export them in your shell before starting the app (PowerShell example):
+
+```powershell
+$env:SENDGRID_API_KEY    = "SG.xxxxxxxx"
+$env:SENDGRID_FROM_EMAIL = "grants@yourinstitution.edu"
+$env:DAILY_RECIPIENTS    = "daily-reader@yourinstitution.edu"
+$env:WEEKLY_RECIPIENTS   = "weekly-reader@yourinstitution.edu,dept-head@yourinstitution.edu"
 ```
 
-You can add/remove recipients at any time by editing this file. The change takes effect on the next run.
+You can change recipients at any time by editing these variables — the change takes effect on the next scheduled run.
 
 ### 3. Deploy
 
@@ -112,15 +134,73 @@ sudo systemctl status grant-matcher
 
 ---
 
-## What the Email Looks Like
+## What the Emails Look Like
 
-Each email digest contains:
-- **Grant title** with a direct link to the Grants.gov listing
+The app sends these emails, by audience and trigger:
+
+| Email | Recipients | When |
+|---|---|---|
+| **Daily digest** | `DAILY_RECIPIENTS` | Every day at `NOTIFY_HOUR` (default 6am ET), when there are matches |
+| **Weekly roundup** | `WEEKLY_RECIPIENTS` | Only on `WEEKLY_WEEKDAY` (default Tuesday) at the same hour — covers the **last 7 days** of matches |
+| **Diagnostic report** | `DIAGNOSTIC_RECIPIENTS` (admin) | Every scheduled run |
+| **Restart / health** | `RESTART_RECIPIENTS` (admin) | Once on app startup/restart — the only email sent on restart |
+| **Manual digest** | `MANUAL_RECIPIENTS` or `--to` | On demand via `--send-digest` (see below) |
+
+### 1. Match Digest (daily and weekly)
+
+Sent to `DAILY_RECIPIENTS` every day (and, as a 7-day roundup, to `WEEKLY_RECIPIENTS` on Tuesdays), **only when at least one new grant matches a faculty member**. It contains:
+- **Grant title** with a direct link to the listing
 - **Agency, grant number, deadline, award ceiling**
-- **Synopsis snippet**
-- **Table of matched faculty** with their department, email, match score, and the specific keywords that triggered the match
+- **Table of matched faculty** with their department, the **match type** (keyword / AI / keyword + AI), a **confidence score (0–100%)**, and the specific keywords that triggered the match
 
-Grants with more keyword overlaps get a higher **match score** and appear first.
+Matches with a higher **confidence score** are listed first. Confidence is a calibrated 0–100 score that weights rare/specific keywords (IDF) more heavily than generic ones, adds bonuses for title hits and semantic similarity, and is filtered by `matching.min_confidence_score`. (It replaced the older raw keyword-count "match score.")
+
+### 2. Diagnostic Report (admin only)
+
+Sent to `DIAGNOSTIC_RECIPIENTS` (or, if unset, the **first** address in the daily/weekly recipient lists) on **every completed scheduled run** — including days with no grants or no matches. It is an operational/tuning report, not a faculty-facing alert, and contains:
+- **Run summary** — faculty processed, grants checked, grants skipped (non-biomedical), raw vs. post-filter match counts, run duration
+- **Active parameters** — semantic threshold, min confidence, IDF floor, per-grant cap, etc.
+- **Dynamic stop words** suppressed this run
+- **Per-grant detail**, **confidence histograms**, and **semantic score distributions**
+- **Foundation scraper health** — per-source new-grant counts and alerts for sources returning 0 results for 3+ consecutive runs
+
+> **Tip:** the diagnostic email is designed to be forwarded to Claude for analysis and tuning recommendations.
+
+### 3. Restart / Health Email (admin only)
+
+Sent to `RESTART_RECIPIENTS` **once when the app starts or restarts** (e.g. after a deploy). This is the **only** email that fires on restart — it confirms the process is live and reports the environment, build/commit id, the next scheduled run time, and recipient counts. It does **not** run the grant pipeline.
+
+### On-demand: Manual Digest
+
+You can manually send a digest of matches from the last N days at any time — useful to share recent results with an ad-hoc address. It reads **already-stored** results, so it does not run the pipeline or affect the scheduled emails:
+
+```bash
+# Send the last 24h of matches to MANUAL_RECIPIENTS
+python main.py --send-digest
+
+# Last 7 days, to a specific address (overrides MANUAL_RECIPIENTS)
+python main.py --send-digest --days 7 --to someone@org.edu,another@org.edu
+```
+
+On Azure, trigger it the same way as the test email: temporarily set the **Startup Command** to `python main.py --send-digest --to someone@org.edu`, save (the app restarts and runs it), then clear the Startup Command to resume normal scheduling.
+
+#### Manual digest cheat-sheet
+
+- **What it does:** sends a one-off match digest covering the last N days. Reads stored results only — never scrapes, never marks grants seen, never affects the scheduled daily/weekly emails.
+- **Default window:** `--days 1` (last 24 hours). Use `--days 7` for a week, etc.
+- **Who receives it (precedence):** `--to a@b.com,c@d.com`  →  else `MANUAL_RECIPIENTS`  →  else `DAILY_RECIPIENTS`  →  else nothing is sent.
+- **`MANUAL_RECIPIENTS` does nothing on its own** — it is only the default recipient list for this command. Setting it never triggers a send; you must run `--send-digest`.
+- **No matches in the window → no email** (it logs "no matches found in the last N days").
+- **Local:** `python main.py --send-digest [--days N] [--to ...]`
+- **Azure:** set **Startup Command** → save (restarts, runs, exits) → **clear the Startup Command and save again** to resume the scheduler. ⚠️ Until you clear it, the app keeps re-running the digest instead of the scheduler. ⚠️ Triggering it restarts the app, so `RESTART_RECIPIENTS` will also get a restart email.
+
+| You want… | Command |
+|---|---|
+| Last 24h to the default list | `python main.py --send-digest` |
+| Last 24h to a specific person | `python main.py --send-digest --to dean@org.edu` |
+| Last 7 days to two people | `python main.py --send-digest --days 7 --to a@org.edu,b@org.edu` |
+
+> **Note on timing:** the matcher fires once per day at a **fixed wall-clock time** (`NOTIFY_HOUR`, default 6am, in `NOTIFY_TIMEZONE`, default `America/New_York`). It does **not** send anything on startup or restart — it simply waits for the next fire time. If the app happens to be down at the fire time, that day is skipped (unseen grants surface on the next successful run).
 
 ---
 
@@ -130,11 +210,12 @@ All settings are in `config/config.yaml`:
 
 | Setting | Default | Description |
 |---|---|---|
-| `email.sender` | — | Gmail address to send from |
-| `email.app_password` | — | Gmail App Password |
-| `email.recipients` | — | List of email addresses to notify |
+| `email.sender` | — | Placeholder; set the real value via the `SENDGRID_FROM_EMAIL` env var |
+| `email.sendgrid_api_key` | — | Placeholder; set the real value via the `SENDGRID_API_KEY` env var |
+| `email.recipients` | — | Unused placeholder; real recipients come from the `DAILY_RECIPIENTS` / `WEEKLY_RECIPIENTS` env vars |
+| `email.subject_prefix` | `[Grant Match]` | Prefix for the match digest subject line |
 | `faculty.rescrape_interval_hours` | 168 (7 days) | How often to re-scrape faculty profiles |
-| `grants.check_interval_hours` | 24 | How often to poll Grants.gov |
+| `grants.check_interval_hours` | 24 | Legacy; no longer drives scheduling — the daily fire time is set by `NOTIFY_HOUR`/`NOTIFY_TIMEZONE` env vars |
 | `grants.max_results_per_check` | 100 | Max grants fetched per run |
 | `grants.statuses` | `[posted, forecasted]` | Grant statuses to include |
 | `matching.min_keyword_length` | 4 | Minimum keyword character length |
@@ -148,7 +229,7 @@ All settings are in `config/config.yaml`:
 # Force re-scrape faculty profiles on next run
 python main.py --run-once --scrape
 
-# Send a test email to verify Gmail works
+# Send a test email to verify SendGrid is configured correctly
 python main.py --test-email
 
 # Run with a custom config file
@@ -175,8 +256,11 @@ tail -f logs/grant_matcher.log
 
 ## Troubleshooting
 
-**"Gmail authentication failed"**
-→ Make sure you're using an App Password, not your regular Gmail password. 2-Step Verification must be enabled.
+**"SENDGRID_API_KEY environment variable is not set"**
+→ The `SENDGRID_API_KEY` (and `SENDGRID_FROM_EMAIL`) env vars / Azure Application Settings are missing. Set both and restart.
+
+**SendGrid returns 401 / 403, or mail silently never arrives**
+→ 401/403 means a bad/revoked API key, or the key lacks **Mail Send** permission. If sends succeed (2xx) but mail never arrives, the `SENDGRID_FROM_EMAIL` is likely not a **verified sender** in SendGrid — verify it under Sender Authentication.
 
 **"No faculty profiles loaded"**
 → The UMSOM website may be temporarily down or have changed structure. Check logs for details. You can manually test with: `python -c "from src.faculty_scraper import scrape_faculty_list; import requests; print(scrape_faculty_list(requests.Session()))"`
@@ -209,7 +293,7 @@ grant-matcher/
 │   ├── faculty_scraper.py   # Scrapes UMSOM faculty profiles
 │   ├── grants_poller.py     # Polls Grants.gov API
 │   ├── matcher.py           # Keyword matching engine
-│   └── emailer.py           # HTML email builder + Gmail sender
+│   └── emailer.py           # HTML email builder + SendGrid sender
 ├── config/
 │   └── config.yaml          # All configuration
 ├── data/                    # Runtime data (auto-created)

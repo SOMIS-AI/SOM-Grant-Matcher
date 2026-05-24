@@ -25,6 +25,7 @@ CFG_FILE  = Path(os.environ.get("CONFIG_FILE","config/config.yaml"))
 
 DASHBOARD_USER = os.environ.get("DASHBOARD_USER", "admin")
 DASHBOARD_PASS = os.environ.get("DASHBOARD_PASS", "changeme")
+APP_ENV        = os.environ.get("APP_ENV", "production")
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -2761,7 +2762,17 @@ setInterval(()=>{ if(currentPage==='overview') loadOverview(); }, 60000);
 @app.route("/")
 @login_required
 def index():
-    return render_template_string(DASHBOARD_HTML)
+    html = DASHBOARD_HTML
+    if APP_ENV == 'dev':
+        banner = (
+            '<div style="position:fixed;top:0;left:0;right:0;z-index:9999;background:#dc2626;'
+            'color:#fff;text-align:center;font-size:13px;font-weight:600;padding:6px;'
+            'letter-spacing:.05em;font-family:monospace;">'
+            '&#9888; DEV ENVIRONMENT &#8212; changes here are not production</div>'
+            '<div style="height:33px"></div>'
+        )
+        html = html.replace('<body>', f'<body>{banner}', 1)
+    return render_template_string(html)
 
 
 if __name__ == "__main__":

@@ -5,10 +5,26 @@
 # --- Email Settings (SendGrid) ---
 # IMPORTANT: Leave these as placeholders!
 # Set the real values in Azure Application Settings (never put secrets in this file).
+#
 # Required Azure Application Settings:
-#   SENDGRID_API_KEY    → your SendGrid API key
-#   SENDGRID_FROM_EMAIL → verified sender address in your SendGrid account
-#   ALERT_RECIPIENTS    → comma-separated list, e.g. you@org.edu,colleague@org.edu
+#   SENDGRID_API_KEY      → your SendGrid API key
+#   SENDGRID_FROM_EMAIL   → verified sender address in your SendGrid account
+#
+# Recipients (comma-separated lists) are resolved at SEND time by cadence:
+#   DAILY_RECIPIENTS      → daily digest, sent every day at NOTIFY_HOUR
+#   WEEKLY_RECIPIENTS     → 7-day roundup, sent only on WEEKLY_WEEKDAY (default Tuesday)
+#   DIAGNOSTIC_RECIPIENTS → admin-only diagnostic report (defaults to first DAILY/WEEKLY addr)
+#   RESTART_RECIPIENTS    → admins who get a health email when the app starts/restarts
+#                           (the ONLY email sent on restart — used to confirm a deploy is live)
+#   MANUAL_RECIPIENTS     → default recipients for a manually-triggered digest
+#                           (trigger with: python main.py --send-digest [--days N] [--to a@b.com])
+#   (The legacy ALERT_RECIPIENTS variable has been retired.)
+#
+# Schedule controls (all optional, with defaults):
+#   NOTIFY_TIMEZONE       → IANA tz for the fire time   (default America/New_York)
+#   NOTIFY_HOUR           → hour of day, 0-23           (default 6)
+#   WEEKLY_WEEKDAY        → Mon=0 .. Sun=6              (default 1 = Tuesday)
+# No email is sent on startup/restart — only at the scheduled fire time.
 email:
   sender: "set-via-azure-app-settings"
   sendgrid_api_key: "set-via-azure-app-settings"
