@@ -756,10 +756,13 @@ def build_diagnostic_html(matcher_diag: dict, scraper_health: dict, run_date: st
 
     alert_html = ""
     if health_alerts:
+        def _alert_label(a):
+            status = a.get("status", "alert")
+            return "ERROR" if status == "error" else ("LIKELY BROKEN" if status == "likely_broken" else status.upper())
         alert_items = "".join(
             f'<div style="background:#fff3e0;border-left:3px solid #e65100;padding:8px 12px;margin-bottom:6px;font-size:12px;">'
-            f'<strong>{a["source"]}</strong>: {a["consecutive_zeros"]} consecutive zero runs '
-            f'(last success: {a["last_success"]})</div>'
+            f'<strong>{a["source"]}</strong> — {_alert_label(a)}: {a.get("detail","")} '
+            f'({a.get("consecutive_zeros", 0)} runs without new results; last success: {a.get("last_success","never")})</div>'
             for a in health_alerts
         )
         alert_html = f'<div style="margin-bottom:12px;">{alert_items}</div>'
@@ -895,8 +898,10 @@ def build_diagnostic_text(matcher_diag: dict, scraper_health: dict, run_date: st
         lines.append("")
         lines.append("HEALTH ALERTS:")
         for a in alerts:
-            lines.append(f"  WARNING: {a['source']} — {a['consecutive_zeros']} consecutive zero runs "
-                        f"(last success: {a['last_success']})")
+            label = a.get("status", "alert").upper()
+            lines.append(f"  {label}: {a['source']} — {a.get('detail','')} "
+                        f"({a.get('consecutive_zeros', 0)} runs w/o new results; "
+                        f"last success: {a.get('last_success','never')})")
 
     lines.append("")
     lines.append("-" * 60)

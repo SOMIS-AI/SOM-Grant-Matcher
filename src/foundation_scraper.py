@@ -841,40 +841,71 @@ def fetch_all_external_grants(seen_ids, config):
             continue
 
         sources_tried += 1
+        if key not in health:
+            health[key] = {
+                "consecutive_zeros": 0,
+                "last_success": None,
+                "total_found": 0,
+                "last_status": None,
+                "last_error": None,
+            }
+
         try:
             grants = scraper_fn(seen_ids)
             all_grants.extend(grants)
             sources_succeeded += 1
             per_source_results[key] = len(grants)
-
-            if key not in health:
-                health[key] = {
-                    "consecutive_zeros": 0,
-                    "last_success": None,
-                    "total_found": 0,
-                }
+            health[key]["last_error"] = None
 
             if len(grants) > 0:
                 health[key]["consecutive_zeros"] = 0
                 health[key]["last_success"] = datetime.now().isoformat()
                 health[key]["total_found"] = health[key].get("total_found", 0) + len(grants)
+                health[key]["last_status"] = "new"
             else:
                 health[key]["consecutive_zeros"] = health[key].get("consecutive_zeros", 0) + 1
-
-            zeros = health[key]["consecutive_zeros"]
-            if zeros >= 3:
-                last = health[key].get("last_success", "None")
-                logger.warning(
-                    f"SCRAPER ALERT: '{key}' has returned 0 results for "
-                    f"{zeros} consecutive runs. Last success: {last}"
+                # Distinguish a quiet-but-working source (has produced before) from
+                # one that has NEVER produced anything (likely silently broken).
+                health[key]["last_status"] = (
+                    "quiet" if health[key].get("last_success") else "no_results"
                 )
+                if health[key]["last_status"] == "no_results" and health[key]["consecutive_zeros"] >= 3:
+                    logger.warning(
+                        f"SCRAPER ALERT: '{key}' has NEVER returned a result "
+                        f"({health[key]['consecutive_zeros']} runs) — likely broken."
+                    )
         except Exception as e:
             logger.error(f"Scraper '{key}' failed: {e}", exc_info=True)
             per_source_results[key] = -1  # -1 = error
+            health[key]["last_status"] = "error"
+            health[key]["last_error"] = str(e)[:200]
 
         time.sleep(REQUEST_DELAY)
 
     _save_scraper_health(health)
+
+    # Build health alerts — only for sources actually tried this run, and only
+    # when something is genuinely wrong:
+    #   "error"         → the scraper raised an exception
+    #   "likely_broken" → has never returned a result in 3+ consecutive runs
+    # A "quiet" source (returned data before, nothing new now) is NOT alerted —
+    # that's the normal state for sources that list a stable set of open RFPs.
+    health_alerts = []
+    for k in per_source_results:
+        v = health.get(k, {})
+        zeros = v.get("consecutive_zeros", 0)
+        if v.get("last_status") == "error":
+            health_alerts.append({
+                "source": k, "status": "error", "consecutive_zeros": zeros,
+                "last_success": v.get("last_success") or "never",
+                "detail": v.get("last_error") or "exception raised",
+            })
+        elif v.get("last_success") is None and zeros >= 3:
+            health_alerts.append({
+                "source": k, "status": "likely_broken", "consecutive_zeros": zeros,
+                "last_success": "never",
+                "detail": "no result since tracking began",
+            })
 
     # Build diagnostic summary in the format emailer.py expects
     _last_scraper_health = {
@@ -882,12 +913,7 @@ def fetch_all_external_grants(seen_ids, config):
         "sources_tried": sources_tried,
         "sources_succeeded": sources_succeeded,
         "total_new_grants": len(all_grants),
-        "health_alerts": [
-            {"source": k, "consecutive_zeros": v["consecutive_zeros"],
-             "last_success": v.get("last_success", "never")}
-            for k, v in health.items()
-            if v.get("consecutive_zeros", 0) >= 3
-        ],
+        "health_alerts": health_alerts,
     }
 
     logger.info(
