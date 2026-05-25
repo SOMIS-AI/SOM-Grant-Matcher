@@ -94,6 +94,44 @@ def clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def discover_department_pages(session: requests.Session, index_url: str) -> list:
+    """
+    Harvest the current department faculty-listing URLs from the live UMSOM
+    faculty-profiles index. Returns a list of "/profiles/<dept>---(all|primary)-faculty/"
+    paths. Skips "secondary-faculty" (cross-appointments → duplicates handled by
+    dedup). Returns [] if discovery fails or looks implausible, so the caller can
+    fall back to the built-in DEPARTMENT_PAGES.
+
+    This makes the scraper resilient to site redesigns that rename department
+    slugs (e.g. the 2026 redesign left "biochemistry--molecular-biology---all-faculty"
+    returning 0 faculty and "urology---primary-faculty" 404'ing).
+    """
+    try:
+        resp = session.get(index_url, headers=HEADERS, timeout=30)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        logger.warning(f"Department discovery failed ({e}); using built-in list")
+        return []
+
+    paths = sorted(set(re.findall(
+        r"/profiles/[a-z0-9-]+---(?:all|primary)-faculty/", resp.text
+    )))
+    # Prefer a dept's "all-faculty" page; only add its "primary-faculty" page when
+    # there is no all-faculty variant (dedup by faculty handles any overlap).
+    all_depts = {p.split("---")[0] for p in paths if p.endswith("---all-faculty/")}
+    chosen = [p for p in paths if p.endswith("---all-faculty/")]
+    chosen += [p for p in paths
+               if p.endswith("---primary-faculty/") and p.split("---")[0] not in all_depts]
+
+    if len(chosen) < 15:
+        logger.warning(
+            f"Department discovery yielded only {len(chosen)} pages; using built-in list"
+        )
+        return []
+    logger.info(f"Discovered {len(chosen)} department listing pages from the live index")
+    return chosen
+
+
 # Navigation / UI boilerplate that leaks out of the profile pages and must never
 # be treated as a research keyword (e.g. "Update Your Profile", "Faculty Profiles
 # Sync", "Download", "Email"). These were showing up as dynamic stop words in the
@@ -369,115 +407,57 @@ def scrape_individual_profile(session: requests.Session, faculty: dict) -> dict:
     except requests.RequestException:
         return faculty
 
-    soup = BeautifulSoup(resp.text, "html.parser")
-    for tag in soup.select("nav, header, footer, .nav, .menu, script, style"):
-        tag.decompose()
+    html = resp.text
 
-    ri_keywords  = []   # from structured Research Interests section (highest quality)
-    kw_keywords  = []   # from explicit "Keywords:" line
-    bio_keywords = []   # from prose / bio paragraphs (fallback)
+    # ── Redesigned-site extraction (2026) ────────────────────────────────────
+    # New UMSOM profiles mark sections with HTML comments + empty <span id>
+    # anchors, e.g.:
+    #   <!-- Research and/or Clinical Keywords -->  ...heading + comma list...  <!-- Highlighted Publications -->
+    #   <!-- Research Interests Details --> <span id="Research Interest Details"></span> ...prose... <!-- Clinical Speciality Details -->
+    # We slice the content between a section's start comment and the next comment,
+    # strip tags, and remove the visible heading label. We deliberately read ONLY
+    # these two curated fields — no whole-bio fallback (which scraped everything).
+    def _section_text(start_marker):
+        i = html.find(start_marker)
+        if i < 0:
+            return ""
+        rest = html[i + len(start_marker):]
+        j = rest.find("<!--")            # next section comment bounds this one
+        chunk = rest[:j] if j >= 0 else rest[:4000]
+        text = BeautifulSoup(chunk, "html.parser").get_text(" ", strip=True)
+        return re.sub(r"\s+", " ", text).strip()
 
-    # ── Strategy 1: Find the Research Interests section ──────────────────────
-    # Search ALL element types for a label matching _RI_LABELS, then grab content
-    # that immediately follows it (sibling or parent's next sibling).
-    ri_content_tags = []
+    def _strip_heading(text):
+        text = re.sub(r"^\s*research\s*/?\s*(?:and/or\s*)?clinical\s*keywords\s*:?\s*", "", text, flags=re.I)
+        text = re.sub(r"^\s*research\s+interests?\s*:?\s*", "", text, flags=re.I)
+        text = re.sub(r"^\s*keywords?\s*:?\s*", "", text, flags=re.I)
+        return text.strip()
 
-    # 1a. Heading elements (h1-h5, strong, b)
-    for el in soup.find_all(["h1", "h2", "h3", "h4", "h5", "strong", "b"]):
-        if _RI_LABELS.match(el.get_text()):
-            # Content is the next sibling(s)
-            sib = el.find_next_sibling()
-            while sib and len(ri_content_tags) < 3:
-                ri_content_tags.append(sib)
-                sib = sib.find_next_sibling()
-            break
+    # New dept listing pages carry an empty mailto, so capture the email here
+    # from the profile page if we don't already have one.
+    if not faculty.get("email"):
+        em = re.search(r"[\w.+-]+@[\w.-]*(?:umaryland|umm)\.edu", html)
+        if em:
+            faculty["email"] = em.group(0)
 
-    # 1b. Drupal-style div/span/p field labels (e.g. <div class="field-label">)
-    if not ri_content_tags:
-        for el in soup.find_all(["div", "span", "p"]):
-            el_text = el.get_text(strip=True)
-            if _RI_LABELS.match(el_text) and len(el_text) < 80:
-                # Content is the next sibling or parent's next sibling
-                sib = el.find_next_sibling()
-                if not sib:
-                    sib = el.parent.find_next_sibling() if el.parent else None
-                if sib:
-                    ri_content_tags.append(sib)
-                break
+    kw_keywords = []   # faculty-curated "Research/Clinical Keywords" (primary)
+    ri_keywords = []   # phrases mined from the "Research Interests" prose
 
-    # 1c. Sections/divs whose id or class suggests research interests
-    if not ri_content_tags:
-        for el in soup.find_all(["section", "div", "article"]):
-            cls  = " ".join(el.get("class", []))
-            eid  = el.get("id", "")
-            hint = (cls + " " + eid).lower()
-            if any(h in hint for h in ["research-interest", "research_interest",
-                                        "interests", "expertise", "focus-area"]):
-                ri_content_tags.append(el)
-                break
+    kw_text = _strip_heading(_section_text("<!-- Research and/or Clinical Keywords -->"))
+    if kw_text:
+        kw_keywords = [k.strip().lower() for k in re.split(r"[,;]", kw_text)
+                       if 2 < len(k.strip()) < 80]
 
-    # Parse whatever RI content tags we found
-    for tag in ri_content_tags:
-        # Try list extraction first
-        list_items = _extract_list_items(tag)
-        if list_items:
-            ri_keywords.extend(p.lower() for p in list_items)
-        else:
-            # Prose extraction
-            text = tag.get_text(" ", strip=True)
-            if len(text) > 20:
-                # Try comma/semicolon split
-                parts = [p.strip() for p in re.split(r"[,;]", text)
-                         if 3 < len(p.strip()) < 100]
-                if len(parts) >= 2:
-                    ri_keywords.extend(p.lower() for p in parts[:30])
-                else:
-                    # Phrase extraction from prose
-                    ri_keywords.extend(_extract_phrases_from_text(text, max_phrases=30))
+    ri_text = _strip_heading(_section_text("<!-- Research Interests Details -->"))
+    if ri_text and len(ri_text) > 20:
+        # Bounded phrase extraction — never dump the whole narrative as keywords
+        ri_keywords = _extract_phrases_from_text(ri_text, max_phrases=20)
 
-    # ── Strategy 2: Explicit "Keywords: ..." line ─────────────────────────────
-    body_text = soup.get_text(separator="\n")
-    for line in body_text.split("\n"):
-        line = line.strip()
-        if re.match(r"^keywords?\s*:", line, re.IGNORECASE):
-            kw_text = re.sub(r"^keywords?\s*:\s*", "", line, flags=re.IGNORECASE)
-            kw_keywords = [k.strip().lower() for k in re.split(r"[,;]", kw_text)
-                           if k.strip() and len(k.strip()) > 2]
-            break
-
-    # ── Strategy 3: Research-vocabulary paragraphs ────────────────────────────
-    RESEARCH_VOCAB = re.compile(
-        r"\b(disease|disorder|syndrome|therapy|mechanism|pathway|molecular|"
-        r"cellular|gene|protein|translational|neuro|cancer|immune|cardiovascular|"
-        r"infection|imaging|surgery|genetics|genomic|biomarker|trial|cohort|"
-        r"epidemiol|pharmacol|physiol|biochem|metabolism|inflammation|microbiome|"
-        r"neural|cognitive|pediatric|oncolog|immunolog|patholog|radiolog|"
-        r"virology|bacteriology|cardiac|renal|hepatic|pulmonary|endocrin)\b",
-        re.IGNORECASE
-    )
-    if not ri_keywords and not kw_keywords:
-        for p in soup.find_all("p"):
-            p_text = p.get_text(separator=" ").strip()
-            if len(p_text) > 60 and RESEARCH_VOCAB.search(p_text):
-                bio_keywords.extend(_extract_phrases_from_text(p_text[:600], max_phrases=20))
-
-    # ── Strategy 4: Main content fallback ─────────────────────────────────────
-    if not ri_keywords and not kw_keywords and not bio_keywords:
-        main = soup.select_one(
-            "main, #main-content, article, .profile-content, .content, .bio"
-        )
-        if main:
-            fallback_text = main.get_text(" ", strip=True)[:800]
-            bio_keywords.extend(_extract_phrases_from_text(fallback_text, max_phrases=30))
-
-    # ── Merge all extracted keywords, priority: RI > explicit KW > bio ────────
-    # Research Interests are highest quality — merge first so they appear first
     merged = []
     seen   = set()
     for kw_list, source in [
-        (ri_keywords,  "umsom_research_interests"),
-        (kw_keywords,  "umsom_keywords_field"),
-        (bio_keywords, "umsom_bio_text"),
+        (kw_keywords, "umsom_keywords"),
+        (ri_keywords, "umsom_research_interests"),
     ]:
         new_kws = []
         for kw in kw_list:
@@ -491,9 +471,8 @@ def scrape_individual_profile(session: requests.Session, faculty: dict) -> dict:
 
     if merged:
         logger.debug(
-            f"  Pass 2: {faculty.get('name','?')} → "
-            f"+{len(merged)} keywords "
-            f"(RI:{len(ri_keywords)} KW:{len(kw_keywords)} bio:{len(bio_keywords)})"
+            f"  Pass 2: {faculty.get('name','?')} → +{len(merged)} keywords "
+            f"(keywords:{len(kw_keywords)} research_interests:{len(ri_keywords)})"
         )
 
     return faculty
@@ -952,11 +931,17 @@ def get_faculty_profiles(config: dict) -> list[dict]:
 
     session = requests.Session()
     all_faculty = []
-    total = len(DEPARTMENT_PAGES)
+
+    # Auto-discover the current department listing URLs from the live index so
+    # the redesign's renamed slugs (e.g. biochemistry, urology) are handled and
+    # we don't silently miss whole departments. Falls back to the built-in list.
+    index_url = config["faculty"].get("profiles_url") or urljoin(BASE_URL, "/faculty/faculty-profiles/")
+    dept_paths = discover_department_pages(session, index_url) or DEPARTMENT_PAGES
+    total = len(dept_paths)
 
     # ── Pass 1: department listing pages ──────────────────────────────────────
-    logger.info("Pass 1/9: Scraping UMSOM department pages...")
-    for i, path in enumerate(DEPARTMENT_PAGES, 1):
+    logger.info(f"Pass 1/9: Scraping {total} UMSOM department pages...")
+    for i, path in enumerate(dept_paths, 1):
         url = urljoin(BASE_URL, path)
         logger.info(f"  Dept {i}/{total}: {url}")
         fac = scrape_department_page(session, url)
