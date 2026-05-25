@@ -388,7 +388,8 @@ def build_text_body(matched_results: list, run_date: str, dashboard_url: str = "
     return "\n".join(lines)
 
 
-def send_email(config: dict, matched_results: list, recipients: list = None):
+def send_email(config: dict, matched_results: list, recipients: list = None,
+               digest_label: str = "Daily"):
     """
     Send HTML digest via SendGrid API.
 
@@ -447,6 +448,24 @@ def send_email(config: dict, matched_results: list, recipients: list = None):
         plain_text_content=text_body,
         html_content=html_body,
     )
+
+    # Attach the Excel match report (Summary tab + one tab per grant).
+    try:
+        from excel_report import build_workbook_bytes, report_filename
+        xlsx = build_workbook_bytes(matched_results, run_date, label=digest_label)
+        if xlsx:
+            import base64
+            from sendgrid.helpers.mail import (Attachment, FileContent, FileName,
+                                               FileType, Disposition)
+            message.attachment = Attachment(
+                FileContent(base64.b64encode(xlsx).decode()),
+                FileName(report_filename(datetime.utcnow(), digest_label)),
+                FileType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                Disposition("attachment"),
+            )
+            logger.info(f"Attached Excel report ({len(xlsx)//1024} KB)")
+    except Exception as e:
+        logger.warning(f"Could not build/attach Excel report: {e}")
 
     try:
         sg = SendGridAPIClient(api_key)

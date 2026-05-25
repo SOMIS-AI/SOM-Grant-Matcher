@@ -503,7 +503,7 @@ def run_scheduler(config: dict):
                     logger.info("  Weekly roundup: no matches in the last 7 days — not sent.")
                 else:
                     try:
-                        send_email(config, roundup, recipients=weekly_recipients)
+                        send_email(config, roundup, recipients=weekly_recipients, digest_label="Weekly")
                         logger.info(f"  ✓ Weekly roundup sent to {len(weekly_recipients)} recipient(s)")
                     except Exception as e:
                         logger.error(f"Weekly roundup failed: {e}", exc_info=True)
