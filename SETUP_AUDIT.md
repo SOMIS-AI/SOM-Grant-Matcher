@@ -134,37 +134,44 @@ All runtime data is written to the **container filesystem**, root `data/` and `l
 | `AZURE_WEBAPP_PUBLISH_PROFILE_DEV` | ❌ no | Leftover |
 | `AZURE_WEBHOOK_URL` | ❌ no | Leftover from the removed webhook-trigger step |
 | `AZURE_WEBHOOK_URL_DEV` | ❌ no | Leftover |
-| `AZURE_WEBAPP_NAME` = `SOMGrantMatcher` | ❌ no | Confirms the **prod** Web App name |
-| `AZURE_WEBAPP_NAME_DEV` = `somgrantmatcher-dev` | ❌ no | Confirms the **dev** Web App name |
+| `AZURE_WEBAPP_NAME` = `SOMGrantMatcher` | ❌ no | The App Service name (production slot) |
+| `AZURE_WEBAPP_NAME_DEV` = `somgrantmatcher-dev` | ❌ no | The **dev deployment slot**, not a separate app |
 
-➡️ **Confirms two Web Apps exist.** None of these secrets/variables are referenced by the
-current `azure-deploy.yml`; they're inert leftovers from earlier deploy mechanisms.
+➡️ **CORRECTION (2026-05-25): there is ONE App Service (`SOMGrantMatcher`) with TWO deployment
+slots** — `somgrantmatcher` (production) and `somgrantmatcher-dev` (a slot) — not two separate
+Web Apps as an earlier draft inferred from these names. None of these secrets/variables are
+referenced by the current `azure-deploy.yml`; they're inert leftovers from earlier deploy
+mechanisms (and `AZURE_WEBHOOK_URL*` embed publishing credentials — rotate if exposed).
 
 ---
 
 ## 6. Azure resources (inventory + how to verify)
 
-| Resource | Status | Evidence / how to verify |
+| Resource | Status | Notes (as of 2026-05-25 review) |
 |---|---|---|
-| Web App **SOMGrantMatcher** (prod, `:latest`) | 🔶 in use | GitHub var `AZURE_WEBAPP_NAME`; serves prod |
-| Web App **somgrantmatcher-dev** (dev, `:dev`) | 🔶 in use | GitHub var `AZURE_WEBAPP_NAME_DEV` |
-| PostgreSQL flexible server `somgrantmatcher-server` | 🔶 **orphaned** | Verify: Metrics → "Active Connections" ≈ 0; Storage ≈ empty; `\dt` shows no app tables |
-| MySQL flexible server `somgrantmatcher-server` | 🔶 **orphaned** | Same checks; code has no MySQL driver either |
+| App Service **SOMGrantMatcher** — **production slot** (`somgrantmatcher`, `:latest`) | ✅ in use | The live app; serves dashboard + emails |
+| App Service **dev slot** (`somgrantmatcher-dev`, `:dev`) | ⚠️ **not used → decommission** | A deployment *slot* of the same app, not a separate app. User confirmed unused. |
+| PostgreSQL flexible server `somgrantmatcher-server` | ⚠️ **orphaned (confirmed)** | Private access; ~6.5 baseline connections = platform, not the app; ~9 GiB ≠ matcher data. Code has no PG driver. |
+| MySQL flexible server `somgrantmatcher-server` | 🔶 **orphaned** | No MySQL driver/connection in code either |
 | `AZURE_POSTGRESQL_CONNECTIONSTRING` app setting | ⚠️ unused | Injected by Service Connector; code never reads it |
-| Azure Files mount at `/app/data` | ⚠️ **MISSING** | Configuration → Path mappings shows no storage mount |
-| Persistent storage account / file share | 🔶 unknown | Needed for the mount; may need creating |
+| Azure Files mount at `/app/data` (production slot) | ✅ **ADDED 2026-05-25** | SMB share `grant-matcher-data`; data now persists |
+| Storage account + file share | ✅ created | `grant-matcher-data` (prod). `grant-matcher-data-dev` created but unused (dev slot retired). |
 
-### Decisive checks to confirm the DBs are unused
-1. PostgreSQL server → **Monitoring → Metrics → "Active Connections"** over 7 days → expect ≈ 0.
-2. PostgreSQL server → **Storage used** → expect near-empty.
-3. Connect via Cloud Shell `psql` (or pgAdmin) → `\dt` → expect **no application tables**.
+### Deployment mechanism (confirmed)
+- Production slot → **Deployment Center → Containers**: pulls `ghcr.io/somis-ai/som-grant-matcher:latest`,
+  **Continuous deployment = On** with a registry **Webhook URL**.
+- ⚠️ In practice the webhook is **not auto-called** (ghcr.io doesn't, and the CI step that called it
+  was removed — "Basic Auth blocked by tenant policy"). So new images do **not** auto-deploy;
+  the reliable method is to **restart the production slot** to pull the latest image.
+- ⚠️ The webhook URL embeds publishing credentials — if it's ever exposed, **reset publishing
+  credentials** (Deployment Center → reset, or download a fresh publish profile).
 
 ---
 
 ## 7. Problems & risks (prioritized)
 
-1. ⚠️ **No `/app/data` persistence** → all data lost on every restart/redeploy. _This is the
-   "cleared stats" cause._ (Fix: §8 option A or B.)
+1. ✅ **RESOLVED (2026-05-25): `/app/data` persistence added** (Option A — SMB Azure Files mount
+   on the production slot). Was the "cleared stats" cause; data now survives restarts.
 2. ✅ **RESOLVED (2026-05-25): `FORCE_SCRAPE` honored again.** `run_scheduler` now reads it and
    applies a fresh re-scrape on the first scheduled run. Also added `python main.py --refresh`
    to populate the data/dashboard on demand without sending email.
@@ -173,23 +180,27 @@ current `azure-deploy.yml`; they're inert leftovers from earlier deploy mechanis
    possible via workflow_dispatch (select `main`). Previously a push to `main` would have built
    a `:latest` image from outdated code and could have overwritten prod.
 4. ⚠️ **Default dashboard credentials** (`admin`/`changeme`) and **random `SECRET_KEY`** if unset
-   — set `DASHBOARD_USER`/`DASHBOARD_PASS`/`SECRET_KEY` in both Web Apps.
-5. ⚠️ **Two Web Apps must use separate file shares / data** — never share one `data/` between
-   prod and dev, or `seen_grants`/match history will collide.
+   — set `DASHBOARD_USER`/`DASHBOARD_PASS`/`SECRET_KEY` on the production slot.
+5. ⚠️ **Unused dev slot** (`somgrantmatcher-dev`) — costs resources and caused the dev/azure
+   confusion. Decommission it (user confirmed unused). If kept, it must use a *separate* file
+   share from production or `seen_grants`/match history would collide.
 6. 🔶 **Paying for two unused DB servers** — flexible servers aren't free; ~$15–30+/mo each.
-7. Cosmetic: leftover GitHub secrets/variables; stale `GMAIL_*`/`ALERT_RECIPIENTS` refs in
-   standalone helper scripts; "deploy" workflow name is misleading (build-only).
+   Stop first, watch a week, then delete (confirm nothing else uses them).
+7. ⚠️ **`AZURE_WEBHOOK_URL*` secrets embed publishing credentials** — rotate publishing creds if
+   ever exposed; prune these secrets (unused by current CI).
+8. Cosmetic: leftover GitHub publish-profile/webhook secrets; stale `GMAIL_*`/`ALERT_RECIPIENTS`
+   refs in standalone helper scripts; "deploy" workflow name is misleading (build-only).
 
 ---
 
 ## 8. Recommendations & the persistence decision
 
-### Option A — Keep the filesystem model (fast)
-1. Create a Storage Account + File Share; mount it at **`/app/data`** on **each** Web App
-   (separate shares for prod vs dev). _Resolves "cleared stats."_
+### Option A — Keep the filesystem model (fast)  ✅ CHOSEN 2026-05-25
+1. ✅ Mount Azure Files at **`/app/data`** on the **production slot** (done — share
+   `grant-matcher-data`). _Resolved "cleared stats."_
 2. Delete/stop the **two orphaned DB servers** + remove `AZURE_POSTGRESQL_CONNECTIONSTRING`
-   (after confirming unused per §6). Stops the cost.
-3. Apply the `FORCE_SCRAPE` fix + a `--refresh` command (pending) to repopulate on demand.
+   (after confirming unused per §6). Stops the cost. _(Pending.)_
+3. ✅ `FORCE_SCRAPE` fix + `--refresh` command shipped on `dev` (pending merge to `azure`).
 
 _Pros:_ matches the code as written; minimal change. _Cons:_ App Service file mounts can be
 slow/finicky; SQLite on a network share is not ideal for concurrent access.
@@ -208,25 +219,31 @@ adds a dependency.
 - [x] Fix `FORCE_SCRAPE` no-op; add `--refresh` (no-email repopulate). (done 2026-05-25)
 - [x] Remove `main` from the deploy trigger (done 2026-05-25; kept as manual fallback).
 - [ ] Delete `ALERT_RECIPIENTS` app setting; set `DAILY_/WEEKLY_RECIPIENTS`.
-- [ ] Set `DASHBOARD_USER`/`DASHBOARD_PASS`/`SECRET_KEY` on both Web Apps.
+- [ ] Set `DASHBOARD_USER`/`DASHBOARD_PASS`/`SECRET_KEY` on the production slot.
 - [ ] Prune leftover GitHub secrets/variables (publish profiles, webhook URLs) if not reused.
-- [ ] Decide whether the **dev** Web App is still needed; if not, decommission it + its image build.
+- [ ] Decommission the unused **dev slot** (`somgrantmatcher-dev`) + optionally stop building `:dev`.
+- [ ] Delete the unused `grant-matcher-data-dev` file share.
+- [ ] Rotate publishing credentials (the webhook URL with embedded creds was exposed).
 
 ---
 
-## 9. Open questions for you to confirm in Azure
-1. Do the two DB servers show ~0 connections / near-empty storage (i.e., orphaned)? (§6)
-2. Are both Web Apps (`SOMGrantMatcher`, `somgrantmatcher-dev`) actually in use, or is dev retired?
-3. How does each Web App currently get a new image — manual restart, or "Continuous deployment"
-   enabled against the GHCR tag? (Determines whether pushes auto-deploy.)
-4. ✅ **DECIDED (2026-05-25): Option A — filesystem mount.** Add an Azure Files mount at
-   `/app/data` on the Web App(s); retire the two orphaned DB servers separately (stop first,
-   delete after confirming nothing else uses them).
+## 9. Open questions — resolved during the 2026-05-25 Azure review
+1. ✅ **DB servers orphaned?** Yes (w.r.t. this app). PostgreSQL is **Private access**
+   (VNet-isolated — unreachable from Cloud Shell, and from the app, which isn't VNet-integrated).
+   ~6.5 avg connections = Azure platform baseline, not the app. Storage 7.16% of 128 GiB (~9 GiB)
+   — not the matcher's data (which is MB-scale); likely WAL/system baseline. Code has no PG/MySQL
+   driver. ⚠️ Before *deleting* either server, confirm no *other* workload uses it (can't see
+   beyond this repo) — safer to **Stop** and watch a week, then delete.
+2. ✅ **Topology:** ONE App Service (`SOMGrantMatcher`) with TWO slots — `somgrantmatcher`
+   (production) and `somgrantmatcher-dev` (slot). The dev slot is **not used → decommission**.
+3. ✅ **Deployment:** production slot uses **Continuous Deployment** against
+   `ghcr.io/...:latest` with a registry webhook — but the webhook isn't auto-called (ghcr.io
+   doesn't, and the CI call step was removed due to tenant Basic-Auth policy). **Effective method:
+   restart the production slot to pull a new `:latest`.**
+4. ✅ **DECIDED: Option A — filesystem mount** (done on production slot). Retire the orphaned DB
+   servers separately.
 
-### Confirmed during the 2026-05-25 Azure review
-- PostgreSQL server: **Private access** (VNet-isolated — unreachable from Cloud Shell, and from
-  the app, which isn't VNet-integrated). ~6.5 avg connections = Azure platform baseline, not the
-  app. Storage 7.16% of 128 GiB (~9 GiB) — not the matcher's data (which is MB-scale); likely
-  WAL/system baseline. **Conclusion: orphaned w.r.t. this app, confirmed.**
-- ⚠️ Before deleting either DB server, confirm no *other* workload uses it (we can't see beyond
-  this repo). Safer: **Stop** and watch for a week, then delete.
+### Remaining open items
+- Merge `dev → azure` to ship the `FORCE_SCRAPE` fix, `--refresh`, `main`-trigger removal, and
+  this audit; then restart the production slot to deploy.
+- Decommission the dev slot; stop/delete the two DB servers; rotate publishing credentials.
