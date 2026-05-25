@@ -80,6 +80,11 @@ matching:
                                           # Highest-confidence matches are kept. Lowered from 50 —
                                           # broad infrastructure grants (cancer informatics, NCORP,
                                           # DoW prostate) were filling 50 slots down to ~38% confidence.
+  max_grant_text_chars: 3000             # Cap the grant text used for keyword matching. Some scraped
+                                          # pages (NSF program pages, foundation portals) carry the whole
+                                          # page as searchable text, which matched 500-600 faculty at
+                                          # inflated 99% confidence. Truncating bounds that surface area.
+                                          # 0 = no cap. Grants.gov title+synopsis is well under 3000.
   min_idf_for_match: 1.5                 # Minimum IDF for a grant keyword to count toward matching.
                                           # Keywords below this are too common across faculty.
                                           # IDF 1.5 ≈ keyword appears in ~60% of faculty.
