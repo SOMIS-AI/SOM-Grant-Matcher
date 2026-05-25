@@ -2,10 +2,14 @@ name: Build and Deploy to Azure Web App
 
 on:
   push:
+    # NOTE: `main` is intentionally NOT auto-triggered. It is a stale branch kept
+    # only as an emergency fallback (old code). Auto-building it would publish a
+    # :latest image from outdated code and could overwrite production. If a
+    # fallback build from `main` is ever genuinely needed, run this workflow
+    # manually via "Run workflow" (workflow_dispatch) and select the `main` branch.
     branches:
-      - main
-      - azure
-      - dev
+      - azure          # production → builds :latest
+      - dev            # development → builds :dev
   workflow_dispatch:
 
 env:

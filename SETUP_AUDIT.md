@@ -110,9 +110,11 @@ All runtime data is written to the **container filesystem**, root `data/` and `l
 ### Branches
 - `dev` — working branch; pushes build the `:dev` image. ✅
 - `azure` — production branch (default/HEAD); pushes build the `:latest` image. ✅
-- `main` — ⚠️ **stale/divergent**: only commit not on azure is "Add files via upload"; it is
-  missing all recent work. **But `main` is still in the deploy workflow trigger list**, so a
-  push to `main` would build a `:latest` image from stale code. Risk — see §7.
+- `main` — **stale/divergent**: only commit not on azure is "Add files via upload"; it is
+  missing all recent work. Retained intentionally as an **emergency fallback** (old code).
+  As of 2026-05-25 it is **removed from the deploy-workflow auto-trigger** so a push to `main`
+  no longer builds an image. A fallback build from `main` can still be done **manually** via
+  the workflow's "Run workflow" (workflow_dispatch), selecting the `main` branch.
 
 ### Workflows (`.github/workflows/`)
 - **`azure-deploy.yml`** ("Build and Deploy to Azure Web App") — active. Triggers on push to
@@ -165,9 +167,10 @@ current `azure-deploy.yml`; they're inert leftovers from earlier deploy mechanis
    "cleared stats" cause._ (Fix: §8 option A or B.)
 2. ⚠️ **`FORCE_SCRAPE` is currently a no-op** — regression introduced when `run.py` was moved to
    the scheduler; `run_scheduler` never reads it. (Easy fix, pending.)
-3. ⚠️ **`main` branch is stale but still a deploy trigger** — a push to `main` would build a
-   `:latest` image from outdated code and could overwrite prod. (Fix: remove `main` from the
-   workflow trigger, or delete/sync `main`.)
+3. ✅ **RESOLVED (2026-05-25): `main` removed from the deploy auto-trigger.** `main` is a stale
+   emergency-fallback branch; it no longer auto-builds. A manual fallback build is still
+   possible via workflow_dispatch (select `main`). Previously a push to `main` would have built
+   a `:latest` image from outdated code and could have overwritten prod.
 4. ⚠️ **Default dashboard credentials** (`admin`/`changeme`) and **random `SECRET_KEY`** if unset
    — set `DASHBOARD_USER`/`DASHBOARD_PASS`/`SECRET_KEY` in both Web Apps.
 5. ⚠️ **Two Web Apps must use separate file shares / data** — never share one `data/` between
@@ -202,7 +205,7 @@ adds a dependency.
 
 ### Cleanup checklist (independent of A/B)
 - [ ] Fix `FORCE_SCRAPE` no-op; add `--refresh` (no-email repopulate).
-- [ ] Remove `main` from the deploy trigger (or delete/sync `main`).
+- [x] Remove `main` from the deploy trigger (done 2026-05-25; kept as manual fallback).
 - [ ] Delete `ALERT_RECIPIENTS` app setting; set `DAILY_/WEEKLY_RECIPIENTS`.
 - [ ] Set `DASHBOARD_USER`/`DASHBOARD_PASS`/`SECRET_KEY` on both Web Apps.
 - [ ] Prune leftover GitHub secrets/variables (publish profiles, webhook URLs) if not reused.
