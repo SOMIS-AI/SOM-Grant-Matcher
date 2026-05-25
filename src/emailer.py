@@ -980,6 +980,28 @@ def send_diagnostic_email(config: dict, matcher_diag: dict, scraper_health: dict
         html_content=html_body,
     )
 
+    # Attach the full diagnostic data as machine-readable JSON so it can be
+    # forwarded and analysed directly (far easier than parsing the HTML email).
+    try:
+        import base64
+        import json as _json
+        from sendgrid.helpers.mail import (Attachment, FileContent, FileName,
+                                           FileType, Disposition)
+        payload = _json.dumps({
+            "generated_at": datetime.utcnow().isoformat(),
+            "matcher_diagnostic": matcher_diag,
+            "scraper_health": scraper_health,
+        }, indent=2, default=str)
+        message.attachment = Attachment(
+            FileContent(base64.b64encode(payload.encode("utf-8")).decode()),
+            FileName(f"grant_matcher_diagnostic_{datetime.utcnow().strftime('%Y-%m-%d')}.json"),
+            FileType("application/json"),
+            Disposition("attachment"),
+        )
+        logger.info(f"Attached diagnostic JSON ({len(payload)//1024} KB)")
+    except Exception as e:
+        logger.warning(f"Could not attach diagnostic JSON: {e}")
+
     try:
         sg = SendGridAPIClient(api_key)
         response = sg.send(message)
