@@ -277,6 +277,9 @@ external_sources:
     - "ucla_dgsom"
     - "miami_miller"
     - "aamc_grants"
+    # stanford_rmg scrapes Stanford's internal research-admin site (process pages
+    # like "Budget Development", "Subaward Closeout") — not a funding source.
+    - "stanford_rmg"
   #
   # Available source keys:
   #   Tier 3 — Major Biomedical Research Funders:
