@@ -165,8 +165,9 @@ current `azure-deploy.yml`; they're inert leftovers from earlier deploy mechanis
 
 1. ⚠️ **No `/app/data` persistence** → all data lost on every restart/redeploy. _This is the
    "cleared stats" cause._ (Fix: §8 option A or B.)
-2. ⚠️ **`FORCE_SCRAPE` is currently a no-op** — regression introduced when `run.py` was moved to
-   the scheduler; `run_scheduler` never reads it. (Easy fix, pending.)
+2. ✅ **RESOLVED (2026-05-25): `FORCE_SCRAPE` honored again.** `run_scheduler` now reads it and
+   applies a fresh re-scrape on the first scheduled run. Also added `python main.py --refresh`
+   to populate the data/dashboard on demand without sending email.
 3. ✅ **RESOLVED (2026-05-25): `main` removed from the deploy auto-trigger.** `main` is a stale
    emergency-fallback branch; it no longer auto-builds. A manual fallback build is still
    possible via workflow_dispatch (select `main`). Previously a push to `main` would have built
@@ -204,7 +205,7 @@ adds a dependency.
 > willing to invest, do **B** and keep one Postgres server (delete the MySQL one regardless).
 
 ### Cleanup checklist (independent of A/B)
-- [ ] Fix `FORCE_SCRAPE` no-op; add `--refresh` (no-email repopulate).
+- [x] Fix `FORCE_SCRAPE` no-op; add `--refresh` (no-email repopulate). (done 2026-05-25)
 - [x] Remove `main` from the deploy trigger (done 2026-05-25; kept as manual fallback).
 - [ ] Delete `ALERT_RECIPIENTS` app setting; set `DAILY_/WEEKLY_RECIPIENTS`.
 - [ ] Set `DASHBOARD_USER`/`DASHBOARD_PASS`/`SECRET_KEY` on both Web Apps.
@@ -218,4 +219,14 @@ adds a dependency.
 2. Are both Web Apps (`SOMGrantMatcher`, `somgrantmatcher-dev`) actually in use, or is dev retired?
 3. How does each Web App currently get a new image — manual restart, or "Continuous deployment"
    enabled against the GHCR tag? (Determines whether pushes auto-deploy.)
-4. Persistence direction: **Option A (filesystem mount)** or **Option B (migrate to Postgres)**?
+4. ✅ **DECIDED (2026-05-25): Option A — filesystem mount.** Add an Azure Files mount at
+   `/app/data` on the Web App(s); retire the two orphaned DB servers separately (stop first,
+   delete after confirming nothing else uses them).
+
+### Confirmed during the 2026-05-25 Azure review
+- PostgreSQL server: **Private access** (VNet-isolated — unreachable from Cloud Shell, and from
+  the app, which isn't VNet-integrated). ~6.5 avg connections = Azure platform baseline, not the
+  app. Storage 7.16% of 128 GiB (~9 GiB) — not the matcher's data (which is MB-scale); likely
+  WAL/system baseline. **Conclusion: orphaned w.r.t. this app, confirmed.**
+- ⚠️ Before deleting either DB server, confirm no *other* workload uses it (we can't see beyond
+  this repo). Safer: **Stop** and watch for a week, then delete.

@@ -12,6 +12,8 @@ Usage:
   python main.py --test-email    # Send a synthetic test email and exit
   python main.py --send-digest [--days N] [--to a@b.com,c@d.com]
                                  # Manually send a digest of matches from the last N days (default 1)
+  python main.py --refresh [--scrape]
+                                 # Populate data/dashboard WITHOUT emailing (warm a fresh mount)
 """
 
 import argparse
@@ -306,6 +308,30 @@ def run_manual_digest(config: dict, recipients: list = None, days: int = 1):
         logger.error(f"Manual digest failed: {e}", exc_info=True)
 
 
+def run_refresh(config: dict, force_scrape: bool = False):
+    """
+    Run the pipeline once to (re)populate the data files and dashboard WITHOUT
+    sending any email. Useful to warm a fresh /app/data mount or refresh the
+    dashboard on demand. Add force_scrape=True for a full faculty re-scrape.
+
+    Note: the pipeline marks fetched grants as "seen", so grants consumed by a
+    refresh won't reappear in the next scheduled digest. Intended for one-off
+    recovery/warm-up, not routine use.
+    """
+    logger = logging.getLogger("main")
+    logger.info("Manual refresh: running pipeline to populate data (no email will be sent)...")
+    result = run_pipeline(config, force_scrape=force_scrape)
+    if result is None:
+        logger.warning("Refresh: pipeline aborted (no faculty loaded or grant fetch failed).")
+        return
+    matched_results, _diag, _health = result
+    n_matches = sum(len(r["matches"]) for r in matched_results)
+    logger.info(
+        f"Refresh complete: data written for {len(matched_results)} grant(s) / "
+        f"{n_matches} match(es). No email sent."
+    )
+
+
 # ── Scheduler ─────────────────────────────────────────────────────────────────
 
 _WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday",
@@ -410,6 +436,12 @@ def run_scheduler(config: dict):
     except Exception as e:
         logger.error(f"Restart notification failed: {e}", exc_info=True)
 
+    # FORCE_SCRAPE=true forces a fresh faculty re-scrape on the FIRST scheduled run
+    # (e.g. after a deploy that changed keyword extraction). Applied once, then cleared.
+    force_scrape = os.environ.get("FORCE_SCRAPE", "").lower() in ("1", "true", "yes")
+    if force_scrape:
+        logger.info("FORCE_SCRAPE is set — the first scheduled run will re-scrape faculty.")
+
     while True:
         now = datetime.now(tz)
         fire_at = _next_fire(now, hour)
@@ -436,7 +468,7 @@ def run_scheduler(config: dict):
         logger.info(f"Scheduled run firing at {fire_time.isoformat()}")
 
         try:
-            result = run_pipeline(config)
+            result = run_pipeline(config, force_scrape=force_scrape)
         except Exception as e:
             logger.error(f"Pipeline error during scheduled run: {e}", exc_info=True)
             continue
@@ -444,6 +476,7 @@ def run_scheduler(config: dict):
         if result is None:
             logger.warning("Pipeline aborted (no faculty or fetch failed) — no emails sent this run.")
             continue
+        force_scrape = False  # only force on the first successful run
         matched_results, matcher_diag, scraper_health = result
 
         # ── Daily digest (every day) ─────────────────────────────────────────
@@ -492,6 +525,9 @@ def main():
                         help="Force re-scrape of faculty profiles")
     parser.add_argument("--test-email", action="store_true",
                         help="Send a test email to verify configuration")
+    parser.add_argument("--refresh", action="store_true",
+                        help="Run the pipeline once to populate data/dashboard WITHOUT sending email, then exit "
+                             "(use with --scrape to force a full faculty re-scrape)")
     parser.add_argument("--send-digest", action="store_true",
                         help="Manually send a digest of matches from the last N days, then exit")
     parser.add_argument("--days", type=int, default=1,
@@ -513,6 +549,10 @@ def main():
 
     if args.test_email:
         run_test_email(config)
+        return
+
+    if args.refresh:
+        run_refresh(config, force_scrape=args.scrape)
         return
 
     if args.send_digest:
