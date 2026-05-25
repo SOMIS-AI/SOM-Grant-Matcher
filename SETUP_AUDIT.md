@@ -247,3 +247,37 @@ adds a dependency.
 - Merge `dev → azure` to ship the `FORCE_SCRAPE` fix, `--refresh`, `main`-trigger removal, and
   this audit; then restart the production slot to deploy.
 - Decommission the dev slot; stop/delete the two DB servers; rotate publishing credentials.
+
+---
+
+## 10. Security / repo settings checklist
+
+Reviewed 2026-05-25. Ordered by priority (most urgent first).
+
+### Credentials (most important)
+- [ ] ⚠️ **Rotate App Service publishing credentials.** The Deployment Center registry webhook
+  URL embeds a publishing username:password and was exposed in chat. Reset it:
+  Web App → **Deployment Center → … → reset publishing credentials** (or download a fresh
+  publish profile). This also invalidates the leaked `AZURE_WEBHOOK_URL` GitHub secret.
+- [ ] **Set real dashboard credentials.** The Flask dashboard defaults to `admin` / `changeme`
+  and a random per-restart `SECRET_KEY` (logins drop on restart). Set Application Settings
+  `DASHBOARD_USER`, `DASHBOARD_PASS`, and a fixed `SECRET_KEY` on the production slot.
+- ✅ **No secrets in the repo.** Verified: code has no API keys/passwords; `config.yaml` holds
+  placeholders only; real secrets live in Azure Application Settings + GitHub Secrets (the latter
+  are never exposed, even in a public repo).
+
+### Repository visibility
+- [ ] **Make the repo Private** (currently **Public**). Low *credential* risk (secrets aren't in
+  code), but it stops information disclosure (code, faculty-data handling, and this audit's infra
+  details). Requires **Admin** on the repo — the maintainer (`sfstefan`) has only **Write**, so a
+  **SOMIS-AI org owner** must do it: Repo → Settings → General → Danger Zone → Change visibility.
+  - Going private does **not** break CI (Actions uses `GITHUB_TOKEN`) or deploys (the GHCR
+    **package** visibility is independent and already Private with Azure pull creds). 0 forks.
+  - Minor trade-off: private repos draw on the org's Actions-minute quota (2,000/mo free);
+    builds are ~5 min and infrequent, so this is a non-issue.
+
+### Hygiene / cleanup
+- [ ] Prune leftover GitHub secrets/variables no longer used by CI: `AZURE_WEBAPP_PUBLISH_PROFILE(_DEV)`,
+  `AZURE_WEBHOOK_URL(_DEV)`, `AZURE_WEBAPP_NAME(_DEV)`.
+- [ ] Confirm the GHCR image **package** is Private (org → Packages → `som-grant-matcher` →
+  package settings), keeping Azure's pull credentials valid.
