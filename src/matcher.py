@@ -561,6 +561,7 @@ def find_matches(grants, faculty, config=None):
     min_confidence   = matching_cfg.get("min_confidence_score", 35)  # default 35 — raised from 20 to suppress weak matches
     max_per_grant    = matching_cfg.get("max_matches_per_grant", DEFAULT_MAX_MATCHES_PER_GRANT)
     min_idf_match    = matching_cfg.get("min_idf_for_match", DEFAULT_MIN_IDF_FOR_MATCH)
+    max_grant_chars  = matching_cfg.get("max_grant_text_chars", 3000)
 
     # ── Diagnostic data collector — gathered throughout the run, used by diagnostic email ──
     _diag = {
@@ -643,6 +644,14 @@ def find_matches(grants, faculty, config=None):
             skipped_admin += 1
             skipped_irrelevant += 1  # count in the same bucket for diagnostics
             continue
+
+        # Cap overly long scraped page text (some NSF/foundation pages carry the
+        # whole page) so a single grant can't match hundreds of faculty at
+        # inflated confidence. Applied in-place so _keyword_matches_for_grant,
+        # which re-reads searchable_text, sees the same bound. searchable_text is
+        # internal only (not persisted/emailed), so truncating here is safe.
+        if max_grant_chars and grant.get("searchable_text"):
+            grant["searchable_text"] = grant["searchable_text"][:max_grant_chars]
 
         grant_text  = normalize(grant["searchable_text"])
         grant_title = normalize(grant["title"])

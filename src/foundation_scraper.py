@@ -317,9 +317,14 @@ def _is_junk_title(title):
     Filter out navigation links, UI elements, and non-grant page titles
     that get picked up by the broad link scanner.
     """
-    t = title.lower().strip()
+    t = re.sub(r"\s+", " ", (title or "").lower()).strip(" :–—-•|\t")
 
-    # Exact matches — these are never grant titles
+    # Too short to be a real opportunity title
+    if len(t) < 4:
+        return True
+
+    # Exact matches — section headers / nav / UI that are never grant titles.
+    # (Includes nav junk observed from AHA/ACS/AACR/Simons portal scrapes.)
     JUNK_EXACT = {
         "learn more", "read more", "see more", "view more", "show more",
         "view all", "see all", "browse all", "load more",
@@ -328,12 +333,32 @@ def _is_junk_title(title):
         "back to top", "skip to content", "skip to main content",
         "home", "menu", "close", "search", "share",
         "next", "previous", "back",
+        # bare section nouns
+        "funding", "funding opportunity", "opportunities", "grants", "awards",
+        "fellowships", "programs", "program", "resources", "overview",
+        "guidelines", "eligibility", "events", "news", "about", "contact", "faq",
+        "research", "research funding", "research categories",
+        "acs research categories", "research program areas", "research programs",
+        "researcher summits", "upcoming events", "funded research",
+        "research training and fellowships", "research funding impact",
+        "research findings", "research accomplishments", "total grant resources",
+        "career development awards", "information for current grantees",
+        "policies & procedures", "policies and procedures", "policies",
+        "rfa details", "apply for funding", "grant application and review process",
+        "women in aha research", "stand up to cancer", "funding partnerships",
+        "aacr efforts to protect nih funding", "award instructions",
+        "see application resources", "discover research findings",
     }
     if t in JUNK_EXACT:
         return True
 
-    # Starts-with patterns — navigation and UI chrome
+    # Starts-with patterns — navigation verbs and UI chrome
     JUNK_PREFIXES = [
+        # navigation verbs (real grant titles don't start with these)
+        "view ", "see ", "discover ", "explore ", "browse ", "read ",
+        "learn ", "watch ", "meet ", "find out", "apply for", "applying ",
+        "partnering with", "information for", "how to apply",
+        # existing
         "application guidelines", "application instructions",
         "guidelines and information", "meeting dates",
         "grants calendar", "grant calendar", "events calendar",
@@ -358,6 +383,9 @@ def _is_junk_title(title):
         "cookie policy", "privacy policy", "terms of use",
         "annual report", "press release", "newsletter signup",
         "board of directors", "staff directory",
+        "funding opportunities",          # "Upcoming/Internal/… Funding Opportunities"
+        "grant cycle changes", "application and review process",
+        "success rates",
     ]
     for pattern in JUNK_CONTAINS:
         if pattern in t:
@@ -852,6 +880,14 @@ def fetch_all_external_grants(seen_ids, config):
 
         try:
             grants = scraper_fn(seen_ids)
+            # Central junk gate: drop navigation/section/UI "grants" that the
+            # broad link scanners pick up (e.g. "View research…", "RFA Details",
+            # "Funding Opportunities"), regardless of which scraper produced them.
+            raw_count = len(grants)
+            grants = [g for g in grants if not _is_junk_title(g.get("title", ""))]
+            dropped = raw_count - len(grants)
+            if dropped:
+                logger.info(f"  '{key}': dropped {dropped} junk/nav title(s), kept {len(grants)}")
             all_grants.extend(grants)
             sources_succeeded += 1
             per_source_results[key] = len(grants)
