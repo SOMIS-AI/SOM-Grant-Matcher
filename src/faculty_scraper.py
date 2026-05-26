@@ -163,7 +163,41 @@ def _is_boilerplate_kw(kw: str) -> bool:
 
 # ── Pass 1: Department pages ──────────────────────────────────────────────────
 
+# Degree/credential tokens that can follow a name in "Last, First, MD, Title".
+_CREDENTIAL_RE = re.compile(
+    r"^(MD|PhD|DO|DrPH|DPT|MPH|MSc|MS|DSc|ScD|EdD|DDS|DMD|MBBS|MBChB|BMBS|MGC|MHS|"
+    r"Dpharm|PharmD|MBA|MPP|JD|RN|APRN|BA|BS|MEng|FACP|FACS|FACOG)\b",
+    re.IGNORECASE,
+)
+
+
+def _normalize_profile_name(raw: str) -> str:
+    """
+    Convert the redesigned site's "Last, First Middle, Credentials, Title" string
+    into a "First [Middle] Last" name. This matters because every enrichment source
+    (PubMed/ORCID/NIH RePORTER/ClinicalTrials/Europe PMC) parses the name as
+    "First … Last" — a last-name-only value silently breaks all of them.
+    """
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    last, first = parts[0], parts[1]
+    # The 2nd comma-field should be a given name, not a credential/title.
+    if _CREDENTIAL_RE.match(first) or len(first) > 40:
+        return last
+    return f"{first} {last}".strip()
+
+
 def scrape_department_page(session: requests.Session, url: str) -> list[dict]:
+    """
+    Parse a redesigned UMSOM department listing page. Each faculty member is a
+    structured block exposing `data-profile-name` (Last, First, creds, title) and
+    `data-profile-link` (profile URL); the department name is in the page <title>.
+    Keywords/email are NOT on this page — they come from the individual profile
+    in Pass 2.
+    """
     try:
         resp = session.get(url, headers=HEADERS, timeout=30)
         resp.raise_for_status()
@@ -171,105 +205,42 @@ def scrape_department_page(session: requests.Session, url: str) -> list[dict]:
         logger.warning(f"Failed to fetch {url}: {e}")
         return []
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+    html = resp.text
 
+    # Department from <title> (e.g. "Dermatology - All Faculty" -> "Dermatology")
     department = ""
-    h1 = soup.select_one("h1")
-    if h1:
-        department = clean_text(h1.get_text()).replace(" | University of Maryland School of Medicine", "")
+    tm = re.search(r"<title>(.*?)</title>", html, re.S | re.I)
+    if tm:
+        department = clean_text(re.sub(r"<[^>]+>", " ", tm.group(1)))
+        department = re.sub(r"\s*[-–|]\s*(all|primary|secondary)\s*faculty.*$", "",
+                            department, flags=re.I).strip()
+        department = re.sub(r"\s*\|\s*University of Maryland.*$", "", department, flags=re.I).strip()
+
+    # Structured faculty blocks, in document order (counts match: 1 name : 1 link).
+    names = re.findall(r'class="data-profile-name"[^>]*>(.*?)</strong>', html, re.S)
+    links = re.findall(r'class="data-profile-link"\s+href="([^"]+)"', html)
 
     faculty = []
-    body_text = soup.get_text(separator="\n")
-    lines = [l.strip() for l in body_text.split("\n") if l.strip()]
+    seen = set()
+    for raw_name, href in zip(names, links):
+        raw_name = clean_text(re.sub(r"<[^>]+>", " ", raw_name))
+        name = _normalize_profile_name(raw_name)
+        profile_url = urljoin(BASE_URL, href.strip())
+        if not name or profile_url in seen:
+            continue
+        seen.add(profile_url)
+        faculty.append({
+            "name": name,
+            "url": profile_url,
+            "profile_url": profile_url,
+            "department": department,
+            "email": "",                 # captured from the profile page in Pass 2
+            "keywords": [],              # extracted from the profile page in Pass 2
+            "keyword_source": "",
+            "scraped_at": datetime.utcnow().isoformat(),
+        })
 
-    profile_url_map = {}
-    for a in soup.find_all("a", href=True, string=re.compile(r"View full profile", re.I)):
-        href = a["href"]
-        full_url = urljoin(BASE_URL, href)
-        parent = a.parent
-        for _ in range(5):
-            if parent:
-                text = clean_text(parent.get_text())
-                name_match = re.search(
-                    r"([A-Z][a-zA-Z\-']+(?:,\s*[A-Z][a-zA-Z\-']+)*)\s*,\s*(?:PhD|MD|DO|DrPH|DPT|MPH|MS|DSc|MBBS)",
-                    text
-                )
-                if name_match:
-                    profile_url_map[name_match.group(1).lower()] = full_url
-                    break
-                parent = parent.parent
-
-    current_name = ""
-    current_email = ""
-    current_profile_url = ""
-
-    for line in lines:
-        email_match = re.search(r"[\w.+-]+@[\w.-]+\.edu", line)
-        if email_match:
-            current_email = email_match.group(0)
-
-        elif re.search(r"\b(PhD|MD|DO|DrPH|DPT|MPH|MS|DSc|DDS|DMD|MBBS|MBChB|DrMed|MGC|MHS|DrPH|Dpharm)\b", line):
-            if len(line) < 120 and not any(skip in line.lower() for skip in [
-                "view full", "copyright", "university of maryland", "school of medicine",
-                "skip to", "quick links", "search"
-            ]) and re.search(r"[A-Z][a-z]+\s+[A-Z][a-z]", line):
-                current_name = clean_text(line)
-                name_fragment = current_name.split(",")[0].lower()
-                current_profile_url = profile_url_map.get(name_fragment, "")
-
-        elif re.match(r"^keywords?\s*:", line, re.IGNORECASE):
-            kw_text = re.sub(r"^keywords?\s*:\s*", "", line, flags=re.IGNORECASE)
-            keywords = [k.strip() for k in re.split(r"[,;]", kw_text)
-                        if k.strip() and len(k.strip()) > 2 and not _is_boilerplate_kw(k)]
-            if current_name:
-                faculty.append({
-                    "name": current_name,
-                    "url": current_profile_url or url,
-                    "profile_url": current_profile_url,
-                    "department": department,
-                    "email": current_email,
-                    "keywords": keywords,
-                    "keyword_source": "umsom_profile",
-                    "scraped_at": datetime.utcnow().isoformat()
-                })
-                current_email = ""
-
-    names_with_keywords = {f["name"].lower() for f in faculty}
-    for a in soup.find_all("a", href=True, string=re.compile(r"View full profile", re.I)):
-        profile_url = urljoin(BASE_URL, a["href"])
-        parent = a.parent
-        name = ""
-        email = ""
-        for _ in range(6):
-            if parent:
-                text = clean_text(parent.get_text())
-                nm = re.search(
-                    r"([A-Z][a-zA-Z'\-\.]+(?:[\s,]+[A-Z][a-zA-Z'\-\.]+)*)\s*,\s*(?:PhD|MD|DO|DrPH|DPT|MPH|MS|DSc|MBBS|MBChB|DrMed|MGC|MHS|Dpharm|DDS|BA|BS)",
-                    text
-                )
-                if nm:
-                    name = clean_text(nm.group(0).split(",")[0])
-                em = re.search(r"[\w.+-]+@[\w.-]+\.edu", text)
-                if em:
-                    email = em.group(0)
-                if name:
-                    break
-                parent = parent.parent
-
-        if name and name.lower() not in names_with_keywords:
-            faculty.append({
-                "name": name,
-                "url": profile_url,
-                "profile_url": profile_url,
-                "department": department,
-                "email": email,
-                "keywords": [],
-                "keyword_source": "",
-                "scraped_at": datetime.utcnow().isoformat()
-            })
-            names_with_keywords.add(name.lower())
-
-    logger.info(f"  {department or url}: {len(faculty)} faculty ({sum(1 for f in faculty if f['keywords'])} with keywords)")
+    logger.info(f"  {department or url}: {len(faculty)} faculty")
     return faculty
 
 
