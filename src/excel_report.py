@@ -194,4 +194,7 @@ def build_workbook_bytes(matched_results: list, run_date: str, label: str = "Dai
 
 def report_filename(run_date_dt: datetime = None, label: str = "Daily") -> str:
     d = (run_date_dt or datetime.utcnow()).strftime("%Y-%m-%d")
-    return f"UMSOM_Grant_Matches_{d}.xlsx"
+    # Include the Daily/Weekly label so the two emails sent on the weekly weekday
+    # produce distinct filenames (otherwise saving both overwrites the first).
+    lbl = "".join(c for c in (label or "Daily") if c.isalnum()) or "Daily"
+    return f"UMSOM_Grant_Matches_{lbl}_{d}.xlsx"
