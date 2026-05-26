@@ -139,7 +139,8 @@ def _get_match_type(m) -> str:
     return mt or "keyword"
 
 
-def build_html_email(matched_results: list, run_date: str, dashboard_url: str = "") -> str:
+def build_html_email(matched_results: list, run_date: str, dashboard_url: str = "",
+                     digest_label: str = "Daily") -> str:
     total_grants = len(matched_results)
     total_faculty_matches = sum(len(r["matches"]) for r in matched_results)
 
@@ -283,7 +284,7 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
       <div style="padding:20px 24px 18px;">
         <h1 style="margin:0;font-size:18px;font-weight:700;color:#ffffff;letter-spacing:0.3px;line-height:1.3;">
           University of Maryland School of Medicine<br>
-          <span style="color:#c8a84b;">AI Grant Match Application Notification</span>
+          <span style="color:#c8a84b;">AI Grant Match Application Notification — {digest_label} Email</span>
         </h1>
         <p style="margin:8px 0 0;color:#a8c4e0;font-size:13px;">{run_date}</p>
       </div>
@@ -335,12 +336,13 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
 </html>"""
 
 
-def build_text_body(matched_results: list, run_date: str, dashboard_url: str = "") -> str:
+def build_text_body(matched_results: list, run_date: str, dashboard_url: str = "",
+                    digest_label: str = "Daily") -> str:
     total_grants = len(matched_results)
     total_faculty = sum(len(r["matches"]) for r in matched_results)
     lines = [
         "University of Maryland School of Medicine",
-        "AI Grant Match Application Notification",
+        f"AI Grant Match Application Notification — {digest_label} Email",
         f"Report Date: {run_date}",
         "=" * 70,
         f"{total_grants} grant opportunit{'ies' if total_grants != 1 else 'y'} matched to {total_faculty:,} SOM faculty members.",
@@ -431,12 +433,12 @@ def send_email(config: dict, matched_results: list, recipients: list = None,
     total_matches = sum(len(r["matches"]) for r in matched_results)
 
     subject = (
-        f"{subject_prefix} {total_grants} new grant opportunit{'ies' if total_grants != 1 else 'y'} "
+        f"{subject_prefix} {digest_label} Email — {total_grants} new grant opportunit{'ies' if total_grants != 1 else 'y'} "
         f"matched to {total_matches:,} SOM faculty - {run_date}"
     )
 
-    html_body = build_html_email(matched_results, run_date, dashboard_url)
-    text_body = build_text_body(matched_results, run_date, dashboard_url)
+    html_body = build_html_email(matched_results, run_date, dashboard_url, digest_label=digest_label)
+    text_body = build_text_body(matched_results, run_date, dashboard_url, digest_label=digest_label)
 
     html_kb = len(html_body.encode("utf-8")) / 1024
     logger.info(f"Email body size: {html_kb:.1f} KB HTML / {len(text_body)/1024:.1f} KB plain text")
