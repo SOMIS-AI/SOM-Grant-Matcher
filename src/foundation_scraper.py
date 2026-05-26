@@ -152,6 +152,7 @@ def scrape_nih_guide(seen_ids):
     if not items:
         logger.info("NIH Guide RSS: 0 items or failed")
         return []
+    _mark_reached("nih_guide", len(items))  # feed reachable, even if all items are seen/notices
 
     grants = []
     for item in items:
@@ -179,6 +180,7 @@ def scrape_nsf_funding(seen_ids):
     if not items:
         logger.info("NSF RSS: 0 items or failed")
         return []
+    _mark_reached("nsf_funding", len(items))  # feed reachable, even if all items are seen
 
     grants = []
     for item in items:
@@ -822,6 +824,18 @@ ALL_SCRAPERS = [
 
 _last_scraper_health = {}
 
+# Reachability map for the current run: source key -> number of raw items the
+# scraper successfully fetched from its feed/page (before seen/junk filtering).
+# A source that reaches its feed but yields 0 *new* grants (all already seen, or
+# only admin notices) is "quiet", NOT broken — this lets the health logic tell
+# the two apart instead of flagging a healthy-but-quiet feed as "likely_broken".
+_reached_this_run: dict = {}
+
+
+def _mark_reached(key: str, n_items: int):
+    """Record that `key`'s source was successfully fetched this run (n_items raw)."""
+    _reached_this_run[key] = n_items
+
 
 def get_last_scraper_health():
     return _last_scraper_health
@@ -856,6 +870,7 @@ def fetch_all_external_grants(seen_ids, config):
     enabled_sources = ext_cfg.get("enabled_sources", None)
     disabled_sources = set(ext_cfg.get("disabled_sources", []))
 
+    _reached_this_run.clear()  # reset per-run reachability before scrapers run
     health = _load_scraper_health()
     all_grants = []
     sources_tried = 0
@@ -898,13 +913,21 @@ def fetch_all_external_grants(seen_ids, config):
                 health[key]["last_success"] = datetime.now().isoformat()
                 health[key]["total_found"] = health[key].get("total_found", 0) + len(grants)
                 health[key]["last_status"] = "new"
+            elif _reached_this_run.get(key, 0) > 0:
+                # Source was reachable (we fetched feed items) but nothing was new
+                # this run — all already seen, or only admin notices. This is a
+                # healthy "quiet" source, so record reachability and clear the
+                # zero-streak so it can never be mislabeled "likely_broken".
+                health[key]["consecutive_zeros"] = 0
+                health[key]["last_reachable"] = datetime.now().isoformat()
+                health[key]["last_status"] = "quiet"
             else:
                 health[key]["consecutive_zeros"] = health[key].get("consecutive_zeros", 0) + 1
-                # Distinguish a quiet-but-working source (has produced before) from
-                # one that has NEVER produced anything (likely silently broken).
-                health[key]["last_status"] = (
-                    "quiet" if health[key].get("last_success") else "no_results"
-                )
+                # Distinguish a quiet-but-working source (has produced or been
+                # reachable before) from one that has NEVER yielded anything and
+                # was not reachable this run (likely silently broken).
+                healthy_before = health[key].get("last_success") or health[key].get("last_reachable")
+                health[key]["last_status"] = "quiet" if healthy_before else "no_results"
                 if health[key]["last_status"] == "no_results" and health[key]["consecutive_zeros"] >= 3:
                     logger.warning(
                         f"SCRAPER ALERT: '{key}' has NEVER returned a result "
@@ -936,11 +959,11 @@ def fetch_all_external_grants(seen_ids, config):
                 "last_success": v.get("last_success") or "never",
                 "detail": v.get("last_error") or "exception raised",
             })
-        elif v.get("last_success") is None and zeros >= 3:
+        elif v.get("last_success") is None and v.get("last_reachable") is None and zeros >= 3:
             health_alerts.append({
                 "source": k, "status": "likely_broken", "consecutive_zeros": zeros,
                 "last_success": "never",
-                "detail": "no result since tracking began",
+                "detail": "feed/page never reachable and no result since tracking began",
             })
 
     # Build diagnostic summary in the format emailer.py expects

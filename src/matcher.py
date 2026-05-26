@@ -321,6 +321,8 @@ _AGENCY_ALLOW = {
 _AGENCY_BLOCK = {
     "epa", "environmental protection",
     "usda", "department of agriculture", "agricultural",
+    "natural resources conservation", "nrcs", "conservation service",
+    "farm service agency", "forest service", "rural business",
     "dot", "department of transportation", "federal highway", "federal transit",
     "hud", "housing and urban development",
     "doe", "department of energy",          # exception: some bioenergy/biotech
@@ -352,6 +354,12 @@ _NONBIO_TITLE_TERMS = {
     "pest management",
     "agronomy",
     "rangeland",
+    "conservation innovation",     # USDA NRCS Conservation Innovation Grants (CIG)
+    "on-farm",
+    "soil health",
+    "grazing",
+    "livestock",
+    "agroforestry",
     "tribal students",
 }
 
