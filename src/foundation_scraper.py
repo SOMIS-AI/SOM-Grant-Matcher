@@ -775,6 +775,58 @@ def scrape_pcori(seen_ids):
 
 
 # ======================================================================
+# DoD CDMRP / MRDC research programs via eBRAP (program-level)
+# ======================================================================
+
+def scrape_ebrap(seen_ids):
+    """U.S. DoD CDMRP / MRDC research programs from the public eBRAP program list.
+
+    Program-LEVEL entries only (one per program, e.g. "Epilepsy Research Program
+    (ERP) 2026"). The per-award announcements on each program page largely
+    duplicate the CDMRP awards already arriving via Grants.gov, so we
+    intentionally stay at the program level to avoid cross-source duplicates.
+    Single request to Program.htm — polite and low-risk.
+    """
+    base = "https://ebrap.org/eBRAP/public/Program.htm"
+    soup = _fetch_page(base)
+    if soup is None:
+        logger.info("eBRAP: program page fetch failed (unreachable or blocked)")
+        return []
+
+    grants = []
+    seen_titles = set()
+    total = 0
+    for a in soup.find_all("a", href=True):
+        if "ProgramFY.htm" not in a["href"]:
+            continue
+        title = re.sub(r"\s+", " ", a.get_text(" ", strip=True)).strip()
+        # Keep genuine program names: must contain "Program" or a parenthesised acronym
+        if len(title) < 6:
+            continue
+        if "Program" not in title and not re.search(r"\([A-Z]{2,7}\)", title):
+            continue
+        if title in seen_titles:
+            continue
+        seen_titles.add(title)
+        total += 1
+        link = urljoin(base, a["href"])
+        gid = _make_id("ebrap", title, link)
+        if gid in seen_ids:
+            continue
+        grants.append(_make_grant(
+            source="DoD CDMRP (eBRAP)", source_id="ebrap", title=title, link=link,
+            synopsis=(f"U.S. Department of Defense CDMRP/MRDC research program listed on "
+                      f"eBRAP: {title}. See the program page for current award mechanisms "
+                      f"and application deadlines."),
+            agency="Dept. of Defense -- CDMRP",
+        ))
+    if total:
+        _mark_reached("ebrap", total)  # reached the list even if all programs already seen
+    logger.info(f"eBRAP: {len(grants)} new program(s) (from {total} listed)")
+    return grants
+
+
+# ======================================================================
 # SCRAPER REGISTRY
 # ======================================================================
 
@@ -786,6 +838,7 @@ ALL_SCRAPERS = [
     # Tier B: API / structured
     ("arpa_h",                         scrape_arpa_h),
     ("dod_cdmrp",                      scrape_dod_cdmrp),
+    ("ebrap",                          scrape_ebrap),   # DoD CDMRP/MRDC programs (program-level)
     # Tier C: Foundation HTML scrapers
     ("burroughs_wellcome",             scrape_burroughs_wellcome),
     ("hhmi",                           scrape_hhmi),
