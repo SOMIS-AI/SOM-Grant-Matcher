@@ -70,16 +70,20 @@ matching:
 
   # Minimum confidence score to include a match in results and the email digest.
   # 0 = include all matches (no filtering). Raise to 20-30 to suppress weak matches.
-  min_confidence_score: 35              # Raised from 20. At 20%, the filter barely removed anything
-                                          # (avg confidence was 31-43%). At 35%, weak single-keyword
-                                          # matches are suppressed while genuine multi-keyword matches pass.
+  min_confidence_score: 45              # Raised 35->45 (2026-05-27). At 35%, broad infrastructure grants
+                                          # (NCORP, cancer-informatics, archived-data) filled the per-grant
+                                          # cap down to 36-42% with marginal matches (~81% of the 35%+ pool
+                                          # sat below 45%). 45 trims that padding; genuine grants (TBI/prostate,
+                                          # 60-94%) are unaffected. Pairs with the higher cap below.
 
   # v4.1 — New parameters
-  max_matches_per_grant: 20              # Cap faculty matches per grant. Keeps email digest manageable
+  max_matches_per_grant: 30              # Cap faculty matches per grant. Keeps email digest manageable
                                           # and prevents broad grants from matching 500+ faculty.
-                                          # Highest-confidence matches are kept. Lowered from 50 —
-                                          # broad infrastructure grants (cancer informatics, NCORP,
-                                          # DoW prostate) were filling 50 slots down to ~38% confidence.
+                                          # Highest-confidence matches are kept. 50->20->30: at 20, strong
+                                          # grants (DoW TBI had ~30 faculty >=70%, 20th-kept was 78%) were
+                                          # truncated, dropping genuine high-confidence matches. 30 surfaces
+                                          # them; the 45% floor above keeps broad grants from abusing the
+                                          # extra slots (they lack 30 matches >=45%). (Tuned 2026-05-27.)
   max_grant_text_chars: 3000             # Cap the grant text used for keyword matching. Some scraped
                                           # pages (NSF program pages, foundation portals) carry the whole
                                           # page as searchable text, which matched 500-600 faculty at
