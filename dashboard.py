@@ -371,6 +371,16 @@ def api_faculty_detail():
     person_copy["match_history"] = person_matches[:20]
     person_copy["match_count"]   = len(person_matches)
 
+    # Derive a lowercase keyword -> sorted list of source labels lookup so the
+    # Faculty modal can render source badges next to each keyword without
+    # re-inverting keywords_by_source in the browser.
+    kbs = person.get("keywords_by_source") or {}
+    sbk = {}
+    for src, kws in kbs.items():
+        for kw in (kws or []):
+            sbk.setdefault(kw.lower(), set()).add(src)
+    person_copy["sources_by_keyword"] = {k: sorted(v) for k, v in sbk.items()}
+
     return jsonify(person_copy)
 
 # ── API: Matches ──────────────────────────────────────────────────────────────
@@ -589,6 +599,111 @@ def api_export_faculty():
         mimetype="text/csv",
         headers={"Content-Disposition": "attachment; filename=faculty_profiles.csv"}
     )
+
+
+# ── API: Global Keywords view ────────────────────────────────────────────────
+
+@app.route("/api/keywords")
+@login_required
+def api_keywords():
+    """Cross-faculty keyword view.
+
+    Aggregates every unique keyword across the faculty pool with:
+      - faculty_count:    how many faculty have this keyword
+      - source_counts:    dict[source_label, # faculty contributing this kw from that source]
+      - sources:          sorted list of source labels (derived)
+      - top_dept:         most common department among faculty having this keyword
+      - idf:              -log(df/N), surfaced as a "specificity" metric
+    Supports search (substring), source filter, sort, and pagination.
+    """
+    import math
+    faculty   = get_faculty()
+    search    = request.args.get("search","").lower().strip()
+    src_filt  = request.args.get("source","").strip()
+    sort_by   = request.args.get("sort","faculty_count")
+    page      = int(request.args.get("page",1))
+    per_page  = int(request.args.get("per_page",50))
+
+    N = max(len(faculty), 1)
+
+    # Aggregate
+    fac_by_kw   = defaultdict(set)            # kw_lower -> set(faculty_name)
+    src_by_kw   = defaultdict(lambda: Counter())  # kw_lower -> Counter(source -> #faculty)
+    dept_by_kw  = defaultdict(lambda: Counter())  # kw_lower -> Counter(dept   -> #faculty)
+    display_for = {}                          # kw_lower -> canonical display string
+
+    for f in faculty:
+        name = f.get("name","") or ""
+        dept = (f.get("department") or "Unknown")
+        kbs  = f.get("keywords_by_source") or {}
+        if kbs:
+            # Use the per-source structure (preferred — gives precise attribution).
+            seen_in_person = set()
+            for src, kws in kbs.items():
+                for kw in (kws or []):
+                    kl = kw.lower().strip()
+                    if not kl: continue
+                    if kl not in display_for:
+                        display_for[kl] = kw
+                    src_by_kw[kl][src] += 1
+                    if kl not in seen_in_person:
+                        fac_by_kw[kl].add(name)
+                        dept_by_kw[kl][dept] += 1
+                        seen_in_person.add(kl)
+        else:
+            # Pre-rescrape fallback: no per-source data; record the keyword
+            # without source attribution so the table still works.
+            for kw in (f.get("keywords") or []):
+                kl = kw.lower().strip()
+                if not kl: continue
+                if kl not in display_for:
+                    display_for[kl] = kw
+                fac_by_kw[kl].add(name)
+                dept_by_kw[kl][dept] += 1
+
+    # All known source labels (for the filter dropdown)
+    all_sources = sorted({s for c in src_by_kw.values() for s in c.keys()})
+
+    rows = []
+    for kl, fac_set in fac_by_kw.items():
+        if search and search not in kl:
+            continue
+        src_counter = src_by_kw.get(kl, Counter())
+        if src_filt and src_filt not in src_counter:
+            continue
+        df = len(fac_set)
+        rows.append({
+            "keyword":       display_for.get(kl, kl),
+            "faculty_count": df,
+            "source_counts": dict(src_counter),
+            "sources":       sorted(src_counter.keys()),
+            "top_dept":      dept_by_kw[kl].most_common(1)[0][0] if dept_by_kw[kl] else "—",
+            "idf":           round(math.log(N / df), 2) if df else 0.0,
+        })
+
+    if sort_by == "alpha":
+        rows.sort(key=lambda r: r["keyword"].lower())
+    elif sort_by == "idf":
+        rows.sort(key=lambda r: -r["idf"])
+    elif sort_by == "sources":
+        rows.sort(key=lambda r: (-len(r["sources"]), -r["faculty_count"]))
+    else:  # default: faculty_count desc
+        rows.sort(key=lambda r: -r["faculty_count"])
+
+    total = len(rows)
+    start = (page-1) * per_page
+    page_items = rows[start:start+per_page]
+
+    return jsonify({
+        "total":       total,
+        "page":        page,
+        "per_page":    per_page,
+        "pages":       (total + per_page - 1) // per_page,
+        "keywords":    page_items,
+        "sources":     all_sources,
+        "faculty_total": N,
+        "data_has_per_source_attribution": bool(src_by_kw),
+    })
 
 
 # ── API: Grant Explorer (grant-centric deduplicated view) ──────────────────────
@@ -846,32 +961,6 @@ button:hover{background:#2563eb}
 <label>Password</label><input type="password" name="password" autocomplete="current-password">
 <button type="submit">Sign in →</button>
 </form></div>
-<!-- ═══ Faculty Detail Modal ═══ -->
-<div class="modal-overlay" id="fac-modal" style="display:none" onclick="closeFacModal(event)">
-  <div class="modal" onclick="event.stopPropagation()">
-    <div class="modal-hdr">
-      <div class="modal-avatar" id="fac-modal-initials"></div>
-      <div>
-        <div class="modal-name" id="fac-modal-name"></div>
-        <div class="modal-dept" id="fac-modal-dept"></div>
-        <div class="modal-email" id="fac-modal-email"></div>
-      </div>
-      <button class="modal-close" onclick="closeFacModal()">✕</button>
-    </div>
-    <div class="modal-tabs">
-      <div class="modal-tab active" onclick="switchModalTab('keywords',this)">Keywords</div>
-      <div class="modal-tab" onclick="switchModalTab('matches',this)">Match History</div>
-      <div class="modal-tab" onclick="switchModalTab('sources',this)">Sources</div>
-    </div>
-    <div class="modal-body">
-      <div class="modal-tab-content active" id="mtab-keywords"></div>
-      <div class="modal-tab-content" id="mtab-matches"></div>
-      <div class="modal-tab-content" id="mtab-sources">
-        <div style="height:220px;position:relative"><canvas id="modal-src-chart"></canvas></div>
-      </div>
-    </div>
-  </div>
-</div>
 </body></html>"""
 
 @app.route("/login", methods=["GET","POST"])
@@ -1383,6 +1472,9 @@ tr:hover td{background:rgba(255,255,255,.018)}
     <div class="nav-item" onclick="showPage('faculty')" id="nav-faculty">
       <span class="nav-icon">◉</span><span class="nav-label">Faculty</span>
     </div>
+    <div class="nav-item" onclick="showPage('keywords')" id="nav-keywords">
+      <span class="nav-icon">✦</span><span class="nav-label">Keywords</span>
+    </div>
     <div class="nav-item" onclick="showPage('pipeline')" id="nav-pipeline">
       <span class="nav-icon">◎</span><span class="nav-label">Pipeline</span>
     </div>
@@ -1719,6 +1811,61 @@ tr:hover td{background:rgba(255,255,255,.018)}
     </div>
   </div>
 
+  <!-- ══ KEYWORDS (global view) ══ -->
+  <div class="page" id="page-keywords">
+    <div class="stat-grid" style="grid-template-columns:repeat(auto-fill,minmax(190px,1fr))">
+      <div class="stat-card">
+        <div class="stat-accent" style="background:var(--blue)"></div>
+        <div class="stat-label">Total keywords</div>
+        <div class="stat-val" id="kg-total">—</div>
+        <div class="stat-meta" id="kg-faccount">across — faculty</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-accent" style="background:var(--green)"></div>
+        <div class="stat-label">Distinct sources</div>
+        <div class="stat-val" id="kg-srcs">—</div>
+        <div class="stat-meta">contributing to the pool</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-accent" style="background:var(--purple)"></div>
+        <div class="stat-label">Attribution coverage</div>
+        <div class="stat-val" id="kg-attr">—</div>
+        <div class="stat-meta" id="kg-attr-meta">per-keyword sources</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="toolbar">
+        <input class="search-box" id="kg-search" placeholder="Search keyword…" oninput="debounce(loadKeywords,400)()">
+        <select class="filter-sel" id="kg-source" onchange="loadKeywords()"><option value="">All sources</option></select>
+        <select class="filter-sel" id="kg-sort" onchange="loadKeywords()">
+          <option value="faculty_count">Sort: most faculty</option>
+          <option value="idf">Sort: most specific (IDF)</option>
+          <option value="sources">Sort: most sources</option>
+          <option value="alpha">Sort: A → Z</option>
+        </select>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span class="updated" id="kg-count-lbl">— keywords</span>
+        </div>
+      </div>
+      <div class="panel-body p0">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th style="min-width:220px">Keyword</th>
+              <th>Faculty</th>
+              <th>Sources</th>
+              <th>Top Department</th>
+              <th>IDF</th>
+            </tr></thead>
+            <tbody id="kg-tbody"></tbody>
+          </table>
+        </div>
+        <div class="pagination" id="kg-pg" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- ══ PIPELINE ══ -->
   <div class="page" id="page-pipeline">
     <div class="stat-grid" id="pipeline-stats">
@@ -1802,12 +1949,14 @@ function showPage(name) {
   document.getElementById('page-' + name).classList.add('active');
   document.getElementById('nav-' + name).classList.add('active');
   document.getElementById('topbar-title').textContent = {
-    overview:'Overview', matches:'Grant Matches', analytics:'Analytics',
-    faculty:'Faculty', pipeline:'Pipeline Status', logs:'System Logs'
+    overview:'Overview', matches:'Grant Matches', grants:'Grant Explorer',
+    analytics:'Analytics', faculty:'Faculty', keywords:'Keywords (global)',
+    pipeline:'Pipeline Status', logs:'System Logs'
   }[name];
   currentPage = name;
   ({overview:loadOverview, matches:loadMatches, grants:loadGrantExplorer,
-    analytics:loadAnalytics, faculty:loadFaculty, pipeline:loadPipeline, logs:loadLogs})[name]?.();
+    analytics:loadAnalytics, faculty:loadFaculty, keywords:loadKeywords,
+    pipeline:loadPipeline, logs:loadLogs})[name]?.();
 }
 
 function refreshCurrent() { showPage(currentPage); }
@@ -2274,10 +2423,11 @@ async function loadFaculty() {
       const kwCount = (f.keywords||[]).length;
       const topKws  = (f.keywords||[]).slice(0,5);
       const sources = parseSources(f.keyword_sources||[]);
-      return `<tr>
-        <td><div class="td-name"><a href="${f.url||f.profile_url||'#'}" target="_blank" style="color:inherit;text-decoration:none">${esc(f.name)}</a></div></td>
+      const ext     = f.url || f.profile_url || '';
+      return `<tr data-fac-name="${esc(f.name)}" onclick="openFacModal(this.dataset.facName)" style="cursor:pointer" title="Click for keyword/source/match detail">
+        <td><div class="td-name"><span style="color:var(--text)">${esc(f.name)}</span>${ext?`<a href="${ext}" target="_blank" onclick="event.stopPropagation()" title="Open external profile" style="margin-left:6px;color:var(--text3);text-decoration:none;font-size:11px">↗</a>`:''}</div></td>
         <td class="td-dept">${esc(f.department||'—')}</td>
-        <td class="td-email">${f.email?`<a href="mailto:${esc(f.email)}" style="color:inherit">${esc(f.email)}</a>`:'—'}</td>
+        <td class="td-email" onclick="event.stopPropagation()">${f.email?`<a href="mailto:${esc(f.email)}" style="color:inherit">${esc(f.email)}</a>`:'—'}</td>
         <td class="td-num"><span class="tip" data-tip="${kwCount} keywords from ${sources.length} sources">${kwCount}</span></td>
         <td class="td-num">${f.match_count > 0 ? `<span style="color:var(--green)">${f.match_count}</span>` : `<span style="color:var(--text3)">0</span>`}</td>
         <td><div class="kw-list">${sources.map(s=>`<span class="src-badge src-${s}">${s}</span>`).join('')}</div></td>
@@ -2297,6 +2447,79 @@ function setFSort(s) {
   document.getElementById('f-sort').value = s;
   facultyPage = 1;
   loadFaculty();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Global Keywords page
+// ══════════════════════════════════════════════════════════════════
+let keywordsPage = 1;
+async function loadKeywords() {
+  const params = new URLSearchParams({
+    search:   document.getElementById('kg-search').value || '',
+    source:   document.getElementById('kg-source').value || '',
+    sort:     document.getElementById('kg-sort').value || 'faculty_count',
+    page:     keywordsPage,
+    per_page: 50,
+  });
+  const d = await fetch('/api/keywords?'+params).then(r=>r.json());
+
+  // populate source filter dropdown once
+  const sel = document.getElementById('kg-source');
+  if (sel.options.length <= 1 && (d.sources||[]).length) {
+    (d.sources||[]).forEach(s => {
+      const o=document.createElement('option'); o.value=s; o.textContent=s; sel.appendChild(o);
+    });
+  }
+
+  setText('kg-total', (d.total||0).toLocaleString());
+  setText('kg-faccount', 'across '+(d.faculty_total||0).toLocaleString()+' faculty');
+  setText('kg-srcs', (d.sources||[]).length);
+  setText('kg-attr', d.data_has_per_source_attribution ? 'On' : 'Pending');
+  setText('kg-attr-meta', d.data_has_per_source_attribution ? 'per-keyword sources active' : 'awaiting next re-scrape');
+  setText('kg-count-lbl', (d.total||0).toLocaleString()+' keywords'+(document.getElementById('kg-search').value?' matching':''));
+
+  const tbody = document.getElementById('kg-tbody');
+  const rows = d.keywords || [];
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty"><div class="empty-icon">✦</div><div class="empty-msg">No keywords match the current filter</div></div></td></tr>`;
+  } else {
+    // max faculty count in this page for relative bar widths
+    const maxFc = Math.max(1, ...rows.map(r => r.faculty_count));
+    tbody.innerHTML = rows.map(r => {
+      const srcs = r.sources || [];
+      const srcCounts = r.source_counts || {};
+      // mini-bar showing source distribution
+      const srcPills = srcs.length
+        ? srcs.map(s => {
+            const c = srcPalette(s);
+            const cnt = srcCounts[s] || 0;
+            return `<span title="${esc(s)}: ${cnt} faculty" style="background:${c.bg};color:${c.fg};border:1px solid ${c.bd};font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;display:inline-block;margin:1px 2px 1px 0;white-space:nowrap">${esc(s)} <span style="opacity:.7">·${cnt}</span></span>`;
+          }).join('')
+        : '<span style="font-size:10px;color:var(--text3);font-style:italic">— pending re-scrape</span>';
+      const barPct = Math.round((r.faculty_count / maxFc) * 100);
+      return `<tr>
+        <td><span class="kw match" style="font-size:12px">${esc(r.keyword)}</span></td>
+        <td class="td-num" style="min-width:120px">
+          <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
+            <span>${r.faculty_count}</span>
+            <div style="width:60px;height:6px;background:var(--surf2);border-radius:3px;overflow:hidden">
+              <div style="width:${barPct}%;height:100%;background:var(--blue)"></div>
+            </div>
+          </div>
+        </td>
+        <td>${srcPills}</td>
+        <td class="td-dept">${esc(r.top_dept||'—')}</td>
+        <td class="td-num">${r.idf}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  const pg = document.getElementById('kg-pg');
+  if (d.pages > 1) {
+    pg.style.display = 'flex';
+    pg.innerHTML = renderPg(d.page, d.pages, p => { keywordsPage = p; loadKeywords(); });
+  } else { pg.style.display = 'none'; }
+  setUpdated();
 }
 
 function parseSources(sources) {
@@ -2723,6 +2946,163 @@ async function loadKeywordAnalysis() {
     </tr>`).join('');
   }
 }
+
+// ══════════════════════════════════════════════════════════════════
+// Faculty Detail Modal
+// ══════════════════════════════════════════════════════════════════
+const SRC_COLORS = {
+  'UMSOM (Keywords)':  {bg:'rgba(59,130,246,.18)', fg:'#9bc4e6', bd:'rgba(59,130,246,.35)'},
+  'UMSOM (Interests)': {bg:'rgba(59,130,246,.10)', fg:'#7ab3e0', bd:'rgba(59,130,246,.25)'},
+  'PubMed':            {bg:'rgba(245,158,11,.15)', fg:'#fbbf24', bd:'rgba(245,158,11,.35)'},
+  'NIH RePORTER':      {bg:'rgba(168,85,247,.15)', fg:'#c4a3ff', bd:'rgba(168,85,247,.35)'},
+  'ClinicalTrials.gov':{bg:'rgba(34,197,94,.15)',  fg:'#86efac', bd:'rgba(34,197,94,.35)'},
+  'Europe PMC':        {bg:'rgba(236,72,153,.15)', fg:'#f9a8d4', bd:'rgba(236,72,153,.35)'},
+  'ORCID':             {bg:'rgba(132,204,22,.15)', fg:'#bef264', bd:'rgba(132,204,22,.35)'},
+  'Semantic Scholar':  {bg:'rgba(6,182,212,.15)',  fg:'#67e8f9', bd:'rgba(6,182,212,.35)'}
+};
+function srcPalette(s){ return SRC_COLORS[s] || {bg:'rgba(120,130,150,.15)', fg:'#94a3b8', bd:'rgba(120,130,150,.35)'}; }
+function srcPill(s){ const c=srcPalette(s); return `<span style="background:${c.bg};color:${c.fg};border:1px solid ${c.bd};font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;display:inline-block;margin-right:4px;white-space:nowrap">${esc(s)}</span>`; }
+function initials(n){ const p=(n||'').split(/\s+/).filter(Boolean); return ((p[0]||'')[0]||'')+((p[p.length-1]||'')[0]||''); }
+
+let modalSrcChart=null, modalCurrentData=null, modalKwFilter='';
+
+async function openFacModal(name){
+  if(!name) return;
+  const m=document.getElementById('fac-modal');
+  m.style.display='flex';
+  // reset to first tab
+  document.querySelectorAll('#fac-modal .modal-tab').forEach((t,i)=>t.classList.toggle('active', i===0));
+  document.querySelectorAll('#fac-modal .modal-tab-content').forEach((c,i)=>c.classList.toggle('active', i===0));
+  document.getElementById('fac-modal-name').textContent='Loading…';
+  document.getElementById('fac-modal-dept').textContent='';
+  document.getElementById('fac-modal-email').textContent='';
+  document.getElementById('fac-modal-initials').textContent='…';
+  document.getElementById('mtab-keywords').innerHTML='';
+  document.getElementById('mtab-matches').innerHTML='';
+  try{
+    const r=await fetch('/api/faculty/detail?name='+encodeURIComponent(name));
+    if(!r.ok) throw new Error('Not found');
+    const d=await r.json();
+    modalCurrentData=d; modalKwFilter='';
+    renderFacModal(d);
+  } catch(e){
+    document.getElementById('fac-modal-name').textContent='Failed to load: '+name;
+  }
+}
+function closeFacModal(ev){
+  if(ev && ev.target!==ev.currentTarget) return;
+  document.getElementById('fac-modal').style.display='none';
+  if(modalSrcChart){ modalSrcChart.destroy(); modalSrcChart=null; }
+  modalCurrentData=null;
+}
+function switchModalTab(tab, el){
+  document.querySelectorAll('#fac-modal .modal-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('#fac-modal .modal-tab-content').forEach(c=>c.classList.remove('active'));
+  document.getElementById('mtab-'+tab).classList.add('active');
+  if(tab==='sources' && modalCurrentData) renderModalSourcesChart(modalCurrentData);
+}
+function renderFacModal(d){
+  document.getElementById('fac-modal-name').textContent=d.name||'';
+  document.getElementById('fac-modal-dept').textContent=d.department||'';
+  const em=document.getElementById('fac-modal-email');
+  em.innerHTML=d.email?`<a href="mailto:${esc(d.email)}" style="color:inherit;text-decoration:none">${esc(d.email)}</a>`:'';
+  document.getElementById('fac-modal-initials').textContent=(initials(d.name)||'?').toUpperCase();
+  renderModalKeywords(d);
+  renderModalMatches(d);
+}
+function renderModalKeywords(d){
+  const wrap=document.getElementById('mtab-keywords');
+  const kws=d.keywords||[];
+  const sbk=d.sources_by_keyword||{};
+  const kbs=d.keywords_by_source||{};
+  const allSrcs=Object.keys(kbs).sort();
+  const hasAttr=allSrcs.length>0;
+
+  let filterBar='';
+  if(hasAttr){
+    const opts=['', ...allSrcs];
+    filterBar=`<div style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:5px;align-items:center">
+      <span style="font-size:11px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-right:6px">Filter by source:</span>`
+      + opts.map(s=>{
+          const cls=(modalKwFilter===s)?'filter-pill active':'filter-pill';
+          const label=s?esc(s)+' ('+(kbs[s]||[]).length+')':'All ('+kws.length+')';
+          return `<span class="${cls}" onclick='modalSetKwFilter(${JSON.stringify(s)})'>${label}</span>`;
+        }).join('')
+      + `</div>`;
+  }
+
+  const filtered=modalKwFilter
+    ? kws.filter(k => (sbk[k.toLowerCase()]||[]).includes(modalKwFilter))
+    : kws;
+
+  let body;
+  if(filtered.length){
+    body = filtered.map(k=>{
+      const srcs=sbk[k.toLowerCase()]||[];
+      const pills = hasAttr
+        ? (srcs.length?srcs.map(srcPill).join(''):'<span style="font-size:10px;color:var(--text3);font-style:italic">(no source recorded)</span>')
+        : '<span style="font-size:10px;color:var(--text3);font-style:italic">attribution pending re-scrape</span>';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:6px 4px;border-bottom:1px solid rgba(28,34,53,.5);flex-wrap:wrap">
+        <span class="kw match" style="min-width:140px">${esc(k)}</span>
+        <div style="flex:1;display:flex;flex-wrap:wrap;gap:0">${pills}</div>
+      </div>`;
+    }).join('');
+  } else {
+    body = '<div style="color:var(--text3);font-size:12px;padding:14px">No keywords match the current filter.</div>';
+  }
+
+  const notice = hasAttr ? '' :
+    `<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);color:#fbbf24;border-radius:6px;padding:8px 10px;font-size:11px;margin-bottom:10px">
+      Per-keyword source attribution is populated on the next faculty re-scrape. The flat keyword list is shown until then.
+    </div>`;
+
+  const head = `<div style="font-size:11px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">
+    ${kws.length} keyword${kws.length===1?'':'s'}${hasAttr?` from ${allSrcs.length} source${allSrcs.length===1?'':'s'}`:''}
+  </div>`;
+  wrap.innerHTML = head + notice + filterBar + `<div style="max-height:50vh;overflow-y:auto">${body}</div>`;
+}
+function modalSetKwFilter(src){ modalKwFilter=src; if(modalCurrentData) renderModalKeywords(modalCurrentData); }
+function renderModalMatches(d){
+  const wrap=document.getElementById('mtab-matches');
+  const ms=d.match_history||[];
+  if(!ms.length){ wrap.innerHTML='<div style="color:var(--text3);font-size:12px;padding:14px">No matches recorded for this faculty member.</div>'; return; }
+  const head=`<div style="font-size:11px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">${d.match_count||ms.length} match${(d.match_count||ms.length)===1?'':'es'} (showing ${ms.length})</div>`;
+  wrap.innerHTML = head + `<div class="tbl-wrap" style="max-height:50vh;overflow-y:auto"><table>
+    <thead><tr><th>Grant</th><th>Agency</th><th>Type</th><th style="text-align:right">Conf.</th><th>Recorded</th></tr></thead>
+    <tbody>` + ms.map(m=>{
+      const conf=(m.confidence_score!==undefined ? m.confidence_score : Math.min((m.match_score||0)*10,99))+'%';
+      const link=m.grant_link ? `<a href="${m.grant_link}" target="_blank" style="color:var(--blue2);text-decoration:none">${esc((m.grant_title||'').slice(0,70))}</a>` : esc((m.grant_title||'').slice(0,70));
+      const date=(m.timestamp||'').slice(0,10);
+      const mt=m.match_type||'';
+      const mtColor = mt==='both' ? 'var(--green)' : (mt==='semantic' ? 'var(--purple)' : 'var(--blue2)');
+      return `<tr><td>${link}</td><td class="td-dept">${esc(m.grant_agency||'')}</td><td><span style="color:${mtColor};font-size:11px;font-family:var(--mono)">${esc(mt)}</span></td><td class="td-num">${conf}</td><td class="td-dept">${date}</td></tr>`;
+    }).join('') + `</tbody></table></div>`;
+}
+function renderModalSourcesChart(d){
+  const ctx=document.getElementById('modal-src-chart');
+  if(!ctx) return;
+  if(modalSrcChart){ modalSrcChart.destroy(); modalSrcChart=null; }
+  const kbs=d.keywords_by_source||{};
+  let labels=Object.keys(kbs).sort(); let counts=labels.map(l=>(kbs[l]||[]).length);
+  if(!labels.length && (d.keyword_sources||[]).length){
+    labels=parseSources(d.keyword_sources); counts=labels.map(_=>1);
+  }
+  if(!labels.length){
+    ctx.parentElement.innerHTML='<div style="color:var(--text3);font-size:12px;padding:14px">No source data available for this faculty member.</div>';
+    return;
+  }
+  modalSrcChart=new Chart(ctx,{type:'bar',
+    data:{labels, datasets:[{label:'keywords from this source', data:counts,
+      backgroundColor:labels.map(l=>srcPalette(l).bg.replace(/,[.0-9]+\)/, ',.55)')),
+      borderColor:labels.map(l=>srcPalette(l).bd), borderWidth:1}]},
+    options:{indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>c.parsed.x+' keyword'+(c.parsed.x===1?'':'s')}}},
+      scales:{x:{grid:{color:'#1c2235'},ticks:{color:'#94a3b8',precision:0},beginAtZero:true},
+              y:{grid:{display:false},ticks:{color:'#cbd5e1',font:{size:11}}}}}});
+}
+// Close modal on Escape
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeFacModal(); });
 
 // ══ Init ══
 loadOverview();
