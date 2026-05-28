@@ -260,8 +260,14 @@ def _compute_confidence(
     elif match_type == "keyword":
         combined = kw_conf
     else:
-        # Semantic only: no keyword confirmation, slight penalty
-        combined = sem_conf * 0.85
+        # Semantic only: no keyword corroboration, but no penalty either —
+        # the semantic_threshold (sim >= 0.40) already gates quality, and
+        # min_confidence_score in config provides the final floor.
+        # The previous 0.85 multiplier interacted badly with min_confidence=45:
+        # at that floor it required sim >= 0.53, which almost no genuine match
+        # achieves (typical max similarity 0.45-0.51), collapsing the semantic
+        # discovery channel (~100/run -> 1/run on 2026-05-28). 1.0 restores it.
+        combined = sem_conf
 
     # Scale to 0-99 (never show 100% — that would imply certainty)
     return min(round(combined * 100), 99)
