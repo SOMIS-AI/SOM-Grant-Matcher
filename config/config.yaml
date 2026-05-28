@@ -239,6 +239,50 @@ matching:
     - "writing"
     # ── Developmental (standalone too generic) ──
     - "developmental"
+    # ── 2026-05-28 additions — data-driven (top noise drivers from the 2026-05-28
+    #    digest) + user-flagged generics + preemptive. Phrase-level safety: a
+    #    multi-word keyword is only dropped if EVERY token is a stop, so
+    #    "clinical trial", "brain injury", "early-stage cancer", "machine learning",
+    #    "novel therapeutics", "cancer informatics" all survive.
+    - "single"
+    - "basic"
+    - "mathematics"
+    - "current"
+    - "centered"
+    - "mechanisms"
+    - "imaging"          # phrase-safe: "MRI imaging", "molecular imaging" survive
+    - "comparative"      # accepted risk: "comparative effectiveness" becomes all-stops
+    - "defense"          # matches "Department of Defense" in DoD grant text
+    - "trial"            # "clinical trial" survives (clinical is not a stop)
+    - "trials"
+    - "fellowship"
+    - "cycle"
+    - "discovery"        # "drug discovery" survives
+    - "early"
+    - "stage"
+    - "through"          # preposition; literal noise
+    - "diseases"         # plural of "disease" which was already a stop
+    - "disorder"
+    - "post"
+    - "related"
+    - "strategies"
+    - "multiple"
+    - "technologies"
+    - "department"
+    - "complex"
+    - "small"
+    - "specific"
+    - "advanced"
+    - "address"          # complements "addressing" already in list
+    - "required"
+    - "investigator"
+    - "coordinating"
+    - "leadership"
+    - "peer"
+    - "virtual"
+    - "learning"         # accepted risk: "machine learning" still keeps "machine"
+    - "novel"
+    - "informatics"      # "cancer informatics" survives (cancer not a stop)
 
 # --- Logging ---
 logging:
