@@ -1101,25 +1101,72 @@ def _strip_credentials(name: str) -> str:
         "", name, flags=re.IGNORECASE
     ).strip()
 
+# Normalised display labels for the per-keyword source attribution.
+# Callers pass raw source identifiers like "pubmed(5papers,12MeSH)" or
+# "umsom_keywords"; we strip the parenthetical detail and map to a clean name.
+_SOURCE_BASE_LABEL = {
+    "umsom_keywords":           "UMSOM (Keywords)",
+    "umsom_research_interests": "UMSOM (Interests)",
+    "pubmed":                   "PubMed",
+    "nih_reporter":             "NIH RePORTER",
+    "clinicaltrials":           "ClinicalTrials.gov",
+    "europepmc":                "Europe PMC",
+    "orcid":                    "ORCID",
+    "s2":                       "Semantic Scholar",
+}
+
+
+def _base_source_label(raw: str) -> str:
+    """Map a raw `_merge_keywords` source string to its clean display label."""
+    s = (raw or "").strip()
+    if not s:
+        return "Unknown"
+    base = s.split("(", 1)[0].strip().lower()
+    return _SOURCE_BASE_LABEL.get(base, s)
+
+
 def _merge_keywords(faculty: dict, new_keywords: list[str], source: str) -> None:
     """
     Merge new_keywords into faculty["keywords"], deduplicating case-insensitively.
-    Tracks all contributing sources in faculty["keyword_sources"].
+    Tracks both:
+      - faculty["keyword_sources"]   : list of raw source identifiers (legacy)
+      - faculty["keywords_by_source"]: dict[clean_label, list[keywords]] — the
+        per-keyword attribution that the dashboard's Faculty modal and the
+        global Keywords view consume to show "which sources contributed each
+        keyword". Multiple sources can claim the same keyword (e.g. both UMSOM
+        and PubMed surfacing "epilepsy") — each gets its own entry, so the
+        dashboard can derive sources-per-keyword by inversion.
     UMSOM profile keywords always stay first (highest trust), external sources appended.
     """
+    # Filter boilerplate up-front so per-source records stay clean.
+    contributed = [k for k in (new_keywords or []) if not _is_boilerplate_kw(k)]
+
+    # Flat keyword list — only genuinely new ones get appended.
     existing = faculty.get("keywords") or []
     existing_lower = {k.lower() for k in existing}
-    added = [k for k in new_keywords
-             if k.lower() not in existing_lower and not _is_boilerplate_kw(k)]
+    added = [k for k in contributed if k.lower() not in existing_lower]
     faculty["keywords"] = existing + added
 
-    # Track all sources
+    # Per-keyword source attribution. We dedupe WITHIN a source but keep
+    # the keyword in every source that legitimately surfaced it.
+    src_label = _base_source_label(source)
+    kbs = faculty.get("keywords_by_source") or {}
+    bucket = kbs.get(src_label) or []
+    bucket_lower = {k.lower() for k in bucket}
+    for k in contributed:
+        if k.lower() not in bucket_lower:
+            bucket.append(k)
+            bucket_lower.add(k.lower())
+    if bucket:
+        kbs[src_label] = bucket
+        faculty["keywords_by_source"] = kbs
+
+    # Legacy source list (raw identifiers — preserved for back-compat with
+    # the existing /api/faculty `source` filter and the cached profile schema).
     sources = faculty.get("keyword_sources") or []
     if source not in sources:
         sources.append(source)
     faculty["keyword_sources"] = sources
-
-    # Keep keyword_source as comma-joined summary for display
     faculty["keyword_source"] = ", ".join(sources)
 
 
