@@ -77,13 +77,14 @@ matching:
                                           # 60-94%) are unaffected. Pairs with the higher cap below.
 
   # v4.1 — New parameters
-  max_matches_per_grant: 30              # Cap faculty matches per grant. Keeps email digest manageable
+  max_matches_per_grant: 40              # Cap faculty matches per grant. Keeps email digest manageable
                                           # and prevents broad grants from matching 500+ faculty.
-                                          # Highest-confidence matches are kept. 50->20->30: at 20, strong
-                                          # grants (DoW TBI had ~30 faculty >=70%, 20th-kept was 78%) were
-                                          # truncated, dropping genuine high-confidence matches. 30 surfaces
-                                          # them; the 45% floor above keeps broad grants from abusing the
-                                          # extra slots (they lack 30 matches >=45%). (Tuned 2026-05-27.)
+                                          # Highest-confidence matches are kept. 50->20->30->40: at 30, the
+                                          # very strongest grants (DoW TBI Clinical) still hit the cap with
+                                          # 30th-kept at 78%, meaning ~30+ faculty at >=78% were being
+                                          # truncated. 40 surfaces those extra strong matches; broad grants
+                                          # can't abuse the slots because the 45% floor cuts their padding.
+                                          # (Tuned 2026-05-27 to 30, then 2026-05-28 to 40.)
   max_grant_text_chars: 3000             # Cap the grant text used for keyword matching. Some scraped
                                           # pages (NSF program pages, foundation portals) carry the whole
                                           # page as searchable text, which matched 500-600 faculty at
@@ -263,6 +264,12 @@ external_sources:
   # de-noise the scraper-health report. Re-enable individually if a working
   # scraper is implemented (e.g. via a headless browser or an official API/feed).
   disabled_sources:
+    # nih_guide: NIH Guide RSS (fundingopps.xml) is reachable locally but
+    # consistently unreachable from the Azure container (5 consecutive zero-runs,
+    # "never reachable" per the scraper-health tracker). NIH funding opportunities
+    # are already covered by Grants.gov, so this is a no-loss disable; clears the
+    # likely_broken alert noise from the diagnostic. (2026-05-28.)
+    - "nih_guide"
     - "pnd_rfps"
     - "dod_cdmrp"
     - "burroughs_wellcome"
