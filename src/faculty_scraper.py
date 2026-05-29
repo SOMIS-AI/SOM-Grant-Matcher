@@ -281,72 +281,186 @@ _RI_LABELS = re.compile(
 )
 
 # Stop words for prose phrase extraction (broader than matcher stop words —
-# these are grammatical/structural words, not domain terms)
+# these are grammatical/structural words, not domain terms). Now also includes
+# articles, conjunctions, prepositions, common verbs, and first-person/clinic
+# preamble words ("I diagnose and treat patients with…") that otherwise pollute
+# the keyword pool when a faculty member writes prose in a "keywords" field.
 _BIO_STOP = {
-    "with", "that", "this", "from", "have", "been", "they", "their", "which",
-    "will", "also", "more", "than", "when", "some", "into", "other", "were",
-    "after", "about", "these", "both", "such", "very", "through", "between",
-    "during", "multiple", "several", "currently", "previously", "including",
-    "focused", "focuses", "working", "worked", "studies", "studying",
-    "trained", "training", "received", "completed", "joined", "using",
-    "university", "maryland", "school", "medicine", "department", "division",
-    "section", "faculty", "professor", "assistant", "associate", "adjunct",
-    "fellow", "instructor", "member", "staff", "board", "certified",
-    "interested", "interests", "interest", "area", "areas", "field", "fields",
-    "include", "includes", "included", "focus", "focuses", "focused",
-    "research", "laboratory", "lab", "group", "team", "project", "projects",
-    "program", "programs", "study", "studies", "approach", "approaches",
+    # articles/conjunctions/prepositions/auxiliaries
+    "a", "an", "and", "or", "but", "nor", "for", "to", "of", "in", "on", "at",
+    "by", "with", "from", "as", "if", "so", "than", "then", "that", "this",
+    "these", "those", "there", "is", "am", "are", "was", "were", "be", "been",
+    "being", "has", "have", "had", "do", "does", "did", "can", "could", "may",
+    "might", "should", "would", "will", "shall", "into", "through", "between",
+    "during", "after", "about", "before", "above", "below", "under", "over",
+    "such", "also", "more", "very", "when", "where", "which", "while",
+    # pronouns / first-person preamble
+    "my", "our", "your", "his", "her", "their", "its", "hers", "ours", "theirs",
+    "we", "i", "you", "they", "it", "he", "she", "them", "us", "me", "who",
+    # common verbs that show up in prose ("I diagnose and treat patients with…")
+    "seeks", "seek", "seeking", "treat", "treats", "treated", "treating",
+    "predict", "predicts", "predicted", "predicting", "use", "uses", "used",
+    "using", "utilize", "utilizes", "utilizing", "utilization", "understand",
+    "understands", "understood", "understanding", "employ", "employs",
+    "employed", "employing", "apply", "applies", "applied", "applying",
+    "diagnose", "diagnoses", "diagnosing", "diagnosed",
+    "study", "studies", "studied", "studying", "examine", "examines",
+    "examined", "examining", "develop", "develops", "developed", "developing",
+    "improve", "improves", "improved", "improving", "advance", "advances",
+    "advanced", "advancing", "assess", "assesses", "assessed", "assessing",
+    "investigate", "investigates", "investigated", "investigating",
+    "explore", "explores", "explored", "exploring",
+    "trained", "training", "received", "completed", "joined", "working", "worked",
+    "focused", "focuses", "focusing", "focus", "include", "includes", "included",
+    "including", "especially", "specifically", "primarily", "mainly", "mostly",
+    "additionally", "furthermore", "moreover", "however", "although", "though",
+    # structural/institutional preamble
+    "laboratory", "lab", "labs", "group", "team", "center", "facility",
+    "department", "division", "section", "clinic", "clinics", "hospital",
+    "institute", "university", "maryland", "school", "medicine",
+    "faculty", "professor", "assistant", "associate", "adjunct", "fellow",
+    "instructor", "member", "staff", "board", "certified", "interested",
+    "interests", "interest", "area", "areas", "field", "fields",
+    "research", "project", "projects", "program", "programs",
+    "approach", "approaches", "method", "methods", "technique", "techniques",
+    "tool", "tools", "framework", "process", "processes", "system", "systems",
+    # clinical filler
+    "patient", "patients", "people", "person", "current", "ongoing", "recent",
+    "novel", "new", "various", "multiple", "several", "many", "few", "both",
+    "either", "neither", "such", "certain", "different", "similar", "related",
+    "better", "best", "worse", "good", "bad", "well",
 }
 
-# Words that only add noise if they appear alone in a 1-gram keyword
-_SINGLE_NOISE = {
-    "also", "thus", "role", "such", "lead", "leads", "novel", "known",
-    "using", "used", "well", "with", "both", "than", "when", "where",
-    "which", "have", "been", "they", "their", "from", "that", "this",
+# Tokens ending in -ing that are valid biomedical nouns (the gerund -> noun
+# heuristic below would otherwise reject them). Expand cautiously when a
+# legitimate -ing noun shows up in real profiles.
+_NOUN_LIKE_ING = {
+    "editing", "imaging", "profiling", "sequencing", "screening", "modeling",
+    "modelling", "staining", "signaling", "signalling", "training", "mapping",
+    "probing", "grafting", "blotting", "tagging", "silencing", "splicing",
+    "folding", "binding", "aging", "scanning", "tracking", "monitoring",
+    "engineering",
 }
+
+# (Retained for back-compat — only referenced by this module's old code paths.)
+_SINGLE_NOISE = {"also", "thus", "role", "such", "lead", "leads", "novel", "known"}
+
+
+def _looks_verb_or_adv(tok: str) -> bool:
+    """Heuristic: token is likely a verb form / adverb (not a noun phrase head)."""
+    t = tok.lower()
+    if t in _NOUN_LIKE_ING:
+        return False
+    if t.endswith("ly") and len(t) > 4:
+        return True
+    if t.endswith("ing") and len(t) > 4:
+        return True
+    if t.endswith("ed") and len(t) > 4:
+        return True
+    if t.endswith("ize") or t.endswith("ise"):
+        return True
+    return False
+
+
+def _score_phrase(tokens: list[str]) -> int:
+    """Score a phrase 0+ for ranking. Any phrase containing a stop word is rejected (0)."""
+    s = 0
+    for t in tokens:
+        if t in _BIO_STOP:
+            return 0
+        if _looks_verb_or_adv(t):
+            s -= 4
+        elif len(t) < 4:
+            s -= 1
+        else:
+            s += 2
+    s += min(len(tokens) - 1, 2)  # mild bonus for multi-word
+    return s
 
 
 def _extract_phrases_from_text(text: str, max_phrases: int = 40) -> list:
     """
-    Extract meaningful 1-3 word phrases from prose text.
-    Uses a sliding window over cleaned tokens to build bigrams and trigrams,
-    preserving multi-word domain terms like "blood-brain barrier",
-    "tau pathology", "cardiac stem cells".
+    Extract meaningful research-domain keywords from prose or sentence-style text.
+
+    The 2026-05-29 rewrite addresses two real-world failure modes seen on UMSOM
+    faculty profiles:
+      1. Sliding-window n-grams crossing comma/sentence boundaries produced
+         nonsense phrases like "disorders employ" / "biology bioinformatics" /
+         "leukemia cmml chronic".
+      2. The "Research/Clinical Keywords" field is sometimes a sentence rather
+         than a comma list ("I diagnose and treat patients with blood disorders
+         including acute myeloid leukemia (AML), …"), so a naive comma split
+         leaks sentence preamble as a giant first "keyword".
+
+    Strategy:
+      - Capture parenthesised acronyms ("X (AAA)") first, recording both the
+        noun phrase before the paren AND the acronym itself.
+      - Split text on sentence/list punctuation [.!?;,()/] to form SEGMENTS;
+        n-grams only form WITHIN a segment so commas can't bleed across.
+      - Within each segment, score 1/2/3-grams. Drop anything containing a
+        stop word, an unambiguous verb (-ing/-ed/-ly unless whitelisted),
+        or a token < 4 chars (except trigram middle, where 'of' is allowed).
+      - Suppress single-word keywords that are already covered by a multi-word
+        keyword we kept ("biology" if "synthetic biology" already scored).
+      - Return the top-N by score, longer phrases preferred on ties.
     """
-    # Normalise: keep letters, digits, hyphens
-    cleaned = re.sub(r"[^a-zA-Z0-9\- ]", " ", text)
-    tokens  = [t.lower() for t in cleaned.split() if len(t) >= 3]
+    text = text or ""
+    scored: dict[str, int] = {}
 
-    seen    = set()
-    phrases = []
+    # Parenthesised acronyms — "X (AAA)" -> noun phrase before + the acronym itself.
+    for m in re.finditer(r"([\w\- ]+?)\s*\(([A-Z]{2,6}s?)\)", text):
+        before = m.group(1).strip().lower()
+        acro   = m.group(2).strip().lower()
+        if acro and acro not in _BIO_STOP:
+            scored[acro] = max(scored.get(acro, 0), 10)
+        if before:
+            words = before.split()
+            for n in (4, 3, 2, 1):
+                if len(words) >= n:
+                    cand = " ".join(words[-n:])
+                    if all(w not in _BIO_STOP and not _looks_verb_or_adv(w)
+                           for w in cand.split()):
+                        scored[cand] = max(scored.get(cand, 0), 12)
+                        break
 
-    # 1-grams: meaningful single domain words
-    for t in tokens:
-        if (t not in _BIO_STOP and t not in _SINGLE_NOISE
-                and len(t) >= 5 and t not in seen):
-            seen.add(t)
-            phrases.append(t)
+    # Segment on punctuation so n-grams stay within a single keyword/clause.
+    for seg in re.split(r"[.!?;,()/]+", text):
+        cleaned = re.sub(r"[^A-Za-z0-9\- ]", " ", seg)
+        tokens  = [t.lower() for t in cleaned.split() if t]
+        # 1-grams
+        for t in tokens:
+            if (t in _BIO_STOP or t in _SINGLE_NOISE
+                    or _looks_verb_or_adv(t) or len(t) < 5):
+                continue
+            scored[t] = max(scored.get(t, 0), _score_phrase([t]))
+        # 2-grams (within segment)
+        for i in range(len(tokens) - 1):
+            sc = _score_phrase(tokens[i:i+2])
+            if sc > 0:
+                ph = " ".join(tokens[i:i+2])
+                scored[ph] = max(scored.get(ph, 0), sc)
+        # 3-grams (within segment): both edges must be noun-like; middle may be 'of'
+        for i in range(len(tokens) - 2):
+            a, b, c = tokens[i:i+3]
+            if a in _BIO_STOP or c in _BIO_STOP: continue
+            if _looks_verb_or_adv(a) or _looks_verb_or_adv(c): continue
+            if len(a) < 4 or len(c) < 4: continue
+            score = 6
+            if b in _BIO_STOP and b != "of": score -= 2
+            if _looks_verb_or_adv(b): score -= 4
+            if score > 0:
+                ph = " ".join((a, b, c))
+                scored[ph] = max(scored.get(ph, 0), score)
 
-    # 2-grams: both tokens meaningful
-    for i in range(len(tokens) - 1):
-        a, b = tokens[i], tokens[i + 1]
-        phrase = f"{a} {b}"
-        if (a not in _BIO_STOP and b not in _BIO_STOP
-                and len(a) >= 4 and len(b) >= 4
-                and phrase not in seen):
-            seen.add(phrase)
-            phrases.append(phrase)
+    # Drop single-word keywords already covered by a kept multi-word keyword.
+    multi_tokens = {tok for p in scored if " " in p for tok in p.split()}
+    for tok in list(scored):
+        if " " not in tok and tok in multi_tokens:
+            del scored[tok]
 
-    # 3-grams: at least 2 of 3 tokens meaningful
-    for i in range(len(tokens) - 2):
-        a, b, c = tokens[i], tokens[i + 1], tokens[i + 2]
-        non_stop = sum(1 for t in (a, b, c) if t not in _BIO_STOP and len(t) >= 4)
-        phrase = f"{a} {b} {c}"
-        if non_stop >= 2 and phrase not in seen:
-            seen.add(phrase)
-            phrases.append(phrase)
-
-    return phrases[:max_phrases]
+    # Rank by score; on ties prefer LONGER (more specific) phrases.
+    ranked = sorted(scored.items(), key=lambda x: (-x[1], -len(x[0]), x[0]))
+    return [p for p, _ in ranked[:max_phrases]]
 
 
 def _extract_list_items(tag) -> list:
@@ -416,8 +530,23 @@ def scrape_individual_profile(session: requests.Session, faculty: dict) -> dict:
 
     kw_text = _strip_heading(_section_text("<!-- Research and/or Clinical Keywords -->"))
     if kw_text:
-        kw_keywords = [k.strip().lower() for k in re.split(r"[,;]", kw_text)
-                       if 2 < len(k.strip()) < 80]
+        # When the faculty member wrote a clean comma list, the comma split gives
+        # us their exact curated terms — the most trustworthy source. When they
+        # wrote prose instead ("I diagnose and treat patients with blood disorders
+        # including acute myeloid leukemia (AML), …"), the comma split leaks the
+        # sentence preamble as a giant first "keyword". Detect prose by either a
+        # very long segment (>60 chars) or sentence-style punctuation, and fall
+        # back to the same phrase extractor we use on the Research Interests prose.
+        parts = [k.strip() for k in re.split(r"[,;]", kw_text) if k.strip()]
+        looks_prose = (
+            any(len(p) > 60 for p in parts)
+            or (len(parts) < 3 and len(kw_text) > 80)
+            or bool(re.search(r"\b(i|we|my|our|the)\s+\w", kw_text, re.I))
+        )
+        if looks_prose:
+            kw_keywords = _extract_phrases_from_text(kw_text, max_phrases=30)
+        else:
+            kw_keywords = [p.lower() for p in parts if 2 < len(p) < 80]
 
     ri_text = _strip_heading(_section_text("<!-- Research Interests Details -->"))
     if ri_text and len(ri_text) > 20:
