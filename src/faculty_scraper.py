@@ -722,17 +722,14 @@ def enrich_from_nih_reporter(session: requests.Session, faculty: dict) -> dict:
                          if t.strip() and len(t.strip()) > 3]
                 all_terms.extend(terms)
 
-            # Also mine the abstract for noun phrases
+            # Mine the grant abstract for noun phrases using the shared
+            # phrase-aware extractor — segments on punctuation and rejects
+            # verbs/stops, so multi-word clinical terms ("extracorporeal
+            # membrane oxygenation", "cardiogenic shock", "type a dissection")
+            # survive instead of being split into single words.
             abstract = project.get("AbstractText", "") or ""
             if abstract and len(all_terms) < 20:
-                words = re.findall(r"[a-zA-Z]{4,}", abstract)
-                stop = {"with", "that", "this", "from", "have", "been", "they", "their",
-                        "which", "will", "also", "more", "than", "when", "some", "into",
-                        "other", "were", "after", "about", "these", "both", "such",
-                        "project", "study", "studies", "using", "used", "based",
-                        "results", "data", "patients", "clinical", "treatment",
-                        "university", "maryland", "grant", "funding", "supported"}
-                all_terms.extend(w.lower() for w in words if w.lower() not in stop)
+                all_terms.extend(_extract_phrases_from_text(abstract, max_phrases=20))
 
         # Deduplicate preserving order
         seen = set()
@@ -1429,7 +1426,13 @@ def enrich_from_orcid(session: requests.Session, faculty: dict) -> dict:
                     for k in keywords_section
                     if k.get("content", "").strip()]
 
-        # Also pull research resource titles / work titles as context
+        # Fallback: if the faculty member hasn't filled in their ORCID
+        # self-keyword list, mine recent paper titles for noun phrases.
+        # The previous implementation re.findall(r"[a-zA-Z]{4,}", titles) split
+        # multi-word terms ("Frozen Elephant Trunk", "Extracorporeal Membrane
+        # Oxygenation", "Vascular Closure Device") into single-word fragments.
+        # _extract_phrases_from_text segments on punctuation and extracts noun
+        # phrases — dramatically better signal for clinical authors.
         if not keywords:
             works = (record.get("activities-summary", {})
                            .get("works", {})
@@ -1443,13 +1446,10 @@ def enrich_from_orcid(session: requests.Session, faculty: dict) -> dict:
                     if t:
                         titles.append(t)
             if titles:
-                words = re.findall(r"[a-zA-Z]{4,}", " ".join(titles))
-                stop = {"with", "that", "this", "from", "have", "been", "using",
-                        "study", "analysis", "based", "novel", "role", "effect",
-                        "effects", "human", "mice", "mouse", "patients", "cells"}
-                keywords = list(dict.fromkeys(
-                    w.lower() for w in words if w.lower() not in stop
-                ))[:40]
+                # Join with periods so the segmenter treats each title as its
+                # own clause and n-grams don't bridge across titles.
+                combined = ". ".join(titles) + "."
+                keywords = _extract_phrases_from_text(combined, max_phrases=25)
 
         if keywords:
             _merge_keywords(faculty, keywords, f"orcid({orcid_id})")
