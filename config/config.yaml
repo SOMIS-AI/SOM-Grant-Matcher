@@ -110,6 +110,49 @@ matching:
                                           # Keywords below this are too common across faculty.
                                           # IDF 1.5 ≈ keyword appears in ~60% of faculty.
 
+  # ── UMB-specific grant eligibility filter ────────────────────────────────
+  # Skip grants UMB faculty are NOT eligible to apply for (institutional
+  # restrictions or PI-type restrictions like trainees-only). Each entry is a
+  # case-insensitive regex run against the grant title; use inline `(?-i:...)`
+  # to scope acronyms back to case-sensitive (e.g. NIH 'IDeA' vs the English
+  # word 'Idea' in 'DoD Idea Award'). The reason is logged + included in the
+  # diagnostic so it's easy to audit and refine the list over time.
+  # Validated 2026-05-30 against the 41 grants in the 2026-05-29 digest:
+  # caught 11/11 user-flagged ineligible grants with 0 false positives.
+  # NOTE: SBIR/STTR are intentionally NOT excluded — UMSOM faculty do collaborate
+  # via faculty-founded startups, so they remain in the digest.
+  ineligible_grant_patterns:
+    # Institutional restrictions
+    - pattern: '\bresource[- ]?limited\b'
+      reason:  'institutional: resource-limited institutions only (UMB does not qualify)'
+    - pattern: '(?-i:\bIDeA\b)|institutional development award'
+      reason:  'institutional: IDeA-state institutions only (Maryland is not eligible)'
+    - pattern: '^\s*single source\s*:'
+      reason:  'institutional: sole-source / restricted to existing awardee'
+    - pattern: '\bSuRE\b|support for research excellence'
+      reason:  'institutional: SuRE program (for emerging research institutions, not UMB)'
+    - pattern: '\bNCORP\b(?:(?!academic).)*?\bcommunity sites?\b'
+      reason:  'institutional: NCORP Community Sites (community sites only — keeps NCORP Academic Community Sites)'
+    - pattern: 'biomedical research environment.*sponsored programs'
+      reason:  'institutional: BRE-SPAD (research-admin development at emerging orgs)'
+    - pattern: '\bMSI\b|minority[- ]?serving institution|\bHBCU\b'
+      reason:  'institutional: MSI / HBCU only'
+    # PI / trainee restrictions (we are matching established faculty, not trainees)
+    - pattern: '\bdissertation\b|\bR36\b'
+      reason:  'PI: dissertation grant (doctoral students, R36)'
+    - pattern: '\bF32\b|individual postdoctoral fellowship|NRSA.*postdoctoral|postdoctoral.*NRSA'
+      reason:  'PI: postdoctoral fellowship (F32, trainee-only)'
+    - pattern: '\bF30\b|\bF31\b|\bF33\b|predoctoral fellowship|MD/PhD fellowship'
+      reason:  'PI: predoctoral fellowship (F30/F31/F33)'
+    - pattern: '\bT32\b|\bT35\b|\bT90\b|institutional training grant'
+      reason:  'PI: training grant (T-series, trainees)'
+    - pattern: '\bK32\b|academic career excellence'
+      reason:  'PI: K32 trainee career-development award'
+    - pattern: 'small grant program.*career development.*recipients|small grant.*\bmentored\b.*recipients'
+      reason:  'PI: small grant for current K-awardees only'
+    - pattern: 'fellowship for audiologists|research fellowship for.*students'
+      reason:  'PI: trainee fellowship'
+
   # ── Static stop words ─────────────────────────────────────────────────────
   # These are always excluded regardless of IDF score.
   # The dynamic stop word system (max_kw_prevalence_pct above) handles most

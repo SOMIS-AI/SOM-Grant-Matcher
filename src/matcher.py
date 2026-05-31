@@ -448,6 +448,40 @@ def _is_biomedically_relevant(grant: dict, min_vocab_hits: int = 1) -> tuple[boo
     return False, "no biomedical agency or vocabulary found"
 
 
+# ── UMB-specific eligibility filter ──────────────────────────────────────────
+# Drops grants UMB faculty are NOT eligible to apply for. Patterns live in
+# matching.ineligible_grant_patterns (config.yaml) so the institution/PI
+# screen-out is curatable without code changes. Each pattern is a regex run
+# case-insensitive against the grant title (with optional inline `(?-i:...)`
+# scopes for acronyms like IDeA that must stay case-sensitive). The diagnostic
+# logs which pattern fired so it's easy to audit and refine.
+
+def _compile_ineligible_patterns(raw_list):
+    """Compile a list of {pattern, reason} dicts into [(compiled_regex, reason)]."""
+    compiled = []
+    for entry in (raw_list or []):
+        if isinstance(entry, dict):
+            pat, reason = entry.get("pattern"), entry.get("reason", "")
+        else:
+            pat, reason = entry, ""
+        if not pat: continue
+        try:
+            compiled.append((re.compile(pat, re.IGNORECASE), reason))
+        except re.error as e:
+            logger.warning(f"Bad ineligible_grant_patterns regex {pat!r}: {e}")
+    return compiled
+
+
+def _is_institutionally_eligible(title: str, compiled_patterns) -> tuple[bool, str]:
+    """Return (eligible, reason). reason is empty when eligible."""
+    if not compiled_patterns or not title:
+        return True, ""
+    for rx, reason in compiled_patterns:
+        if rx.search(title):
+            return False, reason
+    return True, ""
+
+
 def _keyword_matches_for_grant(grant, faculty, stop_words, min_kw_len,
                                 idf_table, dynamic_stops):
     """
@@ -629,6 +663,14 @@ def find_matches(grants, faculty, config=None):
 
     skipped_irrelevant = 0
     skipped_admin = 0
+    skipped_ineligible = 0
+    ineligible_breakdown = {}
+
+    # Compile UMB-eligibility patterns once per run (config-driven).
+    ineligible_patterns = _compile_ineligible_patterns(
+        matching_cfg.get("ineligible_grant_patterns", [])
+    )
+
     for grant in grants:
         # ── Biomedical relevance pre-filter ──────────────────────────────────
         relevant, reason = _is_biomedically_relevant(grant)
@@ -640,6 +682,19 @@ def find_matches(grants, faculty, config=None):
             if "nav" in reason.lower() or "navigation" in grant.get("title","").lower():
                 print(f"Dropped: nav_page_detected — {grant['title'][:60]}")
             skipped_irrelevant += 1
+            continue
+
+        # ── UMB-specific eligibility filter ──────────────────────────────────
+        # Skip grants UMB faculty are not eligible to apply for (resource-limited
+        # institutions only, IDeA-state only, sole-source renewals, SuRE program,
+        # NCORP Community Sites, trainee/dissertation/F-series fellowships, etc.).
+        eligible, reason = _is_institutionally_eligible(grant.get("title", ""), ineligible_patterns)
+        if not eligible:
+            logger.info(
+                f"  SKIPPED (UMB ineligible: {reason}): '{grant['title'][:60]}'"
+            )
+            skipped_ineligible += 1
+            ineligible_breakdown[reason] = ineligible_breakdown.get(reason, 0) + 1
             continue
 
         # ── Administrative notice filter ─────────────────────────────────────
@@ -851,6 +906,8 @@ def find_matches(grants, faculty, config=None):
         "grants_matched": len(results),
         "grants_skipped_irrelevant": skipped_irrelevant,
         "grants_skipped_admin": skipped_admin,
+        "grants_skipped_ineligible": skipped_ineligible,
+        "ineligible_breakdown": ineligible_breakdown,
         "raw_matches": _raw_match_count,
         "matches_after_filter": total_matches,
         "suppressed_by_confidence": suppressed,
