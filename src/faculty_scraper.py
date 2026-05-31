@@ -25,6 +25,7 @@ import json
 import logging
 import re
 import time
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -190,6 +191,22 @@ def _normalize_profile_name(raw: str) -> str:
     return f"{first} {last}".strip()
 
 
+def _extract_title(raw: str) -> str:
+    """
+    Extract the academic title/rank from "Last, First [Middle], Credential[s], Title".
+    Drops leading name fields and any pure-credential parts (MD, PhD, MPH, …).
+    Returns the joined remaining comma-fields — usually a single title string like
+    "Assistant Professor", "Adjunct Associate Professor", "Professor Emeritus",
+    "Post Doc Fellow", "Research Associate", etc. Returns "" if no title is present.
+    """
+    parts = [p.strip() for p in (raw or "").split(",") if p.strip()]
+    if len(parts) < 3:
+        return ""
+    rest = parts[2:]  # drop last + first
+    title_parts = [p for p in rest if not _CREDENTIAL_RE.match(p)]
+    return ", ".join(title_parts).strip()
+
+
 def scrape_department_page(session: requests.Session, url: str) -> list[dict]:
     """
     Parse a redesigned UMSOM department listing page. Each faculty member is a
@@ -231,6 +248,8 @@ def scrape_department_page(session: requests.Session, url: str) -> list[dict]:
         seen.add(profile_url)
         faculty.append({
             "name": name,
+            "raw_profile_name": raw_name,    # full "Last, First, creds, title" string
+            "title": _extract_title(raw_name),  # academic rank ("Assistant Professor", "Adjunct Professor", "Professor Emeritus", …)
             "url": profile_url,
             "profile_url": profile_url,
             "department": department,
@@ -1009,6 +1028,43 @@ def save_faculty_cache(cache_file: str, data: dict):
     logger.info(f"Faculty cache saved: {len(data['faculty'])} profiles → {cache_file}")
 
 
+# ── Title-based exclusion (from matching) ────────────────────────────────────
+
+def _apply_title_exclusions(faculty_list: list[dict], patterns: list[str]) -> list[dict]:
+    """
+    Mark faculty whose `title` matches one of the configured regex `patterns`
+    with `excluded_from_matching=True` + `excluded_reason=<pattern>`, and
+    return only the faculty NOT excluded (the pool used for matching).
+
+    The marks are written back to each faculty dict in place so they persist
+    when the cache is saved and so the dashboard can show the excluded status.
+    Pre-rescrape faculty without a captured `title` field are never excluded —
+    graceful degradation until the next fresh scrape populates titles.
+    """
+    if not patterns:
+        return list(faculty_list)
+    compiled = [(p, re.compile(p, re.IGNORECASE)) for p in patterns]
+    kept, excluded_by = [], Counter()
+    for f in faculty_list:
+        title = (f.get("title") or "").strip()
+        matched = next((p for p, rx in compiled if title and rx.search(title)), None)
+        if matched:
+            f["excluded_from_matching"] = True
+            f["excluded_reason"]        = matched
+            excluded_by[matched] += 1
+        else:
+            # Clear stale marks (e.g., title was updated or pattern was removed)
+            f.pop("excluded_from_matching", None)
+            f.pop("excluded_reason", None)
+            kept.append(f)
+    if excluded_by:
+        logger.info(
+            f"  Title-based exclusion: dropped {sum(excluded_by.values())} faculty "
+            f"from matching pool by pattern: {dict(excluded_by.most_common())}"
+        )
+    return kept
+
+
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 def get_faculty_profiles(config: dict) -> list[dict]:
@@ -1025,7 +1081,8 @@ def get_faculty_profiles(config: dict) -> list[dict]:
             active = [f for f in cache["faculty"] if not f.get("inactive")]
             if len(active) < len(cache["faculty"]):
                 logger.info(f"  Excluded {len(cache['faculty']) - len(active)} inactive (departed) faculty")
-            return active
+            # Title-based exclusion (emeritus, adjunct, visiting, postdoc, research-assoc)
+            return _apply_title_exclusions(active, config["faculty"].get("excluded_title_patterns", []))
         else:
             logger.info(f"Faculty cache is {age_hours:.1f}h old, re-scraping...")
 
@@ -1078,13 +1135,20 @@ def get_faculty_profiles(config: dict) -> list[dict]:
                         f"{len(current_names)} active")
     logger.info(f"Total profiles tracked: {len(all_faculty)} ({len(current_names)} active)")
 
+    # Title-based exclusion (emeritus, adjunct, visiting, postdoc, research-associate).
+    # Marks excluded faculty in place with excluded_from_matching=True so the marks
+    # persist via the cache save and so the dashboard can show their status;
+    # subsequent enrichment passes skip them (saves thousands of API calls).
+    _apply_title_exclusions(all_faculty, config["faculty"].get("excluded_title_patterns", []))
+
     # ── Pass 2: individual UMSOM profile pages (Research Interests extraction) ──
-    # Runs on ALL active faculty — not just those missing keywords.
+    # Runs on ALL active, non-excluded faculty — not just those missing keywords.
     # For faculty who already have keywords from Pass 1, the Research Interests
     # section is MERGED in as additional high-quality keywords.
     # For faculty with no keywords at all, this is their first enrichment opportunity.
     active_with_url = [f for f in all_faculty
                        if not f.get("inactive")
+                       and not f.get("excluded_from_matching")
                        and (f.get("profile_url") or f.get("url","").startswith("http"))]
     logger.info(f"Pass 2/9: Visiting {len(active_with_url)} individual UMSOM profiles "
                 f"(Research Interests extraction)...")
@@ -1102,8 +1166,9 @@ def get_faculty_profiles(config: dict) -> list[dict]:
     logger.info(f"Pass 2 complete: {with_kw} with keywords, {still_missing} still missing, "
                 f"{ri_sourced} enriched from Research Interests section")
 
-    # ── Pass 3: PubMed enrichment (ALL active faculty) ────────────────────────
-    active_faculty = [f for f in all_faculty if not f.get("inactive")]
+    # ── Pass 3: PubMed enrichment (ALL active, non-excluded faculty) ──────────
+    active_faculty = [f for f in all_faculty
+                      if not f.get("inactive") and not f.get("excluded_from_matching")]
     logger.info(f"Pass 3/9: PubMed enrichment for all {len(active_faculty)} active faculty...")
     for i, fac in enumerate(active_faculty, 1):
         if i % 100 == 0:
