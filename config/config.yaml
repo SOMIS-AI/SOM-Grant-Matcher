@@ -137,15 +137,19 @@ matching:
       reason:  'institutional: BRE-SPAD (research-admin development at emerging orgs)'
     - pattern: '\bMSI\b|minority[- ]?serving institution|\bHBCU\b'
       reason:  'institutional: MSI / HBCU only'
-    # PI / trainee restrictions (we are matching established faculty, not trainees)
+    - pattern: '\bR15\b|research enhancement award'
+      reason:  'institutional: R15 / REAP — for health-prof / undergrad institutions without substantial NIH funding (UMSOM gets major NIH funding)'
+    # PI / trainee restrictions — we ONLY exclude grants where the named PI
+    # *must* be a trainee/student. Institutional training grants (T32, T35, T90,
+    # K12, D43, KL2, etc.) are KEPT because the PI of those awards is a senior
+    # faculty member; the trainees are downstream of the grant, not the PI.
+    # Confirmed by user 2026-06-01: keep K12 + T-series institutional training grants.
     - pattern: '\bdissertation\b|\bR36\b'
       reason:  'PI: dissertation grant (doctoral students, R36)'
     - pattern: '\bF32\b|individual postdoctoral fellowship|NRSA.*postdoctoral|postdoctoral.*NRSA'
       reason:  'PI: postdoctoral fellowship (F32, trainee-only)'
     - pattern: '\bF30\b|\bF31\b|\bF33\b|predoctoral fellowship|MD/PhD fellowship'
       reason:  'PI: predoctoral fellowship (F30/F31/F33)'
-    - pattern: '\bT32\b|\bT35\b|\bT90\b|institutional training grant'
-      reason:  'PI: training grant (T-series, trainees)'
     - pattern: '\bK32\b|academic career excellence'
       reason:  'PI: K32 trainee career-development award'
     - pattern: 'small grant program.*career development.*recipients|small grant.*\bmentored\b.*recipients'
