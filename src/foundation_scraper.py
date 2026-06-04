@@ -410,6 +410,9 @@ def _scrape_generic(name, source_id, url, seen_ids, link_patterns,
     soup = _fetch_page(url)
     if not soup:
         return []
+    # The landing page was reachable — record it so the health tracker treats
+    # a "fetched but nothing new" run as "quiet" rather than "likely_broken".
+    _mark_reached(source_id, 1)
 
     skip = skip_words or [
         "privacy", "contact", "about", "login", "careers",
@@ -775,6 +778,81 @@ def scrape_pcori(seen_ids):
 
 
 # ======================================================================
+# Medical-education and physician-focused foundations (2026-06-04)
+#
+# Probed each candidate from the user's "educational sources" list and only
+# built scrapers for the three with genuinely scrapeable opportunity listings.
+# Skipped (explicit by-name notes so future-us doesn't re-attempt without new
+# information):
+#   - Spencer Foundation: static pages with no programmatic RFP listing;
+#     grants are announced via their mailing list, not the website.
+#   - ABIM Foundation: their public pages are grantee-navigation; no current
+#     open RFPs visible to a non-logged-in scraper.
+#   - PND / Philanthropy News Digest: Candid (parent org) moved the RFP feed
+#     behind their paid Foundation Directory Online; the legacy /feeds/rfp URL
+#     now redirects to a Next.js content site with general nonprofit articles,
+#     NOT RFPs. The existing scrape_pnd_rfps is correspondingly disabled.
+#   - Pharma IISRs (AstraZeneca, BMS, Pfizer): registration-walled portals; you
+#     submit proposals to them, they don't publish open RFPs publicly.
+#   - NBME Stemmler, IAMSE, FAIMER, SDRME, SACME, AAMC awards: each funds 1-3
+#     small grants/year; volume too low to justify a dedicated scraper.
+# ======================================================================
+
+def scrape_ama(seen_ids):
+    """American Medical Association — research grants + AMA Foundation awards.
+
+    The AMA awards landing surfaces the Joan F. Giambalvo Fund, AMA Research
+    Challenge, Excellence in Medicine awards, and other named programs.
+    """
+    return _scrape_generic(
+        "American Medical Association", "ama",
+        "https://www.ama-assn.org/about/awards", seen_ids,
+        link_patterns=[
+            "/about/awards/", "/topics/ama-awards", "/topics/ama-grants",
+            "amafoundation.org/", "/research-challenge", "/giambalvo",
+        ],
+        agency="American Medical Association",
+        extra_search="physician medical education research grant award",
+    )
+
+
+def scrape_gold_foundation(seen_ids):
+    """Arnold P. Gold Foundation — humanism in healthcare awards & grants."""
+    return _scrape_generic(
+        "Arnold P. Gold Foundation", "gold_foundation",
+        "https://www.gold-foundation.org/our-grants/", seen_ids,
+        link_patterns=[
+            "/programs/", "/humanism", "/grants/", "/grant-",
+            "/awards/", "/award-",
+        ],
+        agency="Arnold P. Gold Foundation",
+        extra_search="humanism in medicine residency interprofessional education",
+    )
+
+
+def scrape_macy_foundation(seen_ids):
+    """Josiah Macy Jr. Foundation — Catalyst Awards + Recent RFAs.
+
+    Macy posts ~1-3 RFAs/year, so this scraper is intentionally narrow and
+    low-yield — most runs will return 0 new grants.
+    """
+    return _scrape_generic(
+        "Josiah Macy Jr. Foundation", "macy_foundation",
+        "https://macyfoundation.org/our-grantees/recent-rfas", seen_ids,
+        link_patterns=[
+            "/our-grantees/catalyst-awards", "/our-grantees/", "/rfa",
+            "/funding", "/awards",
+        ],
+        skip_words=[
+            "privacy", "contact", "login", "careers", "donate", "newsletter",
+            "stories", "about", "leadership", "history",
+        ],
+        agency="Josiah Macy Jr. Foundation",
+        extra_search="medical education health professions catalyst",
+    )
+
+
+# ======================================================================
 # DoD CDMRP / MRDC research programs via eBRAP (program-level)
 # ======================================================================
 
@@ -863,6 +941,10 @@ ALL_SCRAPERS = [
     ("proposal_central",               scrape_proposal_central),
     ("science_philanthropy_alliance",  scrape_science_philanthropy_alliance),
     ("pcori",                          scrape_pcori),
+    # Tier C: Med-ed / physician-focused foundations (2026-06-04)
+    ("ama",                            scrape_ama),
+    ("gold_foundation",                scrape_gold_foundation),
+    ("macy_foundation",                scrape_macy_foundation),
     # Tier D: Med school pages
     ("stanford_rmg",                   scrape_stanford_rmg),
     ("ucla_dgsom",                     scrape_ucla_dgsom),
