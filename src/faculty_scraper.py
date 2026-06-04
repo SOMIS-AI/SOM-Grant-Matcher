@@ -425,13 +425,20 @@ def _extract_phrases_from_text(text: str, max_phrases: int = 40) -> list:
     """
     text = text or ""
     scored: dict[str, int] = {}
+    freq: dict[str, int] = {}   # repetition counter — drives a small score bonus
+
+    def record(ph: str, sc: int):
+        if sc <= 0:
+            return
+        scored[ph] = max(scored.get(ph, 0), sc)
+        freq[ph]   = freq.get(ph, 0) + 1
 
     # Parenthesised acronyms — "X (AAA)" -> noun phrase before + the acronym itself.
     for m in re.finditer(r"([\w\- ]+?)\s*\(([A-Z]{2,6}s?)\)", text):
         before = m.group(1).strip().lower()
         acro   = m.group(2).strip().lower()
         if acro and acro not in _BIO_STOP:
-            scored[acro] = max(scored.get(acro, 0), 10)
+            record(acro, 10)
         if before:
             words = before.split()
             for n in (4, 3, 2, 1):
@@ -439,7 +446,7 @@ def _extract_phrases_from_text(text: str, max_phrases: int = 40) -> list:
                     cand = " ".join(words[-n:])
                     if all(w not in _BIO_STOP and not _looks_verb_or_adv(w)
                            for w in cand.split()):
-                        scored[cand] = max(scored.get(cand, 0), 12)
+                        record(cand, 12)
                         break
 
     # Segment on punctuation so n-grams stay within a single keyword/clause.
@@ -451,25 +458,34 @@ def _extract_phrases_from_text(text: str, max_phrases: int = 40) -> list:
             if (t in _BIO_STOP or t in _SINGLE_NOISE
                     or _looks_verb_or_adv(t) or len(t) < 5):
                 continue
-            scored[t] = max(scored.get(t, 0), _score_phrase([t]))
+            record(t, _score_phrase([t]))
         # 2-grams (within segment)
         for i in range(len(tokens) - 1):
             sc = _score_phrase(tokens[i:i+2])
             if sc > 0:
-                ph = " ".join(tokens[i:i+2])
-                scored[ph] = max(scored.get(ph, 0), sc)
-        # 3-grams (within segment): both edges must be noun-like; middle may be 'of'
+                record(" ".join(tokens[i:i+2]), sc)
+        # 3-grams (within segment). First try the strict score (all 3 tokens
+        # noun-like — yields score 8). If that fails, allow a relaxed form with
+        # 'of' in the middle (e.g. "loss of function") at score 6.
         for i in range(len(tokens) - 2):
             a, b, c = tokens[i:i+3]
-            if a in _BIO_STOP or c in _BIO_STOP: continue
-            if _looks_verb_or_adv(a) or _looks_verb_or_adv(c): continue
-            if len(a) < 4 or len(c) < 4: continue
-            score = 6
-            if b in _BIO_STOP and b != "of": score -= 2
-            if _looks_verb_or_adv(b): score -= 4
-            if score > 0:
-                ph = " ".join((a, b, c))
-                scored[ph] = max(scored.get(ph, 0), score)
+            sc = _score_phrase([a, b, c])
+            if sc <= 0:
+                if (a not in _BIO_STOP and c not in _BIO_STOP
+                        and not _looks_verb_or_adv(a) and not _looks_verb_or_adv(c)
+                        and len(a) >= 4 and len(c) >= 4 and b == "of"):
+                    sc = 6
+                else:
+                    continue
+            record(" ".join((a, b, c)), sc)
+
+    # Frequency bonus: phrases that recur are more canonical than one-off
+    # sliding-window variants. "frozen elephant trunk" appears 2x in Aakash
+    # Shah's titles vs "anastomosis frozen elephant" 1x — this bonus surfaces
+    # the canonical phrase ahead of its sliding-window neighbours.
+    for ph in list(scored):
+        if freq[ph] > 1:
+            scored[ph] += min(freq[ph] - 1, 3)   # +1/+2/+3 for 2/3/4+ occurrences
 
     # Drop single-word keywords already covered by a kept multi-word keyword.
     multi_tokens = {tok for p in scored if " " in p for tok in p.split()}
@@ -870,7 +886,13 @@ def enrich_from_europe_pmc(session: requests.Session, faculty: dict) -> dict:
     Europe PMC indexes PubMed + preprints + European journals — catches
     publications that PubMed may miss for international collaborators.
     Extracts MeSH terms and author keywords.
-    Affiliation-verified: only counts papers with University of Maryland affiliation.
+
+    Identity strategy (in order of precision):
+      1. If enrich_from_orcid already ran and stored faculty["orcid_id"], query
+         Europe PMC by AUTHORID:<orcid> — uniquely identifies this person and
+         eliminates the "multiple Aakash Shahs at Maryland" conflation issue.
+      2. Otherwise fall back to name + 'University of Maryland' affiliation
+         (loose; risks merging same-name researchers at any UM-* campus).
     """
     clean_name = _strip_credentials(faculty.get("name", ""))
     parts = clean_name.split()
@@ -881,13 +903,21 @@ def enrich_from_europe_pmc(session: requests.Session, faculty: dict) -> dict:
     first_name = parts[0]
     first_initial = first_name[0]
 
+    orcid_id = faculty.get("orcid_id")
     try:
         # Search with affiliation filter
-        query = (
-            f'AUTH:"{last_name} {first_initial}" '
-            f'AFFILIATION:"University of Maryland" '
-            f'FIRST_PDATE:[2020-01-01 TO 2099-12-31]'
-        )
+        if orcid_id:
+            # Precise: only papers authored by this exact ORCID
+            query = (
+                f'AUTHORID:"{orcid_id}" '
+                f'FIRST_PDATE:[2020-01-01 TO 2099-12-31]'
+            )
+        else:
+            query = (
+                f'AUTH:"{last_name} {first_initial}" '
+                f'AFFILIATION:"University of Maryland" '
+                f'FIRST_PDATE:[2020-01-01 TO 2099-12-31]'
+            )
         r = session.get(
             EPMC_SEARCH_URL,
             params={
@@ -907,24 +937,28 @@ def enrich_from_europe_pmc(session: requests.Session, faculty: dict) -> dict:
         if not results:
             return faculty
 
-        # Verify at least one result has Maryland affiliation in author list
-        verified_results = []
-        for paper in results:
-            # Check author affiliations
-            author_list = paper.get("authorList", {}).get("author", [])
-            for author in author_list:
-                aff = (author.get("affiliation") or "").lower()
-                auth_name = (author.get("lastName") or "").lower()
-                if last_name.lower() in auth_name and "maryland" in aff:
-                    verified_results.append(paper)
-                    break
-
-        if not verified_results:
-            # Fall back: accept any result if author name in full text affiliation
+        if orcid_id:
+            # ORCID query is already uniquely disambiguated — every paper here
+            # is genuinely authored by THIS faculty member, including collaborative
+            # papers where the Maryland affiliation may sit on a co-author.
+            verified_results = list(results)
+        else:
+            # Name-based fallback: verify at least one author block matches
+            # last-name AND has 'maryland' in its affiliation.
+            verified_results = []
             for paper in results:
-                aff_str = (paper.get("affiliation") or "").lower()
-                if "maryland" in aff_str:
-                    verified_results.append(paper)
+                author_list = paper.get("authorList", {}).get("author", [])
+                for author in author_list:
+                    aff = (author.get("affiliation") or "").lower()
+                    auth_name = (author.get("lastName") or "").lower()
+                    if last_name.lower() in auth_name and "maryland" in aff:
+                        verified_results.append(paper)
+                        break
+            if not verified_results:
+                for paper in results:
+                    aff_str = (paper.get("affiliation") or "").lower()
+                    if "maryland" in aff_str:
+                        verified_results.append(paper)
 
         if not verified_results:
             return faculty
@@ -946,13 +980,28 @@ def enrich_from_europe_pmc(session: requests.Session, faculty: dict) -> dict:
                 if kw and len(kw) > 3:
                     author_keywords.add(kw.lower())
 
-        # Filter generic MeSH stopwords
+        # Filter generic MeSH stopwords. These are auto-assigned by indexers
+        # to almost every clinical paper and convey no research-area signal.
+        # Expanded from the original short list after seeing demographic and
+        # study-design terms dominate Aakash Shah's Europe PMC results.
         mesh_stop = {
-            "humans", "male", "female", "adult", "aged", "animals", "mice",
-            "rats", "child", "adolescent", "middle aged", "young adult",
-            "united states", "retrospective studies", "prospective studies",
-            "treatment outcome", "time factors", "follow-up studies",
-            "aged, 80 and over", "infant", "newborn", "preschool"
+            # Demographics
+            "humans", "male", "female", "adult", "aged", "aged, 80 and over",
+            "adolescent", "child", "child, preschool", "preschool", "infant",
+            "infant, newborn", "newborn", "middle aged", "young adult",
+            "animals", "mice", "rats", "rats, wistar", "rats, sprague-dawley",
+            # Geography
+            "united states", "europe",
+            # Study designs / outcomes / methods (carry no research-area signal)
+            "retrospective studies", "prospective studies", "cohort studies",
+            "case-control studies", "cross-sectional studies", "longitudinal studies",
+            "follow-up studies", "treatment outcome", "time factors",
+            "risk factors", "incidence", "prevalence", "survival rate",
+            "survival analysis", "quality of life", "patient outcome assessment",
+            "outcome assessment, health care", "comparative effectiveness research",
+            "computer simulation", "models, statistical",
+            # Pregnancy/clinical demographics that show up everywhere
+            "pregnancy", "patient discharge",
         }
         clean_mesh = [t for t in mesh_terms if t not in mesh_stop]
         all_keywords = clean_mesh + [k for k in author_keywords if k not in mesh_terms]
@@ -1450,6 +1499,14 @@ def enrich_from_orcid(session: requests.Session, faculty: dict) -> dict:
                 # own clause and n-grams don't bridge across titles.
                 combined = ". ".join(titles) + "."
                 keywords = _extract_phrases_from_text(combined, max_phrases=25)
+
+        # Store the disambiguated ORCID identifier on the faculty record so
+        # downstream enrichment passes (Europe PMC, etc.) can use it to
+        # uniquely query for THIS faculty member's publications instead of
+        # falling back to loose name+affiliation searches that conflate
+        # different people with the same name at the same institution.
+        if orcid_id:
+            faculty["orcid_id"] = orcid_id
 
         if keywords:
             _merge_keywords(faculty, keywords, f"orcid({orcid_id})")
