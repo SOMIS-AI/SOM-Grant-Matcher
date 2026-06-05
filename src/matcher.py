@@ -316,10 +316,15 @@ _AGENCY_ALLOW = {
     "hhmi", "howard hughes",
     "wellcome", "gates foundation", "gates",
     "american cancer society", "american heart association",
-    "american diabetes association",
+    "american diabetes association", "american medical association",
     "alzheimer", "parkinson", "multiple sclerosis",
     "march of dimes", "simons foundation",
     "burroughs wellcome", "doris duke",
+    # Med-ed / humanism foundations (added 2026-06-05): without these, the
+    # biomedical-vocab pre-filter rejects real research grants from these
+    # foundations because the *title* doesn't carry biomedical vocabulary
+    # (e.g. "Giambalvo Research Grant", "Picker Gold Challenge Grants").
+    "arnold p. gold", "josiah macy",
     "pcori", "patient-centered outcomes research",
 }
 
