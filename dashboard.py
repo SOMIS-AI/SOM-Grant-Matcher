@@ -979,6 +979,126 @@ def logout():
     return redirect(url_for("login"))
 
 # ══════════════════════════════════════════════════════════════════════════════
+# API: SUBSCRIPTIONS (faculty digests + dept-admin digests)
+# ══════════════════════════════════════════════════════════════════════════════
+# Three resources, all admin-managed (no self-service enrollment):
+#   /api/subscriptions/faculty       — GET (list), POST (upsert), DELETE (tombstone)
+#   /api/subscriptions/dept-admins   — GET (list), POST (add/update), DELETE (remove)
+#   /api/subscriptions/log           — GET recent send-audit log + today's count
+# Implementation lives in src/subscriptions.py; this layer just translates
+# HTTP <→ those functions and renders consistent JSON.
+
+# src/ is already on sys.path via main.py; import lazily so dashboard.py can be
+# imported even if subscriptions.py is somehow missing during a deploy.
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).parent / "src"))
+import subscriptions as _subs
+
+
+def _json_err(msg, status=400):
+    return jsonify({"ok": False, "error": str(msg)}), status
+
+
+@app.route("/api/subscriptions/faculty", methods=["GET", "POST", "DELETE"])
+@login_required
+def api_subs_faculty():
+    if request.method == "GET":
+        subs = _subs.load_faculty_subs()
+        # Sort daily-first, then alpha by email for stable rendering
+        rows = sorted(subs.values(),
+                      key=lambda r: (0 if r.get("cadence") == "daily" else
+                                     1 if r.get("cadence") == "weekly" else 2,
+                                     r.get("email", "")))
+        return jsonify({"ok": True, "subscriptions": rows, "count": len(rows)})
+
+    data = request.get_json(silent=True) or request.form
+    email = (data.get("email") or "").strip()
+    if not email:
+        return _json_err("email is required")
+
+    if request.method == "DELETE":
+        ok = _subs.remove_faculty_sub(email)
+        return jsonify({"ok": ok})
+
+    # POST = create or update
+    try:
+        rec = _subs.upsert_faculty_sub(
+            email,
+            name=(data.get("name") or "").strip(),
+            department=(data.get("department") or "").strip(),
+            cadence=(data.get("cadence") or "daily").strip().lower(),
+            enrolled_by=session.get("user", "admin"),
+        )
+    except ValueError as e:
+        return _json_err(e)
+    return jsonify({"ok": True, "record": rec})
+
+
+@app.route("/api/subscriptions/dept-admins", methods=["GET", "POST", "DELETE"])
+@login_required
+def api_subs_dept_admins():
+    if request.method == "GET":
+        admins = _subs.load_dept_admins()
+        admins = sorted(admins, key=lambda a: (a.get("department", "").lower(),
+                                               a.get("email", "")))
+        return jsonify({"ok": True, "admins": admins, "count": len(admins)})
+
+    data = request.get_json(silent=True) or request.form
+    dept  = (data.get("department") or "").strip()
+    email = (data.get("email") or "").strip()
+    if not dept or not email:
+        return _json_err("department and email are required")
+
+    if request.method == "DELETE":
+        ok = _subs.remove_dept_admin(dept, email)
+        return jsonify({"ok": ok})
+
+    try:
+        rec = _subs.add_dept_admin(
+            department=dept, email=email,
+            name=(data.get("name") or "").strip(),
+            cadence=(data.get("cadence") or "daily").strip().lower(),
+            added_by=session.get("user", "admin"),
+        )
+    except ValueError as e:
+        return _json_err(e)
+    return jsonify({"ok": True, "record": rec})
+
+
+@app.route("/api/subscriptions/log")
+@login_required
+def api_subs_log():
+    """Recent send-audit entries + today's count + remaining SendGrid budget."""
+    log = _subs._load_json(_subs.EMAIL_LOG_FILE, {"log": []}).get("log", [])
+    # Most recent first, cap to 200 for the UI
+    log = list(reversed(log))[:200]
+    return jsonify({
+        "ok": True,
+        "entries":          log,
+        "sent_today":       _subs.count_today_emails(),
+        "daily_cap":        _subs.SENDGRID_DAILY_CAP,
+        "safety_headroom":  _subs.SAFETY_HEADROOM,
+        "remaining_today":  _subs.remaining_budget_today(),
+    })
+
+
+# Lightweight helper used by the Subscriptions UI to populate the
+# "Department" dropdown — distinct list of departments present in
+# the current faculty profiles file.
+@app.route("/api/subscriptions/departments")
+@login_required
+def api_subs_departments():
+    faculty = get_faculty()
+    seen = {}
+    for f in faculty:
+        d = (f.get("department") or "").strip()
+        if d:
+            seen.setdefault(d.lower(), d)
+    depts = sorted(seen.values(), key=str.lower)
+    return jsonify({"ok": True, "departments": depts, "count": len(depts)})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # DASHBOARD HTML
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1482,6 +1602,10 @@ tr:hover td{background:rgba(255,255,255,.018)}
       <span class="nav-icon">▤</span><span class="nav-label">Logs</span>
       <span class="nav-badge" id="sb-error-count" style="display:none"></span>
     </div>
+    <div class="nav-item" onclick="showPage('subscriptions')" id="nav-subscriptions">
+      <span class="nav-icon">✉</span><span class="nav-label">Subscriptions</span>
+      <span class="nav-badge" id="sb-subs-count" style="display:none"></span>
+    </div>
   </nav>
   <div class="sb-footer">
     <div>v3.0 · Hybrid Matcher</div>
@@ -1927,6 +2051,121 @@ tr:hover td{background:rgba(255,255,255,.018)}
     </div>
   </div>
 
+  <!-- ══ SUBSCRIPTIONS ══ -->
+  <div class="page" id="page-subscriptions">
+    <!-- SendGrid budget strip -->
+    <div class="panel" style="margin-bottom:14px">
+      <div class="panel-hdr">
+        <span class="panel-title">SendGrid Free-Tier Budget (today)</span>
+        <span class="sec-count" id="subs-budget-lbl" style="margin-left:auto">—</span>
+      </div>
+      <div class="panel-body" style="display:flex;gap:18px;align-items:center;font-size:12px">
+        <div><strong id="subs-sent-today">—</strong> sent today</div>
+        <div style="color:var(--text3)">·</div>
+        <div><strong id="subs-remaining">—</strong> remaining before safety cap</div>
+        <div style="color:var(--text3)">·</div>
+        <div>cap <strong id="subs-cap">—</strong> / day</div>
+      </div>
+    </div>
+
+    <!-- Faculty subscriptions -->
+    <div class="panel">
+      <div class="panel-hdr">
+        <span class="panel-title">Faculty Subscriptions</span>
+        <span class="sec-count" id="subs-faculty-count" style="margin-left:auto"></span>
+        <button class="btn-sm" style="margin-left:10px" onclick="openSubFacultyForm()">+ Add faculty</button>
+      </div>
+      <div class="panel-body">
+        <!-- Add/edit form (hidden until opened) -->
+        <div id="subs-faculty-form" style="display:none;margin-bottom:14px;padding:12px;
+             background:var(--surf2);border:1px solid var(--border);border-radius:4px">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
+            <input class="search-box" id="sf-email" placeholder="faculty email *">
+            <input class="search-box" id="sf-name"  placeholder="full name">
+            <input class="search-box" id="sf-dept"  placeholder="department" list="subs-dept-list">
+            <select class="filter-sel" id="sf-cadence">
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="off">Off (tombstone)</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn-sm" onclick="saveFacultySub()">Save</button>
+            <button class="btn-sm" onclick="closeSubFacultyForm()" style="background:var(--surf2)">Cancel</button>
+            <span id="sf-status" style="margin-left:10px;font-size:11px;color:var(--text3);align-self:center"></span>
+          </div>
+        </div>
+        <datalist id="subs-dept-list"></datalist>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr>
+              <th>Email</th><th>Name</th><th>Department</th><th>Cadence</th>
+              <th>Enrolled</th><th>Updated</th><th></th>
+            </tr></thead>
+            <tbody id="subs-faculty-tbody"><tr><td colspan="7" style="color:var(--text3)">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dept admin subscriptions -->
+    <div class="panel" style="margin-top:14px">
+      <div class="panel-hdr">
+        <span class="panel-title">Department Grants Administrators</span>
+        <span class="sec-count" id="subs-admin-count" style="margin-left:auto"></span>
+        <button class="btn-sm" style="margin-left:10px" onclick="openSubAdminForm()">+ Add admin</button>
+      </div>
+      <div class="panel-body">
+        <div id="subs-admin-form" style="display:none;margin-bottom:14px;padding:12px;
+             background:var(--surf2);border:1px solid var(--border);border-radius:4px">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
+            <input class="search-box" id="sa-dept"   placeholder="department *" list="subs-dept-list">
+            <input class="search-box" id="sa-email"  placeholder="admin email *">
+            <input class="search-box" id="sa-name"   placeholder="full name">
+            <select class="filter-sel" id="sa-cadence">
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="off">Off</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn-sm" onclick="saveDeptAdmin()">Save</button>
+            <button class="btn-sm" onclick="closeSubAdminForm()" style="background:var(--surf2)">Cancel</button>
+            <span id="sa-status" style="margin-left:10px;font-size:11px;color:var(--text3);align-self:center"></span>
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr>
+              <th>Department</th><th>Email</th><th>Name</th><th>Cadence</th>
+              <th>Added</th><th>Updated</th><th></th>
+            </tr></thead>
+            <tbody id="subs-admin-tbody"><tr><td colspan="7" style="color:var(--text3)">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent send log -->
+    <div class="panel" style="margin-top:14px">
+      <div class="panel-hdr">
+        <span class="panel-title">Recent Personalized Sends (audit log)</span>
+        <span class="sec-count" id="subs-log-count" style="margin-left:auto"></span>
+      </div>
+      <div class="panel-body">
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr>
+              <th>Timestamp</th><th>Kind</th><th>To</th><th>Subject</th>
+              <th>Department</th><th style="text-align:right">Matches</th>
+            </tr></thead>
+            <tbody id="subs-log-tbody"><tr><td colspan="6" style="color:var(--text3)">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   </div><!-- /pages -->
 </div><!-- /main -->
 
@@ -1951,12 +2190,13 @@ function showPage(name) {
   document.getElementById('topbar-title').textContent = {
     overview:'Overview', matches:'Grant Matches', grants:'Grant Explorer',
     analytics:'Analytics', faculty:'Faculty', keywords:'Keywords (global)',
-    pipeline:'Pipeline Status', logs:'System Logs'
+    pipeline:'Pipeline Status', logs:'System Logs',
+    subscriptions:'Email Subscriptions'
   }[name];
   currentPage = name;
   ({overview:loadOverview, matches:loadMatches, grants:loadGrantExplorer,
     analytics:loadAnalytics, faculty:loadFaculty, keywords:loadKeywords,
-    pipeline:loadPipeline, logs:loadLogs})[name]?.();
+    pipeline:loadPipeline, logs:loadLogs, subscriptions:loadSubscriptions})[name]?.();
 }
 
 function refreshCurrent() { showPage(currentPage); }
@@ -3103,6 +3343,204 @@ function renderModalSourcesChart(d){
 }
 // Close modal on Escape
 document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeFacModal(); });
+
+// ══ Subscriptions tab ══
+function escHtml(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,
+  c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function shortDate(iso){
+  if(!iso) return '—';
+  try { return new Date(iso).toLocaleString(); } catch(e) { return iso; }
+}
+function cadenceBadge(c){
+  const colorMap = {daily:'#22c55e', weekly:'#3b82f6', off:'#64748b'};
+  const col = colorMap[c] || '#64748b';
+  return `<span style="background:${col}22;color:${col};padding:1px 8px;
+          border-radius:3px;font-size:10px;text-transform:uppercase">${escHtml(c||'—')}</span>`;
+}
+
+async function loadSubscriptions() {
+  // Populate departments datalist for the form inputs
+  try {
+    const dr = await fetch('/api/subscriptions/departments').then(r=>r.json());
+    if (dr.ok) {
+      document.getElementById('subs-dept-list').innerHTML =
+        (dr.departments||[]).map(d=>`<option value="${escHtml(d)}">`).join('');
+    }
+  } catch(e) {}
+
+  // Faculty subs
+  try {
+    const r = await fetch('/api/subscriptions/faculty').then(r=>r.json());
+    const subs = r.ok ? (r.subscriptions||[]) : [];
+    document.getElementById('subs-faculty-count').textContent =
+      subs.length + ' enrolled';
+    document.getElementById('sb-subs-count').textContent = subs.length;
+    document.getElementById('sb-subs-count').style.display = subs.length ? '' : 'none';
+    const tb = document.getElementById('subs-faculty-tbody');
+    if (!subs.length) {
+      tb.innerHTML = '<tr><td colspan="7" style="color:var(--text3)">No faculty subscribers yet. Click "+ Add faculty" to enroll one.</td></tr>';
+    } else {
+      tb.innerHTML = subs.map(s=>`<tr>
+        <td><a href="javascript:editFacultySub('${escHtml(s.email)}')"
+              style="color:var(--blue);text-decoration:none">${escHtml(s.email)}</a></td>
+        <td>${escHtml(s.name||'')}</td>
+        <td>${escHtml(s.department||'')}</td>
+        <td>${cadenceBadge(s.cadence)}</td>
+        <td style="font-size:11px;color:var(--text3)">${shortDate(s.enrolled_at)}</td>
+        <td style="font-size:11px;color:var(--text3)">${shortDate(s.updated_at)}</td>
+        <td><button class="btn-sm" style="background:#ef444422;color:#ef4444"
+            onclick="deleteFacultySub('${escHtml(s.email)}')">×</button></td>
+      </tr>`).join('');
+    }
+  } catch(e) {
+    document.getElementById('subs-faculty-tbody').innerHTML =
+      '<tr><td colspan="7" style="color:var(--red)">Failed to load: '+escHtml(e.message||e)+'</td></tr>';
+  }
+
+  // Dept admins
+  try {
+    const r = await fetch('/api/subscriptions/dept-admins').then(r=>r.json());
+    const admins = r.ok ? (r.admins||[]) : [];
+    document.getElementById('subs-admin-count').textContent =
+      admins.length + ' admin' + (admins.length===1?'':'s');
+    const tb = document.getElementById('subs-admin-tbody');
+    if (!admins.length) {
+      tb.innerHTML = '<tr><td colspan="7" style="color:var(--text3)">No department admins yet. Click "+ Add admin" to add one.</td></tr>';
+    } else {
+      tb.innerHTML = admins.map(a=>`<tr>
+        <td><strong>${escHtml(a.department||'')}</strong></td>
+        <td>${escHtml(a.email)}</td>
+        <td>${escHtml(a.name||'')}</td>
+        <td>${cadenceBadge(a.cadence)}</td>
+        <td style="font-size:11px;color:var(--text3)">${shortDate(a.added_at)}</td>
+        <td style="font-size:11px;color:var(--text3)">${shortDate(a.updated_at)}</td>
+        <td><button class="btn-sm" style="background:#ef444422;color:#ef4444"
+            onclick="deleteDeptAdmin('${escHtml(a.department)}','${escHtml(a.email)}')">×</button></td>
+      </tr>`).join('');
+    }
+  } catch(e) {
+    document.getElementById('subs-admin-tbody').innerHTML =
+      '<tr><td colspan="7" style="color:var(--red)">Failed to load: '+escHtml(e.message||e)+'</td></tr>';
+  }
+
+  // Audit log + budget strip
+  try {
+    const r = await fetch('/api/subscriptions/log').then(r=>r.json());
+    if (r.ok) {
+      document.getElementById('subs-sent-today').textContent = r.sent_today;
+      document.getElementById('subs-remaining').textContent = r.remaining_today;
+      document.getElementById('subs-cap').textContent = r.daily_cap;
+      const lo = r.remaining_today <= 5;
+      document.getElementById('subs-budget-lbl').textContent =
+        lo ? '⚠ low' : 'ok';
+      document.getElementById('subs-budget-lbl').style.color = lo ? '#ef4444' : '#22c55e';
+      const tb = document.getElementById('subs-log-tbody');
+      document.getElementById('subs-log-count').textContent =
+        (r.entries||[]).length + ' recent';
+      if (!(r.entries||[]).length) {
+        tb.innerHTML = '<tr><td colspan="6" style="color:var(--text3)">No personalized emails sent yet.</td></tr>';
+      } else {
+        tb.innerHTML = r.entries.map(e=>`<tr>
+          <td style="font-size:11px">${shortDate(e.timestamp)}</td>
+          <td>${cadenceBadge(e.kind==='faculty'?'faculty':'dept admin')}</td>
+          <td>${escHtml(e.to)}</td>
+          <td style="font-size:11px;color:var(--text3)">${escHtml(e.subject)}</td>
+          <td>${escHtml(e.department||'')}</td>
+          <td style="text-align:right">${e.matches_count||0}</td>
+        </tr>`).join('');
+      }
+    }
+  } catch(e) {}
+}
+
+function openSubFacultyForm() {
+  document.getElementById('subs-faculty-form').style.display = '';
+  ['sf-email','sf-name','sf-dept'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('sf-cadence').value = 'daily';
+  document.getElementById('sf-status').textContent = '';
+  document.getElementById('sf-email').focus();
+}
+function closeSubFacultyForm() {
+  document.getElementById('subs-faculty-form').style.display = 'none';
+}
+async function editFacultySub(email) {
+  // Pre-fill form from existing record (returned by GET)
+  const r = await fetch('/api/subscriptions/faculty').then(r=>r.json());
+  const rec = (r.subscriptions||[]).find(s=>s.email===email);
+  if (!rec) return;
+  openSubFacultyForm();
+  document.getElementById('sf-email').value = rec.email;
+  document.getElementById('sf-name').value = rec.name || '';
+  document.getElementById('sf-dept').value = rec.department || '';
+  document.getElementById('sf-cadence').value = rec.cadence || 'daily';
+}
+async function saveFacultySub() {
+  const body = {
+    email:      document.getElementById('sf-email').value.trim(),
+    name:       document.getElementById('sf-name').value.trim(),
+    department: document.getElementById('sf-dept').value.trim(),
+    cadence:    document.getElementById('sf-cadence').value,
+  };
+  const status = document.getElementById('sf-status');
+  status.textContent = 'Saving…';
+  try {
+    const r = await fetch('/api/subscriptions/faculty', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    }).then(r=>r.json());
+    if (!r.ok) { status.textContent = 'Error: ' + (r.error||'unknown'); return; }
+    status.textContent = 'Saved.';
+    closeSubFacultyForm();
+    loadSubscriptions();
+  } catch(e) { status.textContent = 'Error: ' + e.message; }
+}
+async function deleteFacultySub(email) {
+  if (!confirm('Tombstone subscription for ' + email + '? (record kept, cadence set to "off")')) return;
+  await fetch('/api/subscriptions/faculty', {
+    method:'DELETE', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({email})
+  });
+  loadSubscriptions();
+}
+
+function openSubAdminForm() {
+  document.getElementById('subs-admin-form').style.display = '';
+  ['sa-dept','sa-email','sa-name'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('sa-cadence').value = 'daily';
+  document.getElementById('sa-status').textContent = '';
+  document.getElementById('sa-dept').focus();
+}
+function closeSubAdminForm() {
+  document.getElementById('subs-admin-form').style.display = 'none';
+}
+async function saveDeptAdmin() {
+  const body = {
+    department: document.getElementById('sa-dept').value.trim(),
+    email:      document.getElementById('sa-email').value.trim(),
+    name:       document.getElementById('sa-name').value.trim(),
+    cadence:    document.getElementById('sa-cadence').value,
+  };
+  const status = document.getElementById('sa-status');
+  status.textContent = 'Saving…';
+  try {
+    const r = await fetch('/api/subscriptions/dept-admins', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    }).then(r=>r.json());
+    if (!r.ok) { status.textContent = 'Error: ' + (r.error||'unknown'); return; }
+    status.textContent = 'Saved.';
+    closeSubAdminForm();
+    loadSubscriptions();
+  } catch(e) { status.textContent = 'Error: ' + e.message; }
+}
+async function deleteDeptAdmin(dept, email) {
+  if (!confirm('Remove dept admin ' + email + ' from ' + dept + '?')) return;
+  await fetch('/api/subscriptions/dept-admins', {
+    method:'DELETE', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({department: dept, email: email})
+  });
+  loadSubscriptions();
+}
 
 // ══ Init ══
 loadOverview();

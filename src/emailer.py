@@ -482,6 +482,199 @@ def send_email(config: dict, matched_results: list, recipients: list = None,
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# INDIVIDUALIZED NOTIFICATIONS (added 2026-06-05)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Two new email types layered on top of the existing admin digest:
+#
+#   build_faculty_email     → one faculty's personal digest (only their matches)
+#   build_dept_admin_email  → one dept admin's digest (all matches for dept faculty)
+#
+# Both use a lighter HTML than the admin digest (no Excel attachment, smaller body,
+# manual-unsubscribe footer). Senders log every send to subscriptions.email_log
+# for audit + the SendGrid free-tier daily-cap accounting.
+
+UNSUB_NOTICE = (
+    "To change frequency (daily/weekly) or unsubscribe, please contact the "
+    "SOM IS support team at help@som.umaryland.edu."
+)
+
+import html as _html_mod
+
+def esc(s) -> str:
+    """HTML-escape a value for safe interpolation into the personalized
+    email templates. Tolerates None / non-string inputs."""
+    if s is None:
+        return ""
+    return _html_mod.escape(str(s), quote=True)
+
+
+def _faculty_grants_table_html(matches_by_grant: list, dashboard_url: str = "") -> str:
+    """Render a compact HTML table of grants. `matches_by_grant` is a list of
+    {grant, matches} entries (same shape as the admin digest), but only one
+    match per grant (the recipient themselves for faculty emails, OR multiple
+    faculty for dept-admin emails)."""
+    rows_html = []
+    for r in matches_by_grant:
+        g = r["grant"]
+        ms = r["matches"]
+        title  = g.get("title", "")
+        agency = g.get("agency", "")
+        number = g.get("number", "")
+        close  = g.get("close_date", "") or "—"
+        link   = g.get("link", "")
+        ceil   = format_currency(g.get("award_ceiling", "")) if g.get("award_ceiling") else ""
+
+        # Aggregate match details (handles both 1-match faculty emails and many-match dept emails)
+        match_lines = []
+        for m in ms:
+            name = getattr(m, "faculty_name", None) or (m.get("faculty_name", "") if isinstance(m, dict) else "")
+            dept = getattr(m, "faculty_department", None) or (m.get("faculty_department", "") if isinstance(m, dict) else "")
+            conf = _get_conf(m)
+            kws  = _get_matched_keywords(m)
+            kw_str = ", ".join(kws[:6]) if kws else "semantic match"
+            dept_str = f" <span style='color:#94a3b8;font-size:11px'>· {esc(dept)}</span>" if dept else ""
+            match_lines.append(
+                f"<div style='margin:2px 0;font-size:12px;color:#334155'>"
+                f"<strong>{esc(name)}</strong>{dept_str} "
+                f"<span style='background:#dbeafe;color:#1e3a8a;padding:1px 6px;border-radius:3px;font-size:11px;margin-left:4px'>{conf}%</span>"
+                f"<div style='font-size:11px;color:#64748b;margin-left:4px'>{esc(kw_str)}</div>"
+                f"</div>"
+            )
+
+        title_html = f'<a href="{esc(link)}" target="_blank" style="color:#1e3a8a;text-decoration:none;font-weight:600">{esc(title)}</a>' if link else esc(title)
+        meta_parts = [esc(agency)] if agency else []
+        if number: meta_parts.append(esc(number))
+        if ceil:   meta_parts.append(f"Up to {ceil}")
+        meta_html = " &nbsp;&middot;&nbsp; ".join(meta_parts)
+
+        rows_html.append(
+            f"<tr><td style='padding:14px 18px;border-bottom:1px solid #e5e7eb;vertical-align:top'>"
+            f"<div style='font-size:14px;line-height:1.35'>{title_html}</div>"
+            f"<div style='font-size:11px;color:#64748b;margin-top:3px'>{meta_html}</div>"
+            f"<div style='font-size:11px;color:#dc2626;margin-top:4px'><strong>Deadline:</strong> {esc(close)}</div>"
+            f"<div style='margin-top:8px'>{''.join(match_lines)}</div>"
+            f"</td></tr>"
+        )
+
+    dash_link = (f"<p style='text-align:center;margin:14px 0 0;font-size:12px'>"
+                 f"<a href='{esc(dashboard_url)}' style='color:#1e3a8a'>Open the SOM Grant Matcher dashboard</a> "
+                 f"for full match detail and history.</p>") if dashboard_url else ""
+
+    return (
+        f"<table cellpadding='0' cellspacing='0' style='width:100%;border-collapse:collapse;"
+        f"background:#fff;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden'>"
+        f"{''.join(rows_html)}"
+        f"</table>"
+        f"{dash_link}"
+    )
+
+
+def build_faculty_email(faculty_name: str, matches_for_faculty: list,
+                        run_date: str, dashboard_url: str = "") -> tuple[str, str]:
+    """Build (subject, html_body) for ONE faculty member's personal digest.
+
+    `matches_for_faculty` is the same {grant, matches:[Match]} shape used by
+    send_email, already filtered to grants that THIS faculty matched on, and
+    each grant's `matches` list contains exactly this faculty member (so the
+    table renders consistently with the dept-admin builder).
+    """
+    n = len(matches_for_faculty)
+    subject = (f"[SOM Grant Matcher] {n} grant match{'' if n==1 else 'es'} "
+               f"for you - {run_date}")
+    greeting = f"Hello {esc(faculty_name.split()[0]) if faculty_name else 'Doctor'},"
+    intro = (f"You have <strong>{n}</strong> new grant match"
+             f"{'' if n==1 else 'es'} this run. Each match below was selected by the "
+             f"SOM Grant Matcher's hybrid keyword + AI matching against your research keywords.")
+    body = _faculty_grants_table_html(matches_for_faculty, dashboard_url)
+    footer = (f"<p style='font-size:11px;color:#64748b;margin-top:18px;line-height:1.5'>"
+              f"{esc(UNSUB_NOTICE)}</p>")
+    html = (
+        f"<!DOCTYPE html><html><body style='font-family:Arial,sans-serif;"
+        f"background:#f8fafc;margin:0;padding:24px;color:#0f172a'>"
+        f"<div style='max-width:720px;margin:0 auto;background:#fff;padding:24px 28px;"
+        f"border-radius:8px;border:1px solid #e5e7eb'>"
+        f"<div style='border-bottom:2px solid #1e3a8a;padding-bottom:12px;margin-bottom:18px'>"
+        f"<div style='font-size:11px;color:#64748b;letter-spacing:.1em;text-transform:uppercase'>"
+        f"University of Maryland School of Medicine</div>"
+        f"<div style='font-size:18px;color:#1e3a8a;font-weight:700;margin-top:2px'>"
+        f"AI Grant Match Application Notification</div>"
+        f"<div style='font-size:12px;color:#94a3b8;margin-top:2px'>Daily Email · {esc(run_date)}</div></div>"
+        f"<p style='font-size:13px;color:#334155'>{greeting}</p>"
+        f"<p style='font-size:13px;color:#334155;margin-bottom:14px'>{intro}</p>"
+        f"{body}{footer}"
+        f"</div></body></html>"
+    )
+    return subject, html
+
+
+def build_dept_admin_email(department: str, dept_matches: list,
+                           run_date: str, dashboard_url: str = "") -> tuple[str, str]:
+    """Build (subject, html_body) for a department admin's digest. `dept_matches`
+    is the same {grant, matches:[Match]} shape filtered to grants where at least
+    one matched faculty is in this department; each grant's `matches` is also
+    filtered to ONLY those dept-faculty (avoiding leaking other depts' info)."""
+    n = len(dept_matches)
+    total_faculty = sum(len(r["matches"]) for r in dept_matches)
+    subject = (f"[SOM Grant Matcher] {n} grant match{'' if n==1 else 'es'} "
+               f"across {department} faculty - {run_date}")
+    intro = (f"<strong>{n}</strong> grant{'' if n==1 else 's'} matched "
+             f"<strong>{total_faculty}</strong> faculty member"
+             f"{'' if total_faculty==1 else 's'} in <strong>{esc(department)}</strong> this run. "
+             f"Below are the grants and the matching faculty in your department.")
+    body = _faculty_grants_table_html(dept_matches, dashboard_url)
+    footer = (f"<p style='font-size:11px;color:#64748b;margin-top:18px;line-height:1.5'>"
+              f"{esc(UNSUB_NOTICE)}</p>")
+    html = (
+        f"<!DOCTYPE html><html><body style='font-family:Arial,sans-serif;"
+        f"background:#f8fafc;margin:0;padding:24px;color:#0f172a'>"
+        f"<div style='max-width:760px;margin:0 auto;background:#fff;padding:24px 28px;"
+        f"border-radius:8px;border:1px solid #e5e7eb'>"
+        f"<div style='border-bottom:2px solid #1e3a8a;padding-bottom:12px;margin-bottom:18px'>"
+        f"<div style='font-size:11px;color:#64748b;letter-spacing:.1em;text-transform:uppercase'>"
+        f"University of Maryland School of Medicine</div>"
+        f"<div style='font-size:18px;color:#1e3a8a;font-weight:700;margin-top:2px'>"
+        f"AI Grant Match Application Notification — {esc(department)}</div>"
+        f"<div style='font-size:12px;color:#94a3b8;margin-top:2px'>Department Daily Digest · {esc(run_date)}</div></div>"
+        f"<p style='font-size:13px;color:#334155;margin-bottom:14px'>{intro}</p>"
+        f"{body}{footer}"
+        f"</div></body></html>"
+    )
+    return subject, html
+
+
+def send_personal_email(config: dict, to_email: str, subject: str, html: str) -> bool:
+    """Send one personalized email via SendGrid. Returns True on success, False
+    on failure (so the caller can keep going with the next recipient). All
+    sends are logged by the caller via subscriptions.log_email — this function
+    only handles the SendGrid mechanics."""
+    api_key    = os.environ.get("SENDGRID_API_KEY",    config["email"].get("sendgrid_api_key", ""))
+    from_email = os.environ.get("SENDGRID_FROM_EMAIL", config["email"].get("sender", ""))
+    if not api_key or not from_email:
+        logger.error("send_personal_email: SENDGRID_API_KEY or SENDGRID_FROM_EMAIL not set")
+        return False
+    if not to_email or "@" not in to_email:
+        logger.warning(f"send_personal_email: invalid recipient {to_email!r}")
+        return False
+    try:
+        msg = Mail(
+            from_email=from_email,
+            to_emails=[To(to_email)],
+            subject=subject,
+            html_content=html,
+        )
+        sg = SendGridAPIClient(api_key)
+        resp = sg.send(msg)
+        if 200 <= resp.status_code < 300:
+            return True
+        logger.warning(f"send_personal_email: SendGrid {resp.status_code} for {to_email}")
+        return False
+    except Exception as e:
+        logger.error(f"send_personal_email failed for {to_email}: {e}")
+        return False
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # RESTART / HEALTH EMAIL — Sent on startup so admins can confirm a deploy is live
 # ═══════════════════════════════════════════════════════════════════════════════
 
