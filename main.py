@@ -43,7 +43,11 @@ from emailer import (
     get_weekly_recipients,
     get_restart_recipients,
     get_manual_recipients,
+    build_faculty_email,
+    build_dept_admin_email,
+    send_personal_email,
 )
+import subscriptions
 
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -392,6 +396,116 @@ def _build_id() -> str:
     return "unknown"
 
 
+def _send_personalized_digests(config: dict, matched_results: list,
+                               run_date: str, cadence: str = "daily") -> dict:
+    """Fan out personalized per-faculty and per-dept-admin emails from one
+    run's matched_results.
+
+    Algorithm:
+      1. Index matches by faculty email and by normalized department.
+      2. For each enrolled faculty (`cadence` cadence) WITH matches today,
+         build & send their personal digest. Skip if zero matches.
+      3. For each dept that has at least one match, for each `cadence`
+         dept admin in that dept, build & send the dept digest with ONLY
+         matches from faculty in that dept.
+      4. Every send is logged to subscriptions.email_log (audit + budget).
+      5. The SendGrid free-tier daily cap is enforced before each send via
+         remaining_budget_today(); when exhausted, we stop and log a warning.
+
+    Returns a stats dict for logging by the scheduler.
+    """
+    stats = {"faculty_sent": 0, "faculty_skipped_no_match": 0,
+             "dept_admin_sent": 0, "depts_with_matches": 0,
+             "budget_exhausted": False}
+
+    if not matched_results:
+        return stats
+
+    dashboard_url = os.environ.get("DASHBOARD_URL", "")
+
+    # ── 1. Index matches by faculty.email and by normalized department ──────
+    # Each value is a list of {grant, matches:[Match]} where the match list
+    # is filtered to just the relevant faculty (faculty bucket) or department
+    # (dept bucket). This avoids leaking other faculty's data into a person's
+    # email and other depts' data into a dept admin's email.
+    by_faculty: dict[str, list] = {}
+    by_dept:    dict[str, list] = {}
+
+    for r in matched_results:
+        grant = r.get("grant", r) if isinstance(r, dict) else r
+        ms = r.get("matches", []) if isinstance(r, dict) else []
+        # Per-faculty filtering
+        per_fac: dict[str, list] = {}
+        per_dept: dict[str, list] = {}
+        for m in ms:
+            email = (getattr(m, "faculty_email", "") or "").strip().lower()
+            dept  = getattr(m, "faculty_department", "") or ""
+            dept_key = subscriptions.normalize_dept_name(dept)
+            if email:
+                per_fac.setdefault(email, []).append(m)
+            if dept_key:
+                per_dept.setdefault(dept_key, []).append(m)
+        for email, ms_for_fac in per_fac.items():
+            by_faculty.setdefault(email, []).append({"grant": grant, "matches": ms_for_fac})
+        for dept_key, ms_for_dept in per_dept.items():
+            by_dept.setdefault(dept_key, []).append({"grant": grant, "matches": ms_for_dept})
+
+    # ── 2. Per-faculty personal digests ─────────────────────────────────────
+    enrolled = subscriptions.faculty_subs_for_cadence(cadence)
+    for email, sub in enrolled.items():
+        bucket = by_faculty.get(email)
+        if not bucket:
+            stats["faculty_skipped_no_match"] += 1
+            continue
+        if subscriptions.remaining_budget_today() <= 0:
+            stats["budget_exhausted"] = True
+            logger = logging.getLogger("main")
+            logger.warning("SendGrid daily cap reached — skipping remaining faculty digests.")
+            break
+        name = sub.get("name", "")
+        subject, html = build_faculty_email(name, bucket, run_date, dashboard_url)
+        if send_personal_email(config, email, subject, html):
+            subscriptions.log_email(
+                kind="faculty", to=email, subject=subject,
+                matches_count=len(bucket), faculty_name=name,
+                department=sub.get("department", ""),
+            )
+            stats["faculty_sent"] += 1
+
+    # ── 3. Per-department admin digests ─────────────────────────────────────
+    stats["depts_with_matches"] = len(by_dept)
+    for dept_key, dept_bucket in by_dept.items():
+        # Pick a human-readable dept label from the first match
+        dept_label = ""
+        for r in dept_bucket:
+            for m in r["matches"]:
+                dl = getattr(m, "faculty_department", "")
+                if dl:
+                    dept_label = dl
+                    break
+            if dept_label:
+                break
+        dept_label = dept_label or dept_key.title()
+
+        admins = subscriptions.admins_for_department(dept_label, cadence=cadence)
+        for admin in admins:
+            if subscriptions.remaining_budget_today() <= 0:
+                stats["budget_exhausted"] = True
+                logger = logging.getLogger("main")
+                logger.warning("SendGrid daily cap reached — skipping remaining dept-admin digests.")
+                return stats
+            subject, html = build_dept_admin_email(dept_label, dept_bucket, run_date, dashboard_url)
+            if send_personal_email(config, admin["email"], subject, html):
+                subscriptions.log_email(
+                    kind="dept_admin", to=admin["email"], subject=subject,
+                    matches_count=len(dept_bucket),
+                    faculty_name=admin.get("name", ""),
+                    department=dept_label,
+                )
+                stats["dept_admin_sent"] += 1
+    return stats
+
+
 def run_scheduler(config: dict):
     """
     Continuous scheduler for cloud (Azure Web App) deployment.
@@ -491,6 +605,23 @@ def run_scheduler(config: dict):
                 logger.info(f"  ✓ Daily digest sent to {len(daily_recipients)} recipient(s)")
             except Exception as e:
                 logger.error(f"Daily digest failed: {e}", exc_info=True)
+
+        # ── Per-faculty + per-dept personalized digests (daily cadence) ─────
+        # Opt-in via the dashboard Subscriptions tab. Skipped silently if no
+        # one is enrolled. SendGrid free-tier cap enforced inside the helper.
+        if matched_results:
+            try:
+                run_date = fire_time.strftime("%Y-%m-%d")
+                stats = _send_personalized_digests(config, matched_results,
+                                                   run_date, cadence="daily")
+                logger.info(
+                    f"  ✓ Personalized digests — faculty sent: {stats['faculty_sent']}, "
+                    f"dept admins sent: {stats['dept_admin_sent']} "
+                    f"(across {stats['depts_with_matches']} dept(s))"
+                    + ("  ⚠ budget exhausted" if stats["budget_exhausted"] else "")
+                )
+            except Exception as e:
+                logger.error(f"Personalized digest fan-out failed: {e}", exc_info=True)
 
         # ── Weekly 7-day roundup (only on the configured weekday) ────────────
         if fire_time.weekday() == weekly_weekday:
