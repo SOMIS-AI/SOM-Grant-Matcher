@@ -571,20 +571,26 @@ def _faculty_grants_table_html(matches_by_grant: list, dashboard_url: str = "") 
 
 
 def build_faculty_email(faculty_name: str, matches_for_faculty: list,
-                        run_date: str, dashboard_url: str = "") -> tuple[str, str]:
+                        run_date: str, dashboard_url: str = "",
+                        digest_label: str = "Daily") -> tuple[str, str]:
     """Build (subject, html_body) for ONE faculty member's personal digest.
 
     `matches_for_faculty` is the same {grant, matches:[Match]} shape used by
     send_email, already filtered to grants that THIS faculty matched on, and
     each grant's `matches` list contains exactly this faculty member (so the
     table renders consistently with the dept-admin builder).
+
+    `digest_label` is "Daily" (today's run) or "Weekly" (7-day roundup).
     """
     n = len(matches_for_faculty)
+    is_weekly = digest_label.lower() == "weekly"
+    period_phrase = "this week" if is_weekly else "this run"
+    subject_suffix = " (Weekly roundup)" if is_weekly else ""
     subject = (f"[SOM Grant Matcher] {n} grant match{'' if n==1 else 'es'} "
-               f"for you - {run_date}")
+               f"for you - {run_date}{subject_suffix}")
     greeting = f"Hello {esc(faculty_name.split()[0]) if faculty_name else 'Doctor'},"
-    intro = (f"You have <strong>{n}</strong> new grant match"
-             f"{'' if n==1 else 'es'} this run. Each match below was selected by the "
+    intro = (f"You have <strong>{n}</strong> grant match"
+             f"{'' if n==1 else 'es'} {period_phrase}. Each match below was selected by the "
              f"SOM Grant Matcher's hybrid keyword + AI matching against your research keywords.")
     body = _faculty_grants_table_html(matches_for_faculty, dashboard_url)
     footer = (f"<p style='font-size:11px;color:#64748b;margin-top:18px;line-height:1.5'>"
@@ -599,7 +605,7 @@ def build_faculty_email(faculty_name: str, matches_for_faculty: list,
         f"University of Maryland School of Medicine</div>"
         f"<div style='font-size:18px;color:#1e3a8a;font-weight:700;margin-top:2px'>"
         f"AI Grant Match Application Notification</div>"
-        f"<div style='font-size:12px;color:#94a3b8;margin-top:2px'>Daily Email · {esc(run_date)}</div></div>"
+        f"<div style='font-size:12px;color:#94a3b8;margin-top:2px'>{esc(digest_label)} Email · {esc(run_date)}</div></div>"
         f"<p style='font-size:13px;color:#334155'>{greeting}</p>"
         f"<p style='font-size:13px;color:#334155;margin-bottom:14px'>{intro}</p>"
         f"{body}{footer}"
@@ -609,18 +615,25 @@ def build_faculty_email(faculty_name: str, matches_for_faculty: list,
 
 
 def build_dept_admin_email(department: str, dept_matches: list,
-                           run_date: str, dashboard_url: str = "") -> tuple[str, str]:
+                           run_date: str, dashboard_url: str = "",
+                           digest_label: str = "Daily") -> tuple[str, str]:
     """Build (subject, html_body) for a department admin's digest. `dept_matches`
     is the same {grant, matches:[Match]} shape filtered to grants where at least
     one matched faculty is in this department; each grant's `matches` is also
-    filtered to ONLY those dept-faculty (avoiding leaking other depts' info)."""
+    filtered to ONLY those dept-faculty (avoiding leaking other depts' info).
+
+    `digest_label` is "Daily" or "Weekly"."""
     n = len(dept_matches)
     total_faculty = sum(len(r["matches"]) for r in dept_matches)
+    is_weekly = digest_label.lower() == "weekly"
+    period_phrase = "this week" if is_weekly else "this run"
+    subject_suffix = " (Weekly roundup)" if is_weekly else ""
+    subheader = "Department Weekly Roundup" if is_weekly else "Department Daily Digest"
     subject = (f"[SOM Grant Matcher] {n} grant match{'' if n==1 else 'es'} "
-               f"across {department} faculty - {run_date}")
+               f"across {department} faculty - {run_date}{subject_suffix}")
     intro = (f"<strong>{n}</strong> grant{'' if n==1 else 's'} matched "
              f"<strong>{total_faculty}</strong> faculty member"
-             f"{'' if total_faculty==1 else 's'} in <strong>{esc(department)}</strong> this run. "
+             f"{'' if total_faculty==1 else 's'} in <strong>{esc(department)}</strong> {period_phrase}. "
              f"Below are the grants and the matching faculty in your department.")
     body = _faculty_grants_table_html(dept_matches, dashboard_url)
     footer = (f"<p style='font-size:11px;color:#64748b;margin-top:18px;line-height:1.5'>"
@@ -635,7 +648,7 @@ def build_dept_admin_email(department: str, dept_matches: list,
         f"University of Maryland School of Medicine</div>"
         f"<div style='font-size:18px;color:#1e3a8a;font-weight:700;margin-top:2px'>"
         f"AI Grant Match Application Notification — {esc(department)}</div>"
-        f"<div style='font-size:12px;color:#94a3b8;margin-top:2px'>Department Daily Digest · {esc(run_date)}</div></div>"
+        f"<div style='font-size:12px;color:#94a3b8;margin-top:2px'>{esc(subheader)} · {esc(run_date)}</div></div>"
         f"<p style='font-size:13px;color:#334155;margin-bottom:14px'>{intro}</p>"
         f"{body}{footer}"
         f"</div></body></html>"
