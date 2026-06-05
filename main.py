@@ -397,7 +397,8 @@ def _build_id() -> str:
 
 
 def _send_personalized_digests(config: dict, matched_results: list,
-                               run_date: str, cadence: str = "daily") -> dict:
+                               run_date: str, cadence: str = "daily",
+                               digest_label: str = "Daily") -> dict:
     """Fan out personalized per-faculty and per-dept-admin emails from one
     run's matched_results.
 
@@ -411,6 +412,11 @@ def _send_personalized_digests(config: dict, matched_results: list,
       4. Every send is logged to subscriptions.email_log (audit + budget).
       5. The SendGrid free-tier daily cap is enforced before each send via
          remaining_budget_today(); when exhausted, we stop and log a warning.
+
+    `cadence`      — which subscription bucket to read ("daily" or "weekly").
+    `digest_label` — label rendered in the email subject + header
+                     ("Daily" or "Weekly"); almost always matches cadence, but
+                     kept separate so a manual one-off can label however it wants.
 
     Returns a stats dict for logging by the scheduler.
     """
@@ -463,7 +469,8 @@ def _send_personalized_digests(config: dict, matched_results: list,
             logger.warning("SendGrid daily cap reached — skipping remaining faculty digests.")
             break
         name = sub.get("name", "")
-        subject, html = build_faculty_email(name, bucket, run_date, dashboard_url)
+        subject, html = build_faculty_email(name, bucket, run_date, dashboard_url,
+                                            digest_label=digest_label)
         if send_personal_email(config, email, subject, html):
             subscriptions.log_email(
                 kind="faculty", to=email, subject=subject,
@@ -494,7 +501,8 @@ def _send_personalized_digests(config: dict, matched_results: list,
                 logger = logging.getLogger("main")
                 logger.warning("SendGrid daily cap reached — skipping remaining dept-admin digests.")
                 return stats
-            subject, html = build_dept_admin_email(dept_label, dept_bucket, run_date, dashboard_url)
+            subject, html = build_dept_admin_email(dept_label, dept_bucket, run_date,
+                                                   dashboard_url, digest_label=digest_label)
             if send_personal_email(config, admin["email"], subject, html):
                 subscriptions.log_email(
                     kind="dept_admin", to=admin["email"], subject=subject,
@@ -624,20 +632,46 @@ def run_scheduler(config: dict):
                 logger.error(f"Personalized digest fan-out failed: {e}", exc_info=True)
 
         # ── Weekly 7-day roundup (only on the configured weekday) ────────────
+        weekly_roundup_cache = None  # share the 7-day fetch with the personalized fan-out below
         if fire_time.weekday() == weekly_weekday:
             weekly_recipients = get_weekly_recipients()
             if not weekly_recipients:
                 logger.info("  Weekly roundup: no WEEKLY_RECIPIENTS configured — not sent.")
             else:
-                roundup = load_recent_matched_results(7)
-                if not roundup:
+                weekly_roundup_cache = load_recent_matched_results(7)
+                if not weekly_roundup_cache:
                     logger.info("  Weekly roundup: no matches in the last 7 days — not sent.")
                 else:
                     try:
-                        send_email(config, roundup, recipients=weekly_recipients, digest_label="Weekly")
+                        send_email(config, weekly_roundup_cache, recipients=weekly_recipients, digest_label="Weekly")
                         logger.info(f"  ✓ Weekly roundup sent to {len(weekly_recipients)} recipient(s)")
                     except Exception as e:
                         logger.error(f"Weekly roundup failed: {e}", exc_info=True)
+
+            # ── Personalized weekly digests (mirror of the daily fan-out) ────
+            # Same opt-in mechanism, same budget cap, but reads the 7-day
+            # roundup and pulls only weekly-cadence enrollees. Always attempts
+            # the fetch even if WEEKLY_RECIPIENTS is empty, so faculty/dept-admin
+            # weekly subs work independently of the admin weekly setting.
+            try:
+                if weekly_roundup_cache is None:
+                    weekly_roundup_cache = load_recent_matched_results(7)
+                if weekly_roundup_cache:
+                    run_date_w = fire_time.strftime("%Y-%m-%d")
+                    stats_w = _send_personalized_digests(
+                        config, weekly_roundup_cache, run_date_w,
+                        cadence="weekly", digest_label="Weekly",
+                    )
+                    logger.info(
+                        f"  ✓ Personalized weekly digests — faculty sent: {stats_w['faculty_sent']}, "
+                        f"dept admins sent: {stats_w['dept_admin_sent']} "
+                        f"(across {stats_w['depts_with_matches']} dept(s))"
+                        + ("  ⚠ budget exhausted" if stats_w["budget_exhausted"] else "")
+                    )
+                else:
+                    logger.info("  Personalized weekly digests: no matches in the last 7 days — none sent.")
+            except Exception as e:
+                logger.error(f"Personalized weekly fan-out failed: {e}", exc_info=True)
 
         # ── Diagnostic (admin only, every run) ───────────────────────────────
         try:
