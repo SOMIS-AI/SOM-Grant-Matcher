@@ -194,11 +194,14 @@ def fetch_all_sources(config: dict) -> list:
     never reported twice regardless of which source found them.
     """
     seen_file = config["grants"]["seen_grants_file"]
-    seen_ids = load_seen_grants(seen_file)
     all_new_grants = []
     source_stats = {}
 
     # Source 1: Grants.gov (original)
+    # fetch_new_grants() does its OWN load/filter/save against the seen_grants
+    # file, so we don't pre-load here — doing so and then saving our local copy
+    # at the end of this function would overwrite the IDs Grants.gov just
+    # persisted (the bug that caused duplicate digests on 2026-06-06..08).
     logger.info("─── Source 1/3: Grants.gov ───")
     try:
         grants_gov = fetch_new_grants(config)
@@ -207,6 +210,10 @@ def fetch_all_sources(config: dict) -> list:
     except Exception as e:
         logger.error(f"Grants.gov fetch failed: {e}", exc_info=True)
         source_stats["grants_gov"] = 0
+
+    # Now read seen_ids back from disk so reporter+external sources see
+    # whatever Grants.gov just persisted, and our final save below preserves it.
+    seen_ids = load_seen_grants(seen_file)
 
     # Source 2: NIH RePORTER + Federal RePORTER
     if fetch_all_reporter_grants is not None:
