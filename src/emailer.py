@@ -17,7 +17,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, To
+from sendgrid.helpers.mail import Mail, To, Bcc
 
 logger = logging.getLogger(__name__)
 
@@ -428,6 +428,13 @@ def send_email(config: dict, matched_results: list, recipients: list = None,
     if not from_email:
         raise ValueError("SENDGRID_FROM_EMAIL environment variable is not set.")
 
+    # Distribution lists (DAILY/WEEKLY/MANUAL_RECIPIENTS) go in BCC so recipients
+    # don't see each other's addresses. The visible To address is a single mailbox
+    # so the message has a real To header (spam-filter-friendly). Override at the
+    # env layer via DIGEST_VISIBLE_TO if needed.
+    visible_to = os.environ.get("DIGEST_VISIBLE_TO",
+                                "somgrantmatcher@som.umaryland.edu")
+
     run_date      = datetime.utcnow().strftime("%B %d, %Y")
     total_grants  = len(matched_results)
     total_matches = sum(len(r["matches"]) for r in matched_results)
@@ -445,11 +452,18 @@ def send_email(config: dict, matched_results: list, recipients: list = None,
 
     message = Mail(
         from_email=from_email,
-        to_emails=[To(r) for r in recipients],
+        to_emails=[To(visible_to)],
         subject=subject,
         plain_text_content=text_body,
         html_content=html_body,
     )
+
+    # BCC every actual recipient. SendGrid rejects duplicates between To and BCC,
+    # so skip any recipient address that matches the visible To (case-insensitive).
+    visible_to_lower = visible_to.lower()
+    for r in recipients:
+        if r.lower() != visible_to_lower:
+            message.add_bcc(Bcc(r))
 
     # Attach the Excel match report (Summary tab + one tab per grant).
     try:
@@ -473,8 +487,8 @@ def send_email(config: dict, matched_results: list, recipients: list = None,
         sg = SendGridAPIClient(api_key)
         response = sg.send(message)
         logger.info(
-            f"Email sent via SendGrid to {len(recipients)} recipient(s): {', '.join(recipients)} "
-            f"(status {response.status_code})"
+            f"Email sent via SendGrid: To={visible_to}, BCC={len(recipients)} recipient(s) "
+            f"({', '.join(recipients)}) (status {response.status_code})"
         )
     except Exception as e:
         logger.error(f"Failed to send email via SendGrid: {e}")
