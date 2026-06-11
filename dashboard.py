@@ -101,10 +101,18 @@ def api_stats():
     scrape     = stats.get("last_scrape", {})
     grants_run = stats.get("last_grants_run", {})
 
-    # Keyword coverage
-    with_kw   = sum(1 for f in faculty if f.get("keywords"))
-    total_fac = len(faculty)
-    kw_pct    = round(with_kw / total_fac * 100, 1) if total_fac else 0
+    # Active vs excluded breakdown. Title-exclusion marks emeritus/adjunct/
+    # visiting/postdoc/research-associate faculty with excluded_from_matching=True
+    # — they're kept on file but never enter the matcher's pool. The diagnostic
+    # email's "Faculty processed" row uses the active count, so the dashboard
+    # headline should match it for consistency.
+    total_fac     = len(faculty)
+    active_fac    = sum(1 for f in faculty if not f.get("excluded_from_matching"))
+    excluded_fac  = total_fac - active_fac
+
+    # Keyword coverage (computed against total pool so the % matches what's on disk)
+    with_kw = sum(1 for f in faculty if f.get("keywords"))
+    kw_pct  = round(with_kw / total_fac * 100, 1) if total_fac else 0
 
     # Embedding coverage
     with_emb = sum(1 for f in faculty if f.get("embedding"))
@@ -168,6 +176,8 @@ def api_stats():
         "scrape":    {**scrape,     "time_ago": time_ago(scrape.get("timestamp"))},
         "grants_run":{**grants_run, "time_ago": time_ago(grants_run.get("timestamp"))},
         "total_faculty":        total_fac,
+        "active_faculty":       active_fac,
+        "excluded_faculty":     excluded_fac,
         "faculty_with_keywords":with_kw,
         "keyword_coverage_pct": kw_pct,
         "faculty_with_embeddings": with_emb,
@@ -1630,7 +1640,7 @@ tr:hover td{background:rgba(255,255,255,.018)}
   <div class="page active" id="page-overview">
     <div class="stat-grid" id="overview-stats">
       <div class="stat-card blue"><div class="stat-accent" style="background:var(--blue)"></div>
-        <div class="stat-label">Faculty Tracked</div><div class="stat-val" id="s-faculty">—</div>
+        <div class="stat-label">Faculty in Matching Pool</div><div class="stat-val" id="s-faculty">—</div>
         <div class="stat-meta" id="s-faculty-meta"></div></div>
       <div class="stat-card green"><div class="stat-accent" style="background:var(--green)"></div>
         <div class="stat-label">Keyword Coverage</div><div class="stat-val" id="s-kw-pct">—</div>
@@ -2256,8 +2266,12 @@ async function loadOverview() {
   const d = await fetch('/api/stats').then(r=>r.json());
 
   // Stat cards
-  setText('s-faculty', (d.total_faculty||0).toLocaleString());
-  setText('s-faculty-meta', `${(d.faculty_with_keywords||0).toLocaleString()} with keywords`);
+  // Headline = active matching pool (matches diagnostic email's "Faculty processed").
+  // Subtitle shows the excluded-from-matching count and the unfiltered total so
+  // the number reconciles with the underlying faculty_profiles.json.
+  setText('s-faculty', (d.active_faculty||0).toLocaleString());
+  setText('s-faculty-meta',
+    `${(d.total_faculty||0).toLocaleString()} total · ${(d.excluded_faculty||0).toLocaleString()} excluded from matching`);
   setText('s-kw-pct', (d.keyword_coverage_pct||0) + '%');
   setText('s-kw-meta', 'of faculty have research keywords');
   setText('s-matches', (d.total_matches_logged||0).toLocaleString());
