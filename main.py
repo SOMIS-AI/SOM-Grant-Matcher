@@ -156,13 +156,61 @@ def run_pipeline(config: dict, force_scrape: bool = False):
                     f"(need v{EMBEDDING_VERSION}). Regenerating..."
                 )
                 embed_faculty_batch(faculty)
-                # Save updated embeddings back to cache so we don't redo this every run
+                # Save updated embeddings back to cache so we don't redo this every run.
+                # The cache file is expected to be {"scraped_at": iso, "faculty": [...]}.
+                # We MUST preserve the existing scraped_at (otherwise the rescrape-age
+                # check resets to "very old" and forces a 3h scrape on the next run)
+                # AND any faculty marked inactive (departed) that aren't in this active
+                # subset. Earlier versions of this block wrote `faculty` (a bare list of
+                # active+title-non-excluded only) directly to the cache, which clobbered
+                # both pieces of state. Merge the new embeddings into the existing cache
+                # structure instead.
                 try:
                     cache_file = config["faculty"]["cache_file"]
-                    Path(cache_file).parent.mkdir(parents=True, exist_ok=True)
-                    with open(cache_file, "w") as f:
-                        json.dump(faculty, f)
-                    logger.info(f"  ✓ Updated embeddings saved to cache")
+                    cache_path = Path(cache_file)
+                    cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    # Read the existing cache to preserve scraped_at + inactive faculty.
+                    existing = None
+                    if cache_path.exists():
+                        try:
+                            with open(cache_path) as f:
+                                loaded = json.load(f)
+                            if isinstance(loaded, dict) and "faculty" in loaded:
+                                existing = loaded
+                        except (OSError, json.JSONDecodeError) as e:
+                            logger.warning(f"  Could not read existing cache before embedding-save: {e}")
+
+                    if existing is None:
+                        # No usable existing cache — skip the save to avoid corrupting things.
+                        # The next pipeline run will re-scrape and rebuild cleanly.
+                        logger.warning(
+                            "  Existing cache missing or malformed — skipping embedding-save "
+                            "to avoid wiping scraped_at / inactive faculty. Next run will re-scrape."
+                        )
+                    else:
+                        # Index existing cache faculty by (name, email) so we can find
+                        # the same person across active and inactive subsets.
+                        def _key(f): return (f.get("name", "").lower().strip(),
+                                             f.get("email", "").lower().strip())
+                        by_key = {_key(f): f for f in existing["faculty"]}
+                        updated = 0
+                        for active_f in faculty:
+                            slot = by_key.get(_key(active_f))
+                            if slot is not None:
+                                # Copy the regenerated embedding fields back; leave everything
+                                # else (department, keywords, enrichment metadata) untouched.
+                                slot["embedding"]         = active_f.get("embedding")
+                                slot["embedding_version"] = active_f.get("embedding_version")
+                                updated += 1
+                        with open(cache_path, "w") as f:
+                            json.dump(existing, f)
+                        logger.info(
+                            f"  ✓ Updated embeddings saved to cache "
+                            f"({updated}/{len(faculty)} faculty merged; "
+                            f"preserved scraped_at={existing.get('scraped_at','?')[:19]} "
+                            f"and {len(existing['faculty']) - updated} non-active records)"
+                        )
                 except Exception as e:
                     logger.warning(f"  Could not save updated embeddings to cache: {e}")
     except ImportError:
