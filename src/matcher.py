@@ -632,6 +632,16 @@ def find_matches(grants, faculty, config=None):
         "confidence_histograms": [],        # confidence distribution per grant
         "idf_filtered_keywords": [],        # keywords removed by IDF floor per grant
         "grants_capped": [],                # grants that hit the per-grant cap
+        # Detailed audit lists for grants that were skipped before matching.
+        # Counts are in summary.grants_skipped_*; these lists let us go back
+        # and verify whether the filters dropped anything that should have
+        # passed (or vice versa). Each entry carries the title + agency + link
+        # so we can click through to the grant on Grants.gov.
+        "skipped_grants": {
+            "irrelevant": [],   # filtered by bio-relevance pre-filter
+            "ineligible": [],   # filtered by UMB-eligibility patterns (with reason)
+            "admin":      [],   # NIH "Notice of Correction" etc. amendments
+        },
     }
 
     # Build IDF table and dynamic stop words from the full faculty pool
@@ -687,6 +697,13 @@ def find_matches(grants, faculty, config=None):
             if "nav" in reason.lower() or "navigation" in grant.get("title","").lower():
                 print(f"Dropped: nav_page_detected — {grant['title'][:60]}")
             skipped_irrelevant += 1
+            _diag["skipped_grants"]["irrelevant"].append({
+                "title":  grant.get("title", ""),
+                "agency": grant.get("agency", ""),
+                "number": grant.get("number", ""),
+                "link":   grant.get("link", ""),
+                "reason": reason,
+            })
             continue
 
         # ── UMB-specific eligibility filter ──────────────────────────────────
@@ -700,6 +717,13 @@ def find_matches(grants, faculty, config=None):
             )
             skipped_ineligible += 1
             ineligible_breakdown[reason] = ineligible_breakdown.get(reason, 0) + 1
+            _diag["skipped_grants"]["ineligible"].append({
+                "title":  grant.get("title", ""),
+                "agency": grant.get("agency", ""),
+                "number": grant.get("number", ""),
+                "link":   grant.get("link", ""),
+                "reason": reason,
+            })
             continue
 
         # ── Administrative notice filter ─────────────────────────────────────
@@ -717,6 +741,12 @@ def find_matches(grants, faculty, config=None):
             )
             skipped_admin += 1
             skipped_irrelevant += 1  # count in the same bucket for diagnostics
+            _diag["skipped_grants"]["admin"].append({
+                "title":  grant.get("title", ""),
+                "agency": grant.get("agency", ""),
+                "number": grant.get("number", ""),
+                "link":   grant.get("link", ""),
+            })
             continue
 
         # Cap overly long scraped page text (some NSF/foundation pages carry the
