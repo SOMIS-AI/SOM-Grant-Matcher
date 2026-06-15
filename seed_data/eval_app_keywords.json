@@ -1,0 +1,1124 @@
+{
+  "updated_at": "2026-06-15T16:32:03+00:00",
+  "sources": [
+    {
+      "filename": "Faculty Research Keywords-15June2026.xlsx",
+      "imported_at": "2026-06-15T16:32:03+00:00",
+      "stats": {
+        "rows_total": 92,
+        "with_keywords": 84,
+        "optout": 2,
+        "added": 84,
+        "updated": 0,
+        "unchanged": 0
+      }
+    }
+  ],
+  "by_email": {
+    "bduffy@som.umaryland.edu": {
+      "name": "Blake Duffy",
+      "department": "Anesthesiology",
+      "keywords": [
+        "trauma",
+        "whole blood"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "dschreibman@som.umaryland.edu": {
+      "name": "David Schreibman",
+      "department": "Anesthesiology",
+      "keywords": [
+        "Intraoperative Neurophysiologic Monitoring"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "akhader@som.umaryland.edu": {
+      "name": "Ali Khader",
+      "department": "Diagnostic Radiology and Nuclear Medicine",
+      "keywords": [
+        "Quality and Safety",
+        "Quality assurance Resident Education",
+        "Peer learning Abdominal Imaging"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "cwhite@som.umaryland.edu": {
+      "name": "Charles White",
+      "department": "Diagnostic Radiology and Nuclear Medicine",
+      "keywords": [
+        "Lung cancer screen",
+        "Pulmonary nodules",
+        "Emphysema",
+        "Cardiac disease"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "ccloak@som.umaryland.edu": {
+      "name": "Christine Cloak",
+      "department": "Diagnostic Radiology and Nuclear Medicine",
+      "keywords": [
+        "Neuroscience",
+        "Substance Use",
+        "Mental Health",
+        "Brain Development",
+        "Cognitive Development"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "lchang@som.umaryland.edu": {
+      "name": "Linda Chang",
+      "department": "Diagnostic Radiology and Nuclear Medicine",
+      "keywords": [
+        "blood brain barrier disruption",
+        "bbbd",
+        "brain barrier disruption",
+        "blood brain barrier",
+        "adolescent brain development",
+        "aerobic physical exercises",
+        "enhance drug delivery",
+        "measure blood flow",
+        "delivery of anti-amyloid",
+        "barrier disruption",
+        "brain function",
+        "brain barrier",
+        "blood brain",
+        "mitochondrial function",
+        "cognitive development",
+        "addictive disorders2",
+        "alzheimer s disease4",
+        "important questions",
+        "anti-amyloid drugs",
+        "physical exercises"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "tarek.hanna@som.umaryland.edu": {
+      "name": "Tarek Hanna",
+      "department": "Diagnostic Radiology and Nuclear Medicine",
+      "keywords": [
+        "emergency radiology",
+        "policy and practice",
+        "optimizing imaging utilization",
+        "healthcare leadership"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "vdilsizian@som.umaryland.edu": {
+      "name": "Vasken Dilsizian",
+      "department": "Diagnostic Radiology and Nuclear Medicine",
+      "keywords": [
+        "Myocardial Viability",
+        "Cardiac Implantable Device Infection",
+        "Inflammation and Endocarditis",
+        "Heart Failure and Left Ventricular Remodeling",
+        "Molecular Imaging"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "wengen.chen@som.umaryland.edu": {
+      "name": "Wengen Chen",
+      "department": "Diagnostic Radiology and Nuclear Medicine",
+      "keywords": [
+        "PET/CT",
+        "cardiac device",
+        "infection",
+        "imaging"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "ze.wang@som.umaryland.edu": {
+      "name": "Ze Wang",
+      "department": "Diagnostic Radiology and Nuclear Medicine",
+      "keywords": [
+        "Brain entropy mapping",
+        "arterial spin labeling",
+        "machine learning",
+        "Alzheimer's Disease"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "alexis.salerno@som.umaryland.edu": {
+      "name": "Alexis Salerno",
+      "department": "Emergency Medicine",
+      "keywords": [
+        "Point of Care Ultrasound",
+        "Emergency Medicine",
+        "Medical Education"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "aarya@som.umaryland.edu": {
+      "name": "Awadhesh Arya",
+      "department": "Emergency Medicine",
+      "keywords": [
+        "Carbon monoxide poisoning",
+        "Decompression Sickness",
+        "Microparticles",
+        "Extracellular Vesicles",
+        "Neutrophil activation",
+        "Neuroinflammation",
+        "Biomarker discovery",
+        "Drug testing",
+        "Clinical trial"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "dgingold@som.umaryland.edu": {
+      "name": "Daniel Gingold",
+      "department": "Emergency Medicine",
+      "keywords": [
+        "Health services research",
+        "health utilization",
+        "health related social needs",
+        "social determinants of health",
+        "opioid use disorder",
+        "emergency medicine"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "gwilkerson@som.umaryland.edu": {
+      "name": "Gentry Wilkerson",
+      "department": "Emergency Medicine",
+      "keywords": [
+        "Sickle Cell Disease",
+        "Acute Pain Management",
+        "Health Equity",
+        "Implementation Science",
+        "Opioid Use Disorder",
+        "Overdose Prevention and Naloxone",
+        "Pragmatic Clinical Research",
+        "Addiction Medicine"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "sschenkel@som.umaryland.edu": {
+      "name": "Steve Schenkel",
+      "department": "Emergency Medicine",
+      "keywords": [
+        "Peer Review and Publication",
+        "Emergency Department flow",
+        "Emergency Department boarding",
+        "Emergency Department administration"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "abaldin@som.umaryland.edu": {
+      "name": "Ann Gruber-Baldini",
+      "department": "Epidemiology & Public Health",
+      "keywords": [
+        "Gerontology and Geriatrics",
+        "Epidemiology of Aging",
+        "Cognitive Functioning and Aging (normal aging, MCI, delirium, and dementia)",
+        "Hip Fracture Recovery and Rehabilitation",
+        "Parkinson’s Disease Functional Outcomes and Health-Related Quality of Life",
+        "Patient-Reported Outcomes",
+        "Persons Aging with a HIV Diagnosis"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "nkhanna@som.umaryland.edu": {
+      "name": "Niharika Khanna",
+      "department": "Family & Community Medicine",
+      "keywords": [
+        "Nicotine",
+        "Tobacco",
+        "Human Papillomavirus",
+        "Practice Transformation"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "dserre@som.umaryland.edu": {
+      "name": "David Serre",
+      "department": "Institute for Genome Sciences",
+      "keywords": [
+        "Genomics",
+        "Transcriptomics",
+        "Bioinformatics",
+        "Malaria",
+        "Plasmodium",
+        "Host/Parasite Interactions",
+        "Eukaryotic Pathogens",
+        "Infectious Diseases"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "pmathur@ihv.umaryland.edu": {
+      "name": "Poonam Mathur",
+      "department": "Institute of Human Virology",
+      "keywords": [
+        "HIV",
+        "aging",
+        "frailty",
+        "cellular mechanisms",
+        "mitochondrial dysfunction"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "ahariria@som.umaryland.edu": {
+      "name": "Abdolreza Haririan",
+      "department": "Medicine",
+      "keywords": [
+        "Kidney transplant",
+        "pancreas transplant",
+        "BK virus",
+        "rejection",
+        "Graft survival",
+        "Immunosuppression"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "akler@som.umaryland.edu": {
+      "name": "Aditya Kler",
+      "department": "Medicine",
+      "keywords": [
+        "ultrasound related",
+        "rare case reports"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "angupta@som.umaryland.edu": {
+      "name": "Anuj Gupta",
+      "department": "Medicine",
+      "keywords": [
+        "TAVR",
+        "lipids",
+        "interventional cardiology"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "bmitchel@som.umaryland.edu": {
+      "name": "Braxton Mitchell",
+      "department": "Medicine",
+      "keywords": [
+        "epidemiology",
+        "genetic epidemiology",
+        "stroke",
+        "Amish",
+        "cardiovascular disease"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "bgreenwa@som.umaryland.edu": {
+      "name": "Bruce Greenwald",
+      "department": "Medicine",
+      "keywords": [
+        "Barrett esophagus",
+        "Esophageal cancer"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "elemmon@som.umaryland.edu": {
+      "name": "Eric Lemmon",
+      "department": "Medicine",
+      "keywords": [
+        "Medical Education. Simulation. Medical Student education. Resident education"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "gxie@som.umaryland.edu": {
+      "name": "Guofeng Xie",
+      "department": "Medicine",
+      "keywords": [
+        "Esophageal dysmotility"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "hongxia.chen@som.umaryland.edu": {
+      "name": "Hongxia Chen",
+      "department": "Medicine",
+      "keywords": [
+        "intestinal barrier",
+        "tight junctions",
+        "noncoding RNA"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "jdoub@ihv.umaryland.edu": {
+      "name": "James Doub",
+      "department": "Medicine",
+      "keywords": [
+        "Bacteriophage",
+        "Staphylococcus aureus",
+        "Biofilm",
+        "ventriculitis",
+        "aggregation",
+        "novel therapeutics",
+        "Diagnostics"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "jraufman@som.umaryland.edu": {
+      "name": "Jean-Pierre Raufman",
+      "department": "Medicine",
+      "keywords": [
+        "gastrointestinal regulatory molecules",
+        "colon cancer",
+        "enteroids",
+        "cell proliferation",
+        "cell signaling"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "jhasday@som.umaryland.edu": {
+      "name": "Jeffrey Hasday",
+      "department": "Medicine",
+      "keywords": [
+        "Thermobiology",
+        "ARDS mechanisms and treatment",
+        "drug development",
+        "pe8 MAPK"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "kcheng@som.umaryland.edu": {
+      "name": "Kunrong Cheng",
+      "department": "Medicine",
+      "keywords": [
+        "The functionality of bile acids interactions with muscarinic receptors",
+        "colon cancer cells.The relative roles in colon cancer progression of M3",
+        "R and M1",
+        "the prevention prevent and treatment of colon cancer"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "mweir@som.umaryland.edu": {
+      "name": "Matthew Weir",
+      "department": "Medicine",
+      "keywords": [
+        "CV risk in patients with CVD",
+        "resistant hypertension",
+        "access for kidney transplantation"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "mochs@som.umaryland.edu": {
+      "name": "Michael Ochs",
+      "department": "Medicine",
+      "keywords": [
+        "statistics",
+        "omics",
+        "pattern recognition"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "njakhete@som.umaryland.edu": {
+      "name": "Neha Jakhete",
+      "department": "Medicine",
+      "keywords": [
+        "Alcohol associated liver disease",
+        "post transplant outcomes",
+        "chronic liver disease",
+        "acute on chronic liver failure",
+        "hepatocellular carcinoma"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "ngoel1@som.umaryland.edu": {
+      "name": "Nidhi Goel",
+      "department": "Medicine",
+      "keywords": [
+        "year medical students",
+        "third year medical",
+        "the clinical environment",
+        "artificial intelligence",
+        "educational innovation",
+        "clinical environment",
+        "clinical decision",
+        "clinical problems",
+        "medical students",
+        "year medical",
+        "third year",
+        "clinical decision making",
+        "mini-curriculum",
+        "generative ai",
+        "the readiness",
+        "the clinical",
+        "gme leaders",
+        "responsible",
+        "education",
+        "interact"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "qxu@som.umaryland.edu": {
+      "name": "Qinzi Xu",
+      "department": "Medicine",
+      "keywords": [
+        "Rco",
+        "oxygen carrier",
+        "hemorrhagic shock",
+        "carbon monoxide poisoning"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "squezada@som.umaryland.edu": {
+      "name": "Sandra Quezada",
+      "department": "Medicine",
+      "keywords": [
+        "inflammatory bowel disease",
+        "health disparity",
+        "workforce development",
+        "gastroenterology",
+        "career advancement"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "sgottlie@som.umaryland.edu": {
+      "name": "Stephen Gottlieb",
+      "department": "Medicine",
+      "keywords": [
+        "Endogenous ouabain",
+        "cardiac amyloidosis",
+        "heart failure therapeutics",
+        "heart failure physiology",
+        "chronic heart failure"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "steven.cassady@som.umaryland.edu": {
+      "name": "Steven Cassady",
+      "department": "Medicine",
+      "keywords": [
+        "Dyspnea",
+        "pulmonary hypertension",
+        "hazardous exposures",
+        "cardiopulmonary exercise testing",
+        "veteran evaluation"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "sgambert@som.umaryland.edu": {
+      "name": "Steven Gambert",
+      "department": "Medicine",
+      "keywords": [
+        "geriatric medicine",
+        "Trauma related injuries in the elderly"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "vcebotaru@som.umaryland.edu": {
+      "name": "Valeriu Cebotaru",
+      "department": "Medicine",
+      "keywords": [
+        "Working on finishing a ADPKD paper.Working on finishing 2 case reports"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "vholden@som.umaryland.edu": {
+      "name": "Van Holden",
+      "department": "Medicine",
+      "keywords": [
+        "medical education",
+        "interventional pulmonology",
+        "bronchoscopy",
+        "lung cancer"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "jpedra@som.umaryland.edu": {
+      "name": "Joao Pedra",
+      "department": "Microbiology and Immunology",
+      "keywords": [
+        "Tick-borne Diseases",
+        "Lyme Disease",
+        "Rickettsial Diseases",
+        "Skin Immunology",
+        "Arthropod Immunology",
+        "Systems Biology"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "mfrieman@som.umaryland.edu": {
+      "name": "Matthew Frieman",
+      "department": "Microbiology and Immunology",
+      "keywords": [
+        "Coronavirus pathogenesis",
+        "therapeutic development",
+        "vaccine development",
+        "host factors for replication",
+        "comorbidities",
+        "effects of asthma on viral pathogenesis",
+        "role of ROS in virus replication",
+        "effect of forever chemicals on human health"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "jcheer@som.umaryland.edu": {
+      "name": "Joseph Cheer",
+      "department": "Neurobiology",
+      "keywords": [
+        "Addiction",
+        "motivation",
+        "cannabinoid",
+        "dopamine",
+        "decision making",
+        "memory"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "lshulman@som.umaryland.edu": {
+      "name": "Lisa Shulman",
+      "department": "Neurology",
+      "keywords": [
+        "Cognitive Impairment",
+        "Outcomes Measurement",
+        "Health Disparities",
+        "Age-Related Hearing Loss",
+        "Parkinson's disease",
+        "Disability",
+        "Quality of Life",
+        "Bio",
+        "Informatics",
+        "Patient-reported outcome measures",
+        "Precision medicine"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "pfishman@som.umaryland.edu": {
+      "name": "Paul Fishman",
+      "department": "Neurology",
+      "keywords": [
+        "focused ultrasound",
+        "blood-brain barrier",
+        "Parkinson's disease",
+        "Alzheimer's disease"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "msimard@som.umaryland.edu": {
+      "name": "Marc Simard",
+      "department": "Neurosurgery",
+      "keywords": [
+        "stroke",
+        "brain swelling",
+        "edema",
+        "spinal cord injury",
+        "traumatic brain injury",
+        "SUR1-TRPM4",
+        "NCX1",
+        "SGLT2"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "tim.miller@som.umaryland.edu": {
+      "name": "Tim Miller",
+      "department": "Neurosurgery",
+      "keywords": [
+        "Flow diversion",
+        "intracranial aneurysms",
+        "pipeline embolization device",
+        "endovascular treatment",
+        "aneurysm occlusion",
+        "parent artery remodeling",
+        "cerebrovascular intervention",
+        "treatment outcomes",
+        "retreatment",
+        "hemorrhagic stroke prevention"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "xjia@som.umaryland.edu": {
+      "name": "Xiaofeng Jia",
+      "department": "Neurosurgery",
+      "keywords": [
+        "Stem cell therapy",
+        "nerve regeneration",
+        "brain injury after cardiac arrest",
+        "metabolic glycoengineering",
+        "neurogenesis",
+        "peripheral nerve injury"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "grao@som.umaryland.edu": {
+      "name": "Gautam Rao",
+      "department": "Obstetrics, Gynecology and Reproductive Sciences",
+      "keywords": [
+        "Ovarian cancer inflammation",
+        "Gynecologic Oncology clinical trials"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "kbisordi@som.umaryland.edu": {
+      "name": "Katharine Bisordi",
+      "department": "Obstetrics, Gynecology and Reproductive Sciences",
+      "keywords": [
+        "disease ontology"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "wbshen@som.umaryland.edu": {
+      "name": "Wei-Bin Shen",
+      "department": "Obstetrics, Gynecology and Reproductive Sciences",
+      "keywords": [
+        "diabetic pregnancy",
+        "epigenetic regulation",
+        "RNA methylation",
+        "neural tube defects",
+        "congenital heart defects"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "esingman@som.umaryland.edu": {
+      "name": "Eric Singman M.D.",
+      "department": "Ophthalmology and Visual Sciences",
+      "keywords": [
+        "Brain injury",
+        "ehlers danlos disease",
+        "neuro-ophthalmology"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "taariq.mohammed@som.umaryland.edu": {
+      "name": "Taariq Mohammed",
+      "department": "Ophthalmology and Visual Sciences",
+      "keywords": [
+        "Vitreous",
+        "vitreoretinal surgery",
+        "imaging",
+        "optical coherence tomography",
+        "optics"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "wmunir@som.umaryland.edu": {
+      "name": "Wuqaas Munir M.D.",
+      "department": "Ophthalmology and Visual Sciences",
+      "keywords": [
+        "cornea",
+        "keratoconus",
+        "corneal imaging",
+        "artificial intelligence",
+        "corneal transplantation",
+        "eye banking"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "logan.kolakowski@som.umaryland.edu": {
+      "name": "Logan Kolakowski M.D.",
+      "department": "Orthopaedics",
+      "keywords": [
+        "Realistic clinical research",
+        "subgroup organization"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "lbivona@som.umaryland.edu": {
+      "name": "Louis Bivona M.D.",
+      "department": "Orthopaedics",
+      "keywords": [
+        "Trauma",
+        "lumbar degenerative disease",
+        "cervical degenerative disease",
+        "spinal stenosis"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "adam.kaufman@som.umaryland.edu": {
+      "name": "Adam Kaufman",
+      "department": "Otorhinolaryngology-Head & Neck Surgery",
+      "keywords": [
+        "Organoid Development",
+        "Clinical Trials for Hearing Protection",
+        "Temporal Bone Histopathology",
+        "Big Data Studies for Otologic Disease",
+        "Development of Data Visualization Tools"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "deisenman@som.umaryland.edu": {
+      "name": "David Eisenman",
+      "department": "Otorhinolaryngology-Head & Neck Surgery",
+      "keywords": [
+        "Pulsatile Tinnitus",
+        "CSF leak",
+        "Skull base surgery",
+        "Cochlear implant",
+        "Tinnitus"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "hmesacorrales@som.umaryland.edu": {
+      "name": "Hector Mesa",
+      "department": "Pathology",
+      "keywords": [
+        "Biomarkers",
+        "head and neck pathology",
+        "hematopathology",
+        "cytopathology",
+        "renal pathology"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "crao@som.umaryland.edu": {
+      "name": "Chethan Rao",
+      "department": "Pediatrics",
+      "keywords": [
+        "Pediatric Epilepsy",
+        "Social Determinants of Health (SDOH) in Pediatric Neurology",
+        "Health Equity and Common Data Elements",
+        "Infantile Epileptic Spasms Syndrome (IESS)",
+        "Developmental and Epileptic Encephalopathies (DEE)",
+        "Precision Therapies in Genetic Epilepsy",
+        "Self-Limited Childhood Epilepsy",
+        "Clinical Treatment Guidelines and Consensus",
+        "Wearable EEG and Advanced Diagnostic Technologies"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "nrobbins@som.umaryland.edu": {
+      "name": "Nathaniel Robbins",
+      "department": "Pediatrics",
+      "keywords": [
+        "Exercise physiology in congenital heart disease"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "pgaskin@som.umaryland.edu": {
+      "name": "Peter Gaskin",
+      "department": "Pediatrics",
+      "keywords": [
+        "Clinical",
+        "education research",
+        "congenital heart disease"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "rylee.young@som.umaryland.edu": {
+      "name": "Rylee Young",
+      "department": "Pediatrics",
+      "keywords": [
+        "Health disparities",
+        "Genetic Testing Strategies",
+        "Efficacy of genetic testing",
+        "Insurance coverage",
+        "Bias"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "sdelany@som.umaryland.edu": {
+      "name": "Shannan Dixon",
+      "department": "Pediatrics",
+      "keywords": [
+        "Genetic counseling",
+        "Education",
+        "Faculty development",
+        "Andragogy",
+        "Community of Practice Disease Ontology"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "rbloch@som.umaryland.edu": {
+      "name": "Robert Bloch",
+      "department": "Pharmacology & Physiology",
+      "keywords": [
+        "Muscular Dystrophies and Related Cardiomyopathies",
+        "Dysferlin and LGMD R2",
+        "Intermediate Filaments in Mesenchymal Tissues"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "shwong@som.umaryland.edu": {
+      "name": "Shenq Huey Wong",
+      "department": "Pharmacology & Physiology",
+      "keywords": [
+        "Imaging",
+        "biosensor",
+        "mouse model",
+        "glucokinase",
+        "NAD(P)"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "thomas.longden@som.umaryland.edu": {
+      "name": "Thomas Longden",
+      "department": "Pharmacology & Physiology",
+      "keywords": [
+        "neurovascular coupling",
+        "capillaries",
+        "arteries",
+        "brain blood flow",
+        "smooth muscle",
+        "endothelium",
+        "ion channels"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "apravdo@som.umaryland.edu": {
+      "name": "Alisa Pravdo",
+      "department": "Physical Therapy and Rehabilitation Science",
+      "keywords": [
+        "Performing Arts Rehabilitation / Dance-Specific Physical Therapy",
+        "Advanced Orthopaedic Rehabilitation",
+        "AI-Driven Simulated Patient History Training",
+        "Artificial Intelligence in Physical Therapy Education",
+        "Manual Orthopaedic Physical Therapy",
+        "Student Professional Behavior Development"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "lhorn@som.umaryland.edu": {
+      "name": "Linda Horn",
+      "department": "Physical Therapy and Rehabilitation Science",
+      "keywords": [
+        "Vestibular",
+        "Education",
+        "Interprofessional Education",
+        "Physical Activity",
+        "Older Adults"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "mharfouche@som.umaryland.edu": {
+      "name": "Melike Harfouche",
+      "department": "Program in Trauma",
+      "keywords": [
+        "Hemorrhage control interventions in trauma",
+        "gun violence prevention",
+        "acute pancreatitis"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "nicholas.morris@som.umaryland.edu": {
+      "name": "Nicholas Morris",
+      "department": "Program in Trauma",
+      "keywords": [
+        "education",
+        "simulation",
+        "mastery learning",
+        "brain death",
+        "subarachnoid hemorrhage",
+        "pain"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "agreenbl@som.umaryland.edu": {
+      "name": "Aaron Greenblatt",
+      "department": "Psychiatry",
+      "keywords": [
+        "addiction",
+        "integration",
+        "family medicine",
+        "opioid use disorder",
+        "methadone"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "abelcher@som.umaryland.edu": {
+      "name": "Annabelle Belcher",
+      "department": "Psychiatry",
+      "keywords": [
+        "Medications for Opioid Use Disorder (MOUD)",
+        "Telemedicine-delivered MOUD",
+        "Rural Carceral Settings",
+        "Buprenorphine Methadone",
+        "Substance Use Disorder Treatment Retention",
+        "Stigma and Co-Occurring Mental Health Disorders",
+        "Behavioral Interventions in Addiction Medicine"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "jzhou@som.umaryland.edu": {
+      "name": "Jinghao Zhou",
+      "department": "Radiation Oncology",
+      "keywords": [
+        "medical physics",
+        "deep learning",
+        "machine learning",
+        "computer vision",
+        "optimization",
+        "setup",
+        "Intrafraction motion monitoring",
+        "Interfraction motion monitoring",
+        "MRI",
+        "radiation therapy",
+        "breast",
+        "prostate",
+        "lung",
+        "etc"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "rkozar@som.umaryland.edu": {
+      "name": "Rosemary Kozar",
+      "department": "Shock, Trauma & Anesthesiology Research (STAR) Center",
+      "keywords": [
+        "endothelial cell dysfunction",
+        "hemorrhagic shock",
+        "trauma",
+        "coagulopathy"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "anirban.banerjee@som.umaryland.edu": {
+      "name": "Anirban Banerjee",
+      "department": "Surgery",
+      "keywords": [
+        "Cancer immunotherapy",
+        "Cancer immunology",
+        "T cells",
+        "NK cells",
+        "cytokines development of targeted therapy in cancer",
+        "Oncogenes"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "charles.fox@som.umaryland.edu": {
+      "name": "Charles Fox",
+      "department": "Surgery",
+      "keywords": [
+        "Academic interest in hemorrhage control and vascular trauma care"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "dmaluf@som.umaryland.edu": {
+      "name": "Daniel Maluf",
+      "department": "Surgery",
+      "keywords": [
+        "Liver finances",
+        "Biomarkers",
+        "IRI",
+        "Renal Transplantation",
+        "Innovation Hepatocellular Carcinoma"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:02+00:00"
+    },
+    "jbromberg@som.umaryland.edu": {
+      "name": "Jonathan Bromberg",
+      "department": "Surgery",
+      "keywords": [
+        "transplantation",
+        "tolerance",
+        "regulatory T cells",
+        "fibroblastic reticular cells",
+        "lymph node",
+        "microbiota",
+        "immunosuppression"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:03+00:00"
+    },
+    "mohammad.khan@som.umaryland.edu": {
+      "name": "Mohammad Afzal Khan",
+      "department": "Surgery",
+      "keywords": [
+        "Transplantation Immunology",
+        "Lung Transplantation",
+        "Epithelial Injury",
+        "Microvascular Repair",
+        "TSGâ€‘6 Biomarker Discovery"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:03+00:00"
+    },
+    "sniederhaus@som.umaryland.edu": {
+      "name": "Silke Niederhaus",
+      "department": "Surgery",
+      "keywords": [
+        "kidney transplant",
+        "pancreas transplant",
+        "dialysis access",
+        "kidney transplant complications",
+        "kidney transplant management"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:03+00:00"
+    },
+    "tzhang@som.umaryland.edu": {
+      "name": "Tianshu Zhang",
+      "department": "Surgery",
+      "keywords": [
+        "Xenotransplantation",
+        "Allotransplantation",
+        "Transplantation Immunology",
+        "Murine and Nonhuman Primate Heart Transplant Models",
+        "Costimulation Pathway Blockade",
+        "Immune Monitoring and Leukocyte Dynamics",
+        "Preclinical Transplant Research",
+        "Translational Immunology"
+      ],
+      "source_file": "Faculty Research Keywords-15June2026.xlsx",
+      "updated_at": "2026-06-15T16:32:03+00:00"
+    }
+  }
+}
