@@ -1280,6 +1280,39 @@ def get_faculty_profiles(config: dict) -> list[dict]:
     with_kw = sum(1 for f in active_faculty if f.get("keywords"))
     logger.info(f"Pass 8 complete: {with_kw}/{len(active_faculty)} active faculty now have keywords")
 
+    # ── Pass 8b: Faculty self-reported keywords (from Eval App campaign) ──────
+    # Reads data/eval_app_keywords.json (accumulated from spreadsheets dropped
+    # into the campaign folder) and merges keywords onto matching faculty by
+    # email. Runs before Pass 9 so the new keywords are included in the text
+    # used for embedding generation.
+    try:
+        from eval_app_keywords import get_keywords_by_email
+        self_reported = get_keywords_by_email()
+        if self_reported:
+            merged_count = 0
+            new_kw_count = 0
+            for fac in active_faculty:
+                email = (fac.get("email") or "").strip().lower()
+                if not email:
+                    continue
+                kws = self_reported.get(email)
+                if not kws:
+                    continue
+                before = len(fac.get("keywords") or [])
+                _merge_keywords(fac, kws, "faculty_self_reported")
+                after = len(fac.get("keywords") or [])
+                merged_count += 1
+                new_kw_count += (after - before)
+            logger.info(
+                f"Pass 8b complete: merged self-reported keywords for "
+                f"{merged_count} faculty (+{new_kw_count} new keywords; "
+                f"{len(self_reported)} entries in store)"
+            )
+        else:
+            logger.info("Pass 8b: no eval_app_keywords store found (skipping)")
+    except Exception as e:
+        logger.warning(f"Pass 8b (faculty self-reported keywords) failed: {e}")
+
     # ── Pass 9: Generate semantic embeddings ──────────────────────────────────
     if embed_faculty_batch and embeddings_available():
         logger.info(f"Pass 9/9: Generating semantic embeddings for {len(active_faculty)} active faculty...")
@@ -1353,6 +1386,7 @@ _SOURCE_BASE_LABEL = {
     "europepmc":                "Europe PMC",
     "orcid":                    "ORCID",
     "s2":                       "Semantic Scholar",
+    "faculty_self_reported":    "Faculty Self-Reported",
 }
 
 
