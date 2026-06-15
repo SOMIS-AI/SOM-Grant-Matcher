@@ -870,6 +870,59 @@ def build_diagnostic_html(matcher_diag: dict, scraper_health: dict, run_date: st
       </table>
     </div>""" if per_grant else ""
 
+    # ── Section 4b: Skipped Grants Audit ─────────────────────────────────────
+    # Lists every grant that was filtered BEFORE matching, by category.
+    # Lets the admin verify the bio-relevance / UMB-eligibility / admin-notice
+    # filters aren't dropping anything they should keep.
+    skipped = matcher_diag.get("skipped_grants", {}) or {}
+
+    def _skip_table(rows: list, show_reason: bool) -> str:
+        if not rows:
+            return '<div style="color:#999;font-size:12px;padding:6px 0;">none this run</div>'
+        out = ['<table style="width:100%;border-collapse:collapse;margin-top:4px;">']
+        for r in rows:
+            title  = (r.get("title", "") or "").strip()
+            agency = (r.get("agency", "") or "").strip()
+            link   = r.get("link", "") or ""
+            reason = (r.get("reason", "") or "").strip()
+            title_html = (f'<a href="{link}" style="color:#1a2e45;text-decoration:none;">{title[:90]}</a>'
+                          if link else title[:90])
+            meta = agency or "—"
+            reason_html = (f'<div style="font-size:11px;color:#b03a2e;margin-top:2px;">↳ {reason}</div>'
+                           if (show_reason and reason) else "")
+            out.append(
+                f'<tr><td style="padding:5px 12px 5px 0;border-bottom:1px solid #f0f0f0;font-size:12px;">'
+                f'<div>{title_html}</div>'
+                f'<div style="font-size:11px;color:#888;">{meta}</div>'
+                f'{reason_html}'
+                f'</td></tr>'
+            )
+        out.append('</table>')
+        return "".join(out)
+
+    irrel = skipped.get("irrelevant", []) or []
+    inelig = skipped.get("ineligible", []) or []
+    admin_skipped = skipped.get("admin", []) or []
+    total_skipped = len(irrel) + len(inelig) + len(admin_skipped)
+
+    skipped_html = f"""
+    <div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:16px 20px;margin-bottom:16px;">
+      <h2 style="margin:0 0 4px;font-size:16px;color:#1a2e45;">Skipped Grants Audit ({total_skipped})</h2>
+      <p style="margin:0 0 14px;font-size:12px;color:#666;">
+        Grants filtered before matching. Review these to verify the pre-filters aren't
+        dropping anything that should reach the matcher.
+      </p>
+
+      <h3 style="margin:0 0 4px;font-size:13px;color:#444;">Filtered as not biomedical ({len(irrel)})</h3>
+      {_skip_table(irrel, show_reason=True)}
+
+      <h3 style="margin:14px 0 4px;font-size:13px;color:#444;">Filtered as UMB-ineligible ({len(inelig)})</h3>
+      {_skip_table(inelig, show_reason=True)}
+
+      <h3 style="margin:14px 0 4px;font-size:13px;color:#444;">Filtered as administrative notice ({len(admin_skipped)})</h3>
+      {_skip_table(admin_skipped, show_reason=False)}
+    </div>"""
+
     # ── Section 5: Confidence Histograms ─────────────────────────────────────
     histograms = matcher_diag.get("confidence_histograms", [])
     hist_html = ""
@@ -1034,6 +1087,7 @@ def build_diagnostic_html(matcher_diag: dict, scraper_health: dict, run_date: st
       {params_html}
       {stop_words_html}
       {per_grant_html}
+      {skipped_html}
       {capped_html}
       {hist_html}
       {sem_html}
@@ -1091,6 +1145,32 @@ def build_diagnostic_text(matcher_diag: dict, scraper_health: dict, run_date: st
             lines.append(f"  {g['grant_title'][:70]}")
             lines.append(f"    KW:{g['keyword_matches']} Sem:{g['semantic_matches']} "
                         f"After filter:{g['after_confidence_filter']} Avg conf:{g['avg_confidence']}%")
+        lines.append("")
+
+    # Skipped grants audit (mirrors the HTML "Skipped Grants Audit" section)
+    skipped = matcher_diag.get("skipped_grants", {}) or {}
+    irrel = skipped.get("irrelevant", []) or []
+    inelig = skipped.get("ineligible", []) or []
+    admin_sk = skipped.get("admin", []) or []
+    total_skipped = len(irrel) + len(inelig) + len(admin_sk)
+    if total_skipped:
+        lines.append(f"SKIPPED GRANTS AUDIT ({total_skipped} total)")
+        if irrel:
+            lines.append(f"  Filtered as not biomedical ({len(irrel)}):")
+            for r in irrel:
+                lines.append(f"    - {r.get('title','')[:80]}  ({r.get('agency','')})")
+                if r.get("reason"):
+                    lines.append(f"        ↳ {r['reason']}")
+        if inelig:
+            lines.append(f"  Filtered as UMB-ineligible ({len(inelig)}):")
+            for r in inelig:
+                lines.append(f"    - {r.get('title','')[:80]}  ({r.get('agency','')})")
+                if r.get("reason"):
+                    lines.append(f"        ↳ {r['reason']}")
+        if admin_sk:
+            lines.append(f"  Filtered as administrative notice ({len(admin_sk)}):")
+            for r in admin_sk:
+                lines.append(f"    - {r.get('title','')[:80]}  ({r.get('agency','')})")
         lines.append("")
 
     # Grants capped
