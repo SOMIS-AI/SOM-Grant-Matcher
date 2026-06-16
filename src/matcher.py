@@ -413,6 +413,27 @@ _BIOMEDICAL_VOCAB = re.compile(
 )
 
 
+# Pre-compile the block/allow/non-bio lists into word-boundary regexes at module
+# load. Plain substring checks (the previous implementation) misfire on short
+# acronyms — e.g. 'epa' matched "DEPArtment of Housing", causing every HUD/DHS
+# grant to be filtered with reason "blocked agency/title term: 'epa'" (caught
+# 2026-06-16 via the new skipped-grants audit). Word boundaries (\b) make the
+# acronym terms only match when they stand alone, while multi-word phrases like
+# "department of housing and urban development" still work fine.
+_AGENCY_BLOCK_RX = [
+    (term, re.compile(r"\b" + re.escape(term) + r"\b", re.IGNORECASE))
+    for term in _AGENCY_BLOCK
+]
+_AGENCY_ALLOW_RX = [
+    (term, re.compile(r"\b" + re.escape(term) + r"\b", re.IGNORECASE))
+    for term in _AGENCY_ALLOW
+]
+_NONBIO_TITLE_RX = [
+    (term, re.compile(r"\b" + re.escape(term) + r"\b", re.IGNORECASE))
+    for term in _NONBIO_TITLE_TERMS
+]
+
+
 def _is_biomedically_relevant(grant: dict, min_vocab_hits: int = 1) -> tuple[bool, str]:
     """
     Return (is_relevant, reason) for a grant.
@@ -424,20 +445,20 @@ def _is_biomedically_relevant(grant: dict, min_vocab_hits: int = 1) -> tuple[boo
     text   = (grant.get("searchable_text") or grant.get("synopsis") or "").lower()
     full   = title + " " + text
 
-    # 1. Agency block-list — fast reject
-    for blocked in _AGENCY_BLOCK:
-        if blocked in agency or blocked in title:
+    # 1. Agency block-list — fast reject (word-boundary regex; see comment above)
+    for blocked, pattern in _AGENCY_BLOCK_RX:
+        if pattern.search(agency) or pattern.search(title):
             return False, f"blocked agency/title term: '{blocked}'"
 
     # 1b. Non-biomedical topic phrases — reject even if the agency is allow-listed
     #     (e.g. a DARPA AI/WMD grant or a USDA crop grant that mentions "pathogen").
-    for term in _NONBIO_TITLE_TERMS:
-        if term in title:
+    for term, pattern in _NONBIO_TITLE_RX:
+        if pattern.search(title):
             return False, f"non-biomedical topic term: '{term}'"
 
-    # 2. Agency allow-list — fast accept
-    for allowed in _AGENCY_ALLOW:
-        if allowed in agency:
+    # 2. Agency allow-list — fast accept (word-boundary regex)
+    for allowed, pattern in _AGENCY_ALLOW_RX:
+        if pattern.search(agency):
             return True, f"allowed agency: '{allowed}'"
 
     # 3. CFDA prefix — HHS is 93.xxx, always biomedical
