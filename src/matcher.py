@@ -326,6 +326,19 @@ _AGENCY_ALLOW = {
     # (e.g. "Giambalvo Research Grant", "Picker Gold Challenge Grants").
     "arnold p. gold", "josiah macy",
     "pcori", "patient-centered outcomes research",
+    # DoD biomedical-relevant sub-commands and research labs (added 2026-06-17
+    # after the ONR "Special Program Announcement" miss surfaced in the
+    # skipped-grants audit). The DoD/DARPA umbrella terms above don't substring
+    # into agency strings like "Office of Naval Research", so they need
+    # explicit allow-list entries. Word-boundary matching means these only
+    # fire when the agency actually says "naval research" / "army research" /
+    # etc., not as random substrings.
+    "office of naval research", "naval research",
+    "naval medical research", "namru",
+    "army research", "walter reed", "wrair",
+    "air force research", "afrl", "afosr",
+    "defense health agency", "defense health",
+    "usaarl",
 }
 
 # Agencies whose grants are never relevant to UMSOM
@@ -445,28 +458,36 @@ def _is_biomedically_relevant(grant: dict, min_vocab_hits: int = 1) -> tuple[boo
     text   = (grant.get("searchable_text") or grant.get("synopsis") or "").lower()
     full   = title + " " + text
 
-    # 1. Agency block-list — fast reject (word-boundary regex; see comment above)
-    for blocked, pattern in _AGENCY_BLOCK_RX:
-        if pattern.search(agency) or pattern.search(title):
-            return False, f"blocked agency/title term: '{blocked}'"
-
-    # 1b. Non-biomedical topic phrases — reject even if the agency is allow-listed
-    #     (e.g. a DARPA AI/WMD grant or a USDA crop grant that mentions "pathogen").
+    # 1. Non-biomedical topic phrases — applied UNCONDITIONALLY because phrases
+    #    like "weapons of mass destruction" / "agroforestry" / "tribal students"
+    #    are out of scope regardless of agency. These short-circuit any allow-list
+    #    bypass below.
     for term, pattern in _NONBIO_TITLE_RX:
         if pattern.search(title):
             return False, f"non-biomedical topic term: '{term}'"
 
-    # 2. Agency allow-list — fast accept (word-boundary regex)
+    # 2. Agency allow-list — fast accept (trusted agencies bypass the block-list).
+    #    Reordered 2026-06-17: previously the block-list ran first, so SAMHSA
+    #    "Preventing Youth Overdose: Treatment, Recovery, Education, Awareness"
+    #    got rejected by the 'education' block term even though SAMHSA is
+    #    allow-listed. Now allow-listed agencies pass without consulting the
+    #    block-list; only non-bio topic terms above can stop them.
     for allowed, pattern in _AGENCY_ALLOW_RX:
         if pattern.search(agency):
             return True, f"allowed agency: '{allowed}'"
 
-    # 3. CFDA prefix — HHS is 93.xxx, always biomedical
+    # 3. Agency block-list — applies to NON-allow-listed agencies only.
+    #    Word-boundary regex (see _AGENCY_BLOCK_RX comment).
+    for blocked, pattern in _AGENCY_BLOCK_RX:
+        if pattern.search(agency) or pattern.search(title):
+            return False, f"blocked agency/title term: '{blocked}'"
+
+    # 4. CFDA prefix — HHS is 93.xxx, always biomedical
     cfda = grant.get("cfda_number") or grant.get("number") or ""
     if str(cfda).startswith("93."):
         return True, f"HHS CFDA prefix: {cfda}"
 
-    # 4. Biomedical vocabulary scan on full grant text
+    # 5. Biomedical vocabulary scan on full grant text
     hits = _BIOMEDICAL_VOCAB.findall(full)
     if len(hits) >= min_vocab_hits:
         return True, f"biomedical vocab match ({len(hits)} terms: {list(set(h.lower() for h in hits))[:3]})"
