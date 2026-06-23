@@ -233,13 +233,37 @@ def scrape_department_page(session: requests.Session, url: str) -> list[dict]:
                             department, flags=re.I).strip()
         department = re.sub(r"\s*\|\s*University of Maryland.*$", "", department, flags=re.I).strip()
 
-    # Structured faculty blocks, in document order (counts match: 1 name : 1 link).
-    names = re.findall(r'class="data-profile-name"[^>]*>(.*?)</strong>', html, re.S)
-    links = re.findall(r'class="data-profile-link"\s+href="([^"]+)"', html)
+    # Structured faculty blocks, in document order. Each <li> carries the
+    # employment classification used by the page's "Volunteer"/"Part Time" tabs
+    # (data-salary-desc) and faculty-vs-fellow type (data-emp-type), followed by
+    # the profile name + link. Capturing them together in one per-block regex
+    # keeps salary/type aligned to the right person (validated: exact 1:1 parity
+    # with the prior name/link parse across all departments).
+    blocks = re.findall(
+        r'<li\s+data-salary-desc="([^"]*)"\s+data-emp-type="([^"]*)"[^>]*?>'
+        r'.*?class="data-profile-name"[^>]*>(.*?)</strong>'
+        r'.*?class="data-profile-link"\s+href="([^"]+)"',
+        html, re.S,
+    )
+
+    # Safety net: if the employment-aware parse under-captures (e.g. the page
+    # markup drifts and some <li> lose data-salary-desc), fall back to the proven
+    # name+link parse with empty employment fields so we never silently DROP
+    # faculty — they just won't carry an employment signal (graceful, like the
+    # pre-rescrape cache). Exclusions degrade off; matching is unaffected.
+    n_names = len(re.findall(r'class="data-profile-name"[^>]*>(.*?)</strong>', html, re.S))
+    if len(blocks) < n_names:
+        logger.warning(
+            f"  {department or url}: employment parse captured {len(blocks)}/{n_names} "
+            f"faculty — falling back to name/link parse (no employment data this run)"
+        )
+        names = re.findall(r'class="data-profile-name"[^>]*>(.*?)</strong>', html, re.S)
+        links = re.findall(r'class="data-profile-link"\s+href="([^"]+)"', html)
+        blocks = [("", "", nm, lk) for nm, lk in zip(names, links)]
 
     faculty = []
     seen = set()
-    for raw_name, href in zip(names, links):
+    for salary_desc, emp_type, raw_name, href in blocks:
         raw_name = clean_text(re.sub(r"<[^>]+>", " ", raw_name))
         name = _normalize_profile_name(raw_name)
         profile_url = urljoin(BASE_URL, href.strip())
@@ -250,6 +274,8 @@ def scrape_department_page(session: requests.Session, url: str) -> list[dict]:
             "name": name,
             "raw_profile_name": raw_name,    # full "Last, First, creds, title" string
             "title": _extract_title(raw_name),  # academic rank ("Assistant Professor", "Adjunct Professor", "Professor Emeritus", …)
+            "employment_status": (salary_desc or "").strip().upper(),  # VOLUNTEER | PART TIME | FULL TIME | GEOGRAPHIC FULL TIME
+            "emp_type": (emp_type or "").strip().upper(),              # FACULTY | FELLOW
             "url": profile_url,
             "profile_url": profile_url,
             "department": department,
@@ -1076,37 +1102,55 @@ def save_faculty_cache(cache_file: str, data: dict):
 
 # ── Title-based exclusion (from matching) ────────────────────────────────────
 
-def _apply_title_exclusions(faculty_list: list[dict], patterns: list[str]) -> list[dict]:
+def _apply_title_exclusions(faculty_list: list[dict], patterns: list[str],
+                            excluded_statuses=None, excluded_emp_types=None) -> list[dict]:
     """
-    Mark faculty whose `title` matches one of the configured regex `patterns`
-    with `excluded_from_matching=True` + `excluded_reason=<pattern>`, and
-    return only the faculty NOT excluded (the pool used for matching).
+    Mark faculty who should be excluded from the matching pool, in a single pass,
+    and return only the faculty NOT excluded. A faculty is excluded if ANY of:
+      • `title` matches one of the regex `patterns` (rank-based: emeritus, adjunct,
+        clinical-track, …) → reason = "<pattern>"
+      • `employment_status` is in `excluded_statuses` (the dept page's
+        data-salary-desc: VOLUNTEER / PART TIME) → reason = "employment: <status>"
+      • `emp_type` is in `excluded_emp_types` (data-emp-type: FELLOW = trainee)
+        → reason = "emp_type: <type>"
 
-    The marks are written back to each faculty dict in place so they persist
-    when the cache is saved and so the dashboard can show the excluded status.
-    Pre-rescrape faculty without a captured `title` field are never excluded —
-    graceful degradation until the next fresh scrape populates titles.
+    Marks are written back in place so they persist in the cache and show in the
+    dashboard. Faculty missing `title`/`employment_status` (pre-rescrape cache)
+    are never excluded by that signal — graceful degradation until the next fresh
+    scrape populates the fields. Doing all checks in ONE pass keeps the stale-mark
+    clearing correct (a faculty kept by every rule has its marks removed).
     """
-    if not patterns:
+    excluded_statuses  = {s.strip().upper() for s in (excluded_statuses or [])}
+    excluded_emp_types = {t.strip().upper() for t in (excluded_emp_types or [])}
+    compiled = [(p, re.compile(p, re.IGNORECASE)) for p in (patterns or [])]
+    if not compiled and not excluded_statuses and not excluded_emp_types:
         return list(faculty_list)
-    compiled = [(p, re.compile(p, re.IGNORECASE)) for p in patterns]
+
     kept, excluded_by = [], Counter()
     for f in faculty_list:
-        title = (f.get("title") or "").strip()
-        matched = next((p for p, rx in compiled if title and rx.search(title)), None)
-        if matched:
+        title  = (f.get("title") or "").strip()
+        status = (f.get("employment_status") or "").strip().upper()
+        etype  = (f.get("emp_type") or "").strip().upper()
+
+        reason = next((p for p, rx in compiled if title and rx.search(title)), None)
+        if reason is None and status and status in excluded_statuses:
+            reason = f"employment: {status}"
+        if reason is None and etype and etype in excluded_emp_types:
+            reason = f"emp_type: {etype}"
+
+        if reason is not None:
             f["excluded_from_matching"] = True
-            f["excluded_reason"]        = matched
-            excluded_by[matched] += 1
+            f["excluded_reason"]        = reason
+            excluded_by[reason] += 1
         else:
-            # Clear stale marks (e.g., title was updated or pattern was removed)
+            # Clear stale marks (title updated, status changed, or rule removed)
             f.pop("excluded_from_matching", None)
             f.pop("excluded_reason", None)
             kept.append(f)
     if excluded_by:
         logger.info(
-            f"  Title-based exclusion: dropped {sum(excluded_by.values())} faculty "
-            f"from matching pool by pattern: {dict(excluded_by.most_common())}"
+            f"  Matching-pool exclusion: dropped {sum(excluded_by.values())} faculty "
+            f"by rule: {dict(excluded_by.most_common())}"
         )
     return kept
 
@@ -1127,8 +1171,13 @@ def get_faculty_profiles(config: dict) -> list[dict]:
             active = [f for f in cache["faculty"] if not f.get("inactive")]
             if len(active) < len(cache["faculty"]):
                 logger.info(f"  Excluded {len(cache['faculty']) - len(active)} inactive (departed) faculty")
-            # Title-based exclusion (emeritus, adjunct, visiting, postdoc, research-assoc)
-            return _apply_title_exclusions(active, config["faculty"].get("excluded_title_patterns", []))
+            # Exclusion: rank/title + employment status (volunteer/part-time) + fellow
+            return _apply_title_exclusions(
+                active,
+                config["faculty"].get("excluded_title_patterns", []),
+                config["faculty"].get("excluded_employment_statuses", []),
+                config["faculty"].get("excluded_emp_types", []),
+            )
         else:
             logger.info(f"Faculty cache is {age_hours:.1f}h old, re-scraping...")
 
@@ -1185,7 +1234,12 @@ def get_faculty_profiles(config: dict) -> list[dict]:
     # Marks excluded faculty in place with excluded_from_matching=True so the marks
     # persist via the cache save and so the dashboard can show their status;
     # subsequent enrichment passes skip them (saves thousands of API calls).
-    _apply_title_exclusions(all_faculty, config["faculty"].get("excluded_title_patterns", []))
+    _apply_title_exclusions(
+        all_faculty,
+        config["faculty"].get("excluded_title_patterns", []),
+        config["faculty"].get("excluded_employment_statuses", []),
+        config["faculty"].get("excluded_emp_types", []),
+    )
 
     # ── Pass 2: individual UMSOM profile pages (Research Interests extraction) ──
     # Runs on ALL active, non-excluded faculty — not just those missing keywords.
