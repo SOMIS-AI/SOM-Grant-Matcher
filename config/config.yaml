@@ -156,6 +156,34 @@ matching:
       reason:  'PI: small grant for current K-awardees only'
     - pattern: 'fellowship for audiologists|research fellowship for.*students'
       reason:  'PI: trainee fellowship'
+    # ── ACL / community-services & capacity grants ────────────────────────────
+    # Administration for Community Living (ACL) and similar awards that pass the
+    # biomedical pre-filter on aging/dementia/disability vocabulary but are
+    # community-SERVICES, technical-assistance, or state-capacity programs — NOT
+    # research opportunities an individual UMSOM research faculty member would PI.
+    # Surfaced in the 2026-06-23 diag analysis (keyword-only matches, semantic≈0).
+    # Patterns are deliberately specific so they DO NOT touch the legitimate
+    # NIDILRR RESEARCH grants that look superficially similar and must be KEPT:
+    #   • Disability and Rehabilitation Research Projects (DRRP) ...
+    #   • Spinal Cord Injury / Traumatic Brain Injury "Model Systems" centers
+    #   • Rehabilitation Research and Training Center (RRTC) ...
+    # (none of those contain "resource center", "ADPI", "state grants", etc.)
+    - pattern: '\bnational resource center\b|\bresource center\b'
+      reason:  'services: ACL/TA national resource center (technical assistance, not research)'
+    - pattern: "\\bADPI\\b|alzheimer'?s disease programs? initiative"
+      reason:  'services: Alzheimer''s Disease Programs Initiative (ACL state/community capacity grant)'
+    - pattern: '\blifespan respite\b'
+      reason:  'services: Lifespan Respite Care state grants (services, not research)'
+    - pattern: 'assistive technology.*financing|\balternative financing program\b'
+      reason:  'services: Assistive Technology Alternative Financing program (state services)'
+    - pattern: 'university centers? for (?:excellence in )?developmental disabilit'
+      reason:  'services: University Center for Developmental Disabilities (UCEDD capacity grant)'
+    - pattern: 'self[- ]?management education resource'
+      reason:  'services: chronic-disease self-management education TA center (services)'
+    - pattern: 'peer supports? for augmentative'
+      reason:  'services: AAC peer-support demonstration grant (ACL services, not research)'
+    - pattern: '\bfinancial literacy\b'
+      reason:  'services: financial-literacy / ABLE-awareness program (not biomedical research)'
 
   # ── Static stop words ─────────────────────────────────────────────────────
   # These are always excluded regardless of IDF score.
