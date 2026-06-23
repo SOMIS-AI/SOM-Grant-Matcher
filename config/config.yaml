@@ -169,6 +169,8 @@ matching:
     publication_multiplier:  1.00        # has PubMed/Europe PMC/ORCID/S2/ClinicalTrials footprint
     none_multiplier:         0.80        # only profile / self-reported keywords (no external footprint)
     gate_major_mechanisms:   true        # hard-drop "none"-tier faculty from the major mechanisms below
+    gate_pi_track_record:    true        # STRICTER: drop "none" AND "pub" tiers (require NIH-funded,
+                                          # i.e. nih-tier) from the PI-track-record mechanisms below
   # Grant title/number markers for major independent-research mechanisms the
   # hard gate applies to. NIH R/U/P-series + the major DoD CDMRP awards. Early-
   # career / smaller mechanisms (K, T, F, R03/R21 pilot, DoD Idea/Early) are
@@ -186,6 +188,22 @@ matching:
     - '\bclinical trial award\b'
     - 'focused program award'
     - 'breakthrough award'
+  # PI-track-record mechanisms (2026-06-23 K12 comment): the PI must be an
+  # ESTABLISHED, NIH-funded investigator who mentors — not merely research-active.
+  # These require nih-tier (has an NIH RePORTER grant); "none" AND "pub" tiers are
+  # dropped. Covers institutional mentored career-development (K12/KL2) and
+  # institutional training-grant program directors (T32/T35), whose PIs/directors
+  # are senior NIH-funded faculty. NOTE: nih-tier = an ACTIVE NIH grant (RePORTER
+  # enrichment is active-grant based), a stricter proxy than "prior NIH funding";
+  # mentoring history is not detectable from our data. If a grant's keyword-matched
+  # faculty are all non-NIH-funded, it correctly shows zero matches.
+  pi_track_record_patterns:
+    - '\bK12\b'
+    - '\bKL2\b'
+    - '\bT32\b'
+    - '\bT35\b'
+    - 'mentored career development'
+    - 'institutional .*career development award'
 
   # ── Clinical-research vs basic-science matching (Theme 1, phased v1) ───────
   # 2026-06-23 match comments: purely basic-science PIs (rodent/cell/molecular)
