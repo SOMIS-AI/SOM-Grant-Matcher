@@ -53,6 +53,13 @@ faculty:
     - '\bvisiting\b'                              # Visiting Instructor / Researcher / Professor
     - '\bpost[ -]?doc'                            # Post Doc Fellow, Post-Doctoral Fellow, Postdoc
     - '\bresearch associate\b(?!\s+professor)'    # 'Research Associate' but NOT 'Research Associate Professor'
+    # Clinical-track ranks (non-tenure clinical educator/service line). Per user
+    # 2026-06-23: faculty whose rank is prefixed "Clinical" are largely engaged in
+    # clinical care/education, not research, and would not PI major NIH/DoD awards.
+    # Anchored with ^ so it matches the RANK "Clinical [Assistant/Associate] Professor"
+    # and does NOT catch "Professor of Clinical Pathology" (rank = Professor) or
+    # "Research Professor". Physician-scientists carry a plain/Research rank, not this.
+    - '^clinical\s+(assistant\s+|associate\s+)?professor\b'   # Clinical (Asst/Assoc) Professor
 
 # --- Grants.gov API ---
 grants:
@@ -139,6 +146,8 @@ matching:
       reason:  'institutional: MSI / HBCU only'
     - pattern: '\bR15\b|research enhancement award'
       reason:  'institutional: R15 / REAP — for health-prof / undergrad institutions without substantial NIH funding (UMSOM gets major NIH funding)'
+    - pattern: '\bCOBRE\b|centers? of biomedical research excellence'
+      reason:  'institutional: COBRE (Centers of Biomedical Research Excellence) — an IDeA-program mechanism, IDeA-states only (Maryland not eligible)'
     # PI / trainee restrictions — we ONLY exclude grants where the named PI
     # *must* be a trainee/student. Institutional training grants (T32, T35, T90,
     # K12, D43, KL2, etc.) are KEPT because the PI of those awards is a senior
