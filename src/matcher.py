@@ -804,6 +804,11 @@ def find_matches(grants, faculty, config=None):
     major_mech_rx    = _compile_major_mechanism_patterns(
         matching_cfg.get("major_mechanism_patterns", [])
     )
+    # Stricter PI-track-record gate (K12/KL2/T32/T35): require nih-tier
+    gate_pi          = bool(re_cfg.get("gate_pi_track_record", False))
+    pi_track_rx      = _compile_major_mechanism_patterns(
+        matching_cfg.get("pi_track_record_patterns", [])
+    )
     # Theme 1: clinical-required-grant vs basic-only-faculty suppression
     cb_filter        = _compile_clinical_basic(matching_cfg.get("clinical_basic_filter", {}))
     basic_only_names = set()
@@ -1058,15 +1063,24 @@ def find_matches(grants, faculty, config=None):
 
         # ── Theme 2: research track-record weighting + hard gate ─────────────
         # Re-weight each match by the faculty member's external footprint, then
-        # (for major-mechanism grants) hard-drop faculty with no footprint. Runs
-        # before the histogram/filters so the weighting flows through naturally.
-        grant_is_major = gate_major and _is_major_mechanism(grant, major_mech_rx)
+        # hard-drop faculty whose footprint is too thin for the grant type. Two
+        # gate tiers: PI-track-record grants (K12/KL2/T32/T35) require nih-tier
+        # (drop "none" AND "pub"); major-mechanism grants (R01/U/P/DoD) drop only
+        # "none". Runs before the histogram/filters so weighting flows through.
+        grant_requires_nih = gate_pi and _is_major_mechanism(grant, pi_track_rx)
+        grant_is_major     = gate_major and _is_major_mechanism(grant, major_mech_rx)
+        gate_reason = ("pi-track-record: requires NIH-funded PI" if grant_requires_nih
+                       else ("major-mechanism: requires research footprint" if grant_is_major
+                             else ""))
         if all_matches:
             gated_here = []
             reweighted = []
             for m in all_matches:
                 fac  = faculty_by_name.get(m.faculty_name, {})
                 tier = _research_tier(fac)
+                if grant_requires_nih and tier in ("none", "pub"):
+                    gated_here.append(m.faculty_name)
+                    continue
                 if grant_is_major and tier == "none":
                     gated_here.append(m.faculty_name)
                     continue
@@ -1086,6 +1100,7 @@ def find_matches(grants, faculty, config=None):
                 track_record_gated_total += len(gated_here)
                 _diag["track_record_gated"].append({
                     "grant_title": grant["title"][:80],
+                    "reason":      gate_reason,
                     "count":       len(gated_here),
                     "sample":      gated_here[:5],
                 })
