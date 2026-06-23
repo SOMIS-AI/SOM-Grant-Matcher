@@ -169,6 +169,77 @@ matching:
     - 'focused program award'
     - 'breakthrough award'
 
+  # ── Clinical-research vs basic-science matching (Theme 1, phased v1) ───────
+  # 2026-06-23 match comments: purely basic-science PIs (rodent/cell/molecular)
+  # keep matching grants that REQUIRE human-subjects/clinical/registry/services
+  # work they can't lead — e.g. TBI/SCI "Model Systems" registries (Faw "uses
+  # rodents", Mayer/Lipinski/Zhuo basic), ADRD direct-services grants (Longden
+  # et al.). This suppresses a match ONLY when BOTH hold: (a) the grant looks
+  # clinical/human-subjects-required, AND (b) the faculty looks PURELY basic
+  # (basic signals present, ZERO clinical signals — the zero-clinical guard
+  # keeps translational/physician-scientists who also use animal models safe).
+  # Conservative + fully audited in the diagnostic (clinical_basic_suppressed)
+  # so we can tune the term lists or disable. Config-only; no re-scrape.
+  clinical_basic_filter:
+    enabled: true
+    report_only: true             # PHASE-1: log who WOULD be suppressed (diag) but don't drop.
+                                    # Flip to false once the 6/24 diag confirms the classifier's
+                                    # precision on real faculty keyword pools. true = validation mode.
+    # Grant requires human-subjects / clinical / registry / direct-services work.
+    # NOTE: "Clinical Trials Not Allowed" is NOT a clinical-required signal (it
+    # permits basic research), so we match "required/optional" but not that.
+    clinical_required_patterns:
+      - 'data and statistical center'
+      - '\bmodel systems?\b'
+      - '\bregistr(?:y|ies)\b'
+      - '\blongitudinal\b'
+      - 'direct services?'
+      - '\bcaregivers?\b'
+      - 'human subjects?'
+      - 'enroll[a-z]*\s+(?:at least\s+)?(?:\d+\s+)?(?:human\s+)?participants?'
+      - 'participants?\s+(?:per year|annually|into)'
+      - 'clinical trials?\s+(?:required|optional)'
+    # Faculty basic-science signals (matched word-boundary against keyword pool).
+    basic_science_terms:
+      - mice
+      - mouse
+      - murine
+      - rat
+      - rats
+      - rodent
+      - rodents
+      - zebrafish
+      - drosophila
+      - c. elegans
+      - in vitro
+      - in vivo
+      - cell line
+      - cell lines
+      - knockout
+      - knock-out
+      - transgenic
+      - preclinical
+      - animal model
+      - animal models
+      - signaling pathway
+      - signaling pathways
+    # Clinical signals — ANY present means NOT basic-only (keeps translational PIs).
+    clinical_science_terms:
+      - patients
+      - patient
+      - clinical trial
+      - clinical trials
+      - randomized
+      - randomised
+      - cohort
+      - human subjects
+      - participants
+      - registry
+      - epidemiolog
+      - health services
+      - clinical outcomes
+    min_basic_signals: 1          # ≥ this many basic terms to qualify as basic-science
+
   # ── UMB-specific grant eligibility filter ────────────────────────────────
   # Skip grants UMB faculty are NOT eligible to apply for (institutional
   # restrictions or PI-type restrictions like trainees-only). Each entry is a

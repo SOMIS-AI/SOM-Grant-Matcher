@@ -579,6 +579,65 @@ def _is_major_mechanism(grant: dict, compiled_patterns) -> bool:
     return any(rx.search(hay) for rx in compiled_patterns)
 
 
+# ── Clinical-vs-basic-science matching (Theme 1) ──────────────────────────────
+# A purely basic-science PI (rodent/cell/molecular work, no clinical involvement)
+# is not a credible applicant for a grant that requires human-subjects, registry,
+# or direct-services work — even when the disease keywords overlap strongly. We
+# suppress a match only when the grant is clinical-required AND the faculty looks
+# purely basic (basic signals present, ZERO clinical signals).
+
+def _compile_clinical_basic(cfg: dict):
+    """Compile the clinical/basic term + pattern lists once per run.
+    Returns None when disabled, else a dict of compiled regexes + settings."""
+    cfg = cfg or {}
+    if not cfg.get("enabled"):
+        return None
+
+    def _terms_rx(terms):
+        # one alternation regex, word-boundary anchored, case-insensitive
+        parts = [re.escape(normalize(t).strip()) for t in (terms or []) if str(t).strip()]
+        if not parts:
+            return None
+        return re.compile(r"\b(?:" + "|".join(parts) + r")\b", re.IGNORECASE)
+
+    clinical_required = []
+    for pat in cfg.get("clinical_required_patterns", []):
+        try:
+            clinical_required.append(re.compile(pat, re.IGNORECASE))
+        except re.error as e:
+            logger.warning(f"Bad clinical_required_patterns regex {pat!r}: {e}")
+
+    return {
+        "report_only":       bool(cfg.get("report_only", False)),
+        "clinical_required": clinical_required,
+        "basic_rx":          _terms_rx(cfg.get("basic_science_terms")),
+        "clinical_rx":       _terms_rx(cfg.get("clinical_science_terms")),
+        "min_basic":         int(cfg.get("min_basic_signals", 1)),
+    }
+
+
+def _grant_is_clinical_required(grant: dict, cb) -> bool:
+    """True if the grant text/title signals human-subjects/clinical/registry work."""
+    if not cb or not cb["clinical_required"]:
+        return False
+    hay = normalize(f"{grant.get('title','')} {grant.get('searchable_text','')}")
+    return any(rx.search(hay) for rx in cb["clinical_required"])
+
+
+def _faculty_is_basic_only(faculty: dict, cb) -> bool:
+    """True if the faculty's keyword pool shows basic-science signals and NO
+    clinical signals (the zero-clinical guard protects translational PIs)."""
+    if not cb or cb["basic_rx"] is None:
+        return False
+    pool = normalize(" ; ".join(faculty.get("keywords", []) or []))
+    if not pool:
+        return False
+    if cb["clinical_rx"] is not None and cb["clinical_rx"].search(pool):
+        return False  # has clinical involvement → not purely basic
+    basic_hits = len(set(m.group(0) for m in cb["basic_rx"].finditer(pool)))
+    return basic_hits >= cb["min_basic"]
+
+
 def _keyword_matches_for_grant(grant, faculty, stop_words, min_kw_len,
                                 idf_table, dynamic_stops,
                                 context_terms=None, context_dropped=None):
@@ -745,6 +804,16 @@ def find_matches(grants, faculty, config=None):
     major_mech_rx    = _compile_major_mechanism_patterns(
         matching_cfg.get("major_mechanism_patterns", [])
     )
+    # Theme 1: clinical-required-grant vs basic-only-faculty suppression
+    cb_filter        = _compile_clinical_basic(matching_cfg.get("clinical_basic_filter", {}))
+    basic_only_names = set()
+    if cb_filter:
+        basic_only_names = {f.get("name", "") for f in faculty
+                            if _faculty_is_basic_only(f, cb_filter)}
+        logger.info(
+            f"Clinical/basic filter: {len(basic_only_names)} faculty classified "
+            f"basic-science-only{' (report-only)' if cb_filter['report_only'] else ''}"
+        )
 
     # ── Diagnostic data collector — gathered throughout the run, used by diagnostic email ──
     _diag = {
@@ -768,6 +837,10 @@ def find_matches(grants, faculty, config=None):
         # major-mechanism grant. Samples kept for tuning; counts in summary.
         "context_filtered": [],             # {grant_title, count, sample:[{faculty,terms}]}
         "track_record_gated": [],           # {grant_title, count, sample:[faculty]}
+        # Theme 1 audit (2026-06-23): basic-science-only faculty suppressed from
+        # clinical/human-subjects-required grants. report_only=true logs without
+        # dropping so the classifier can be validated before it affects digests.
+        "clinical_basic_suppressed": [],    # {grant_title, report_only, count, sample:[faculty]}
         # Detailed audit lists for grants that were skipped before matching.
         # Counts are in summary.grants_skipped_*; these lists let us go back
         # and verify whether the filters dropped anything that should have
@@ -813,6 +886,7 @@ def find_matches(grants, faculty, config=None):
     suppressed = 0
     context_filtered_total = 0      # Theme 3: matches dropped (all-generic keywords)
     track_record_gated_total = 0    # Theme 2: no-footprint faculty gated off major grants
+    clinical_basic_suppressed_total = 0   # Theme 1: basic-only faculty off clinical grants
 
     skipped_irrelevant = 0
     skipped_admin = 0
@@ -1016,6 +1090,26 @@ def find_matches(grants, faculty, config=None):
                     "sample":      gated_here[:5],
                 })
 
+        # ── Theme 1: clinical-required grant × basic-only faculty suppression ─
+        # When the grant requires human-subjects/clinical/registry/services work,
+        # drop matches from faculty classified purely basic-science. report_only
+        # logs the would-be drops without removing them (validation mode).
+        if all_matches and cb_filter and basic_only_names \
+                and _grant_is_clinical_required(grant, cb_filter):
+            suppressed_here = [m.faculty_name for m in all_matches
+                               if m.faculty_name in basic_only_names]
+            if suppressed_here:
+                if not cb_filter["report_only"]:
+                    all_matches = [m for m in all_matches
+                                   if m.faculty_name not in basic_only_names]
+                clinical_basic_suppressed_total += len(suppressed_here)
+                _diag["clinical_basic_suppressed"].append({
+                    "grant_title": grant["title"][:80],
+                    "report_only": cb_filter["report_only"],
+                    "count":       len(suppressed_here),
+                    "sample":      suppressed_here[:8],
+                })
+
         # ── Confidence histogram (before filtering) ──────────────────────────
         if all_matches:
             conf_scores = [m.confidence_score for m in all_matches]
@@ -1109,6 +1203,9 @@ def find_matches(grants, faculty, config=None):
         logger.info(f"  {context_filtered_total} matches dropped — generic-only keywords (context filter)")
     if track_record_gated_total:
         logger.info(f"  {track_record_gated_total} matches gated — no research footprint on major-mechanism grant")
+    if clinical_basic_suppressed_total:
+        _ro = " (report-only)" if (cb_filter and cb_filter["report_only"]) else ""
+        logger.info(f"  {clinical_basic_suppressed_total} matches suppressed — basic-only faculty on clinical-required grant{_ro}")
 
     # ── Standardised diagnostic log lines (parsed by grant_matcher_diagnostics.py) ──
     print(f"Processing {_faculty_count} faculty")
@@ -1133,6 +1230,7 @@ def find_matches(grants, faculty, config=None):
         "suppressed_by_confidence": suppressed,
         "context_filtered": context_filtered_total,
         "track_record_gated": track_record_gated_total,
+        "clinical_basic_suppressed": clinical_basic_suppressed_total,
         "keyword_only": kw_only,
         "semantic_only": sem_only,
         "both": both,
