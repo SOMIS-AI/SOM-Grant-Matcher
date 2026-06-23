@@ -61,6 +61,24 @@ faculty:
     # "Research Professor". Physician-scientists carry a plain/Research rank, not this.
     - '^clinical\s+(assistant\s+|associate\s+)?professor\b'   # Clinical (Asst/Assoc) Professor
 
+  # ── Employment-status exclusion (data-salary-desc on the dept pages) ───────
+  # 2026-06-23: each department faculty-listing <li> carries data-salary-desc —
+  # the same field driving the page's "Volunteer" / "Part Time" tabs. Volunteer
+  # and part-time faculty (e.g. Donald Milton — volunteer, primary appt at College
+  # Park; Kenneth Crandall — part-time) would not submit major research through
+  # UMSOM, so drop them from the matching pool. Values seen: VOLUNTEER, PART TIME,
+  # FULL TIME, GEOGRAPHIC FULL TIME (match exact, case-insensitive). Captured at
+  # scrape time → needs ONE re-scrape (FORCE_SCRAPE) to populate employment_status
+  # on cached faculty; degrades gracefully (no exclusion) until then.
+  excluded_employment_statuses:
+    - "VOLUNTEER"
+    - "PART TIME"
+  # data-emp-type distinguishes FACULTY from FELLOW (trainees). Fellows are too
+  # junior to PI major research (cf. the "research fellow" flagged in the 6/23
+  # comments) — exclude them too. Remove "FELLOW" here to keep fellows in.
+  excluded_emp_types:
+    - "FELLOW"
+
 # --- Grants.gov API ---
 grants:
   api_url: "https://api.grants.gov/v1/api/search2"
