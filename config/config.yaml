@@ -117,6 +117,58 @@ matching:
                                           # Keywords below this are too common across faculty.
                                           # IDF 1.5 ≈ keyword appears in ~60% of faculty.
 
+  # ── Context-dependent generic terms (Theme 3, 2026-06-23) ─────────────────
+  # Terms too generic to anchor a match on their own. A keyword match is dropped
+  # when EVERY matched keyword is in this list — i.e. the faculty matched ONLY on
+  # generic population/method words with no disease/domain-specific term. Keeps
+  # the match as soon as ≥1 specific (non-listed) keyword also fires. From the
+  # 6/19 comments: "pediatric"+"childhood" alone shouldn't match a pediatric-
+  # CANCER genome grant; "risk"+"risk assessment" alone shouldn't match an
+  # ecological-risk grant. Curatable — add generic offenders as they surface.
+  context_dependent_terms:
+    - "pediatric"
+    - "childhood"
+    - "child"
+    - "children"
+    - "adult"
+    - "adults"
+    - "adolescent"
+    - "adolescents"
+    - "aging"
+    - "risk"
+    - "risk assessment"
+    - "risk factors"
+
+  # ── Research track-record signal (Theme 2, 2026-06-23) ────────────────────
+  # Weight a match by the faculty member's external publication/grant footprint,
+  # captured during enrichment in keywords_by_source. Faculty engaged mostly in
+  # clinical care/education (no PubMed/RePORTER footprint) are unlikely to PI
+  # major research, so profile-keyword-only matches are weighted down and
+  # NIH-funded faculty up. "unknown" (attribution not captured pre-rescrape) is
+  # left neutral so we never penalize on missing data.
+  research_evidence:
+    nih_reporter_multiplier: 1.05        # has NIH RePORTER grant(s) — strongest track record
+    publication_multiplier:  1.00        # has PubMed/Europe PMC/ORCID/S2/ClinicalTrials footprint
+    none_multiplier:         0.80        # only profile / self-reported keywords (no external footprint)
+    gate_major_mechanisms:   true        # hard-drop "none"-tier faculty from the major mechanisms below
+  # Grant title/number markers for major independent-research mechanisms the
+  # hard gate applies to. NIH R/U/P-series + the major DoD CDMRP awards. Early-
+  # career / smaller mechanisms (K, T, F, R03/R21 pilot, DoD Idea/Early) are
+  # intentionally omitted so newer-but-real researchers aren't gated out.
+  major_mechanism_patterns:
+    - '\bR01\b'
+    - '\bR35\b'
+    - '\bU01\b'
+    - '\bU54\b'
+    - '\bUM1\b'
+    - '\bP01\b'
+    - '\bP30\b'
+    - '\bP50\b'
+    - 'investigator-initiated research award'
+    - '\bclinical trial award\b'
+    - 'focused program award'
+    - 'breakthrough award'
+
   # ── UMB-specific grant eligibility filter ────────────────────────────────
   # Skip grants UMB faculty are NOT eligible to apply for (institutional
   # restrictions or PI-type restrictions like trainees-only). Each entry is a

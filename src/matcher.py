@@ -529,15 +529,73 @@ def _is_institutionally_eligible(title: str, compiled_patterns) -> tuple[bool, s
     return True, ""
 
 
+# ── Research track-record signal (Theme 2) ───────────────────────────────────
+# A faculty member's external publication/grant footprint, read from the
+# keywords_by_source attribution built during enrichment. Used to weight match
+# confidence (clinical-care/educator faculty with no footprint are unlikely to
+# PI major research) and to hard-gate the no-footprint tier off major grants.
+
+# Source labels that represent a genuine external research footprint (vs.
+# self-described profile keywords). Must match faculty_scraper._SOURCE_BASE_LABEL.
+_EVIDENCE_SOURCE_LABELS = (
+    "PubMed", "Europe PMC", "ORCID", "Semantic Scholar", "ClinicalTrials.gov",
+)
+
+
+def _research_tier(faculty: dict) -> str:
+    """
+    Classify a faculty member's external research footprint:
+      'nih'     — has NIH RePORTER grant(s); strongest track record
+      'pub'     — has publication footprint (PubMed/Europe PMC/ORCID/S2/CT.gov)
+      'none'    — only profile / self-reported keywords; no external footprint
+      'unknown' — attribution not captured (pre-rescrape cache); treat neutrally
+    """
+    kbs = faculty.get("keywords_by_source")
+    if not kbs:
+        return "unknown"
+    if kbs.get("NIH RePORTER"):
+        return "nih"
+    if any(kbs.get(lbl) for lbl in _EVIDENCE_SOURCE_LABELS):
+        return "pub"
+    return "none"
+
+
+def _compile_major_mechanism_patterns(raw_list):
+    """Compile the major-mechanism title/number markers once per run."""
+    compiled = []
+    for pat in (raw_list or []):
+        try:
+            compiled.append(re.compile(pat, re.IGNORECASE))
+        except re.error as e:
+            logger.warning(f"Bad major_mechanism_patterns regex {pat!r}: {e}")
+    return compiled
+
+
+def _is_major_mechanism(grant: dict, compiled_patterns) -> bool:
+    """True if the grant title/number denotes a major independent-research award."""
+    if not compiled_patterns:
+        return False
+    hay = f"{grant.get('title', '')} {grant.get('number', '')}"
+    return any(rx.search(hay) for rx in compiled_patterns)
+
+
 def _keyword_matches_for_grant(grant, faculty, stop_words, min_kw_len,
-                                idf_table, dynamic_stops):
+                                idf_table, dynamic_stops,
+                                context_terms=None, context_dropped=None):
     """
     Run regex keyword matching for one grant against all faculty.
     Returns dict keyed by faculty_name for easy merging with semantic pass.
+
+    context_terms: set of normalised generic terms that cannot anchor a match on
+    their own (Theme 3). If EVERY matched keyword for a faculty is in this set,
+    the match is dropped — they matched only on generic population/method words
+    with no disease/domain-specific term. When dropped, an audit entry is
+    appended to context_dropped (if provided) for the diagnostic.
     """
     grant_text  = normalize(grant["searchable_text"])
     grant_title = normalize(grant["title"])
     all_stops   = stop_words | dynamic_stops
+    context_terms = context_terms or set()
     results     = {}
 
     for person in faculty:
@@ -560,6 +618,20 @@ def _keyword_matches_for_grant(grant, faculty, stop_words, min_kw_len,
             pattern = r"\b" + re.escape(kw_norm) + r"\b"
             if re.search(pattern, grant_text):
                 matched.append(kw)
+
+        # Theme 3: a match must rest on ≥1 domain-specific keyword. If every
+        # matched term is a generic context-dependent word (pediatric, risk, …)
+        # the overall concept wasn't matched — drop and audit.
+        if matched and context_terms:
+            specific = [kw for kw in matched
+                        if normalize(kw).strip() not in context_terms]
+            if not specific:
+                if context_dropped is not None:
+                    context_dropped.append({
+                        "faculty": person["name"],
+                        "terms":   sorted(set(matched)),
+                    })
+                continue
 
         if matched:
             # Legacy raw score (kept for backwards compat / sorting fallback)
@@ -658,6 +730,22 @@ def find_matches(grants, faculty, config=None):
     min_idf_match    = matching_cfg.get("min_idf_for_match", DEFAULT_MIN_IDF_FOR_MATCH)
     max_grant_chars  = matching_cfg.get("max_grant_text_chars", 3000)
 
+    # Theme 3: generic terms that can't anchor a match alone
+    context_terms    = {normalize(t).strip()
+                        for t in matching_cfg.get("context_dependent_terms", [])}
+    # Theme 2: research track-record weighting + hard gate
+    re_cfg           = matching_cfg.get("research_evidence", {}) or {}
+    tier_mult        = {
+        "nih":     float(re_cfg.get("nih_reporter_multiplier", 1.0)),
+        "pub":     float(re_cfg.get("publication_multiplier", 1.0)),
+        "none":    float(re_cfg.get("none_multiplier", 1.0)),
+        "unknown": 1.0,   # never penalize on missing attribution
+    }
+    gate_major       = bool(re_cfg.get("gate_major_mechanisms", False))
+    major_mech_rx    = _compile_major_mechanism_patterns(
+        matching_cfg.get("major_mechanism_patterns", [])
+    )
+
     # ── Diagnostic data collector — gathered throughout the run, used by diagnostic email ──
     _diag = {
         "params": {
@@ -674,6 +762,12 @@ def find_matches(grants, faculty, config=None):
         "confidence_histograms": [],        # confidence distribution per grant
         "idf_filtered_keywords": [],        # keywords removed by IDF floor per grant
         "grants_capped": [],                # grants that hit the per-grant cap
+        # Theme 3 / Theme 2 audit (2026-06-23): matches dropped because every
+        # matched keyword was a generic context-dependent term, and matches
+        # dropped because a no-research-footprint faculty hit the hard gate on a
+        # major-mechanism grant. Samples kept for tuning; counts in summary.
+        "context_filtered": [],             # {grant_title, count, sample:[{faculty,terms}]}
+        "track_record_gated": [],           # {grant_title, count, sample:[faculty]}
         # Detailed audit lists for grants that were skipped before matching.
         # Counts are in summary.grants_skipped_*; these lists let us go back
         # and verify whether the filters dropped anything that should have
@@ -717,6 +811,8 @@ def find_matches(grants, faculty, config=None):
     results = []
     kw_only = sem_only = both = 0
     suppressed = 0
+    context_filtered_total = 0      # Theme 3: matches dropped (all-generic keywords)
+    track_record_gated_total = 0    # Theme 2: no-footprint faculty gated off major grants
 
     skipped_irrelevant = 0
     skipped_admin = 0
@@ -802,9 +898,18 @@ def find_matches(grants, faculty, config=None):
         grant_text  = normalize(grant["searchable_text"])
         grant_title = normalize(grant["title"])
 
+        context_dropped = []
         keyword_matches = _keyword_matches_for_grant(
-            grant, faculty, stop_words, min_kw_len, idf_table, dynamic_stops
+            grant, faculty, stop_words, min_kw_len, idf_table, dynamic_stops,
+            context_terms=context_terms, context_dropped=context_dropped,
         )
+        if context_dropped:
+            context_filtered_total += len(context_dropped)
+            _diag["context_filtered"].append({
+                "grant_title": grant["title"][:80],
+                "count":       len(context_dropped),
+                "sample":      context_dropped[:5],
+            })
 
         # ── Semantic pass: one cosine-similarity vector for ALL faculty ──────
         # sim_by_name powers two things: (1) semantic-only matches for faculty the
@@ -876,6 +981,40 @@ def find_matches(grants, faculty, config=None):
             keyword_matches, semantic_matches, idf_table, grant_text, grant_title,
             sim_by_name=sim_by_name, sem_threshold=sem_threshold,
         )
+
+        # ── Theme 2: research track-record weighting + hard gate ─────────────
+        # Re-weight each match by the faculty member's external footprint, then
+        # (for major-mechanism grants) hard-drop faculty with no footprint. Runs
+        # before the histogram/filters so the weighting flows through naturally.
+        grant_is_major = gate_major and _is_major_mechanism(grant, major_mech_rx)
+        if all_matches:
+            gated_here = []
+            reweighted = []
+            for m in all_matches:
+                fac  = faculty_by_name.get(m.faculty_name, {})
+                tier = _research_tier(fac)
+                if grant_is_major and tier == "none":
+                    gated_here.append(m.faculty_name)
+                    continue
+                mult = tier_mult.get(tier, 1.0)
+                if mult != 1.0:
+                    new_conf = min(round(m.confidence_score * mult), 99)
+                    m = m._replace(confidence_score=new_conf)
+                reweighted.append(m)
+            # keep ranking consistent after re-scoring
+            reweighted.sort(key=lambda m: (
+                -m.confidence_score,
+                0 if m.match_type == "both" else (1 if m.match_type == "keyword" else 2),
+                -m.similarity_score,
+            ))
+            all_matches = reweighted
+            if gated_here:
+                track_record_gated_total += len(gated_here)
+                _diag["track_record_gated"].append({
+                    "grant_title": grant["title"][:80],
+                    "count":       len(gated_here),
+                    "sample":      gated_here[:5],
+                })
 
         # ── Confidence histogram (before filtering) ──────────────────────────
         if all_matches:
@@ -966,6 +1105,10 @@ def find_matches(grants, faculty, config=None):
         logger.info(f"  ({skipped_admin} of those were administrative notices)")
     if suppressed:
         logger.info(f"  {suppressed} faculty matches suppressed by min_confidence={min_confidence}% filter")
+    if context_filtered_total:
+        logger.info(f"  {context_filtered_total} matches dropped — generic-only keywords (context filter)")
+    if track_record_gated_total:
+        logger.info(f"  {track_record_gated_total} matches gated — no research footprint on major-mechanism grant")
 
     # ── Standardised diagnostic log lines (parsed by grant_matcher_diagnostics.py) ──
     print(f"Processing {_faculty_count} faculty")
@@ -988,6 +1131,8 @@ def find_matches(grants, faculty, config=None):
         "raw_matches": _raw_match_count,
         "matches_after_filter": total_matches,
         "suppressed_by_confidence": suppressed,
+        "context_filtered": context_filtered_total,
+        "track_record_gated": track_record_gated_total,
         "keyword_only": kw_only,
         "semantic_only": sem_only,
         "both": both,
