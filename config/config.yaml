@@ -234,7 +234,11 @@ matching:
       - 'human subjects?'
       - 'enroll[a-z]*\s+(?:at least\s+)?(?:\d+\s+)?(?:human\s+)?participants?'
       - 'participants?\s+(?:per year|annually|into)'
-      - 'clinical trials?\s+(?:required|optional)'
+      # Only "Clinical Trial(s) REQUIRED" signals human-subjects-mandatory. NOT
+      # "Optional" (basic research is explicitly welcome) nor "Not Allowed"
+      # (basic-only). Validated 2026-06-25: "P30 Clinical Trial Optional" had
+      # over-fired this rule and report-only-suppressed basic scientists.
+      - 'clinical trials?\s+required'
     # Faculty basic-science signals (matched word-boundary against keyword pool).
     basic_science_terms:
       - mice
