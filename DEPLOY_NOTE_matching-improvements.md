@@ -39,8 +39,17 @@ scheduled run. This:
 - re-scrapes faculty to populate publication titles (`evidence_titles`).
 
 The first scrape is a full (~1,282-faculty) enrichment pass and runs for a few hours
-— expected. Phrase scoring, demotion, and the concept guard are active **immediately**
+— expected. It fires at the next scheduled run (`NOTIFY_HOUR`, default 6 AM ET), not
+immediately. Phrase scoring, demotion, and the concept guard are active **immediately**
 and do not need the re-scrape.
+
+> **IMPORTANT — turn `FORCE_SCRAPE` back off after the first successful run.**
+> `FORCE_SCRAPE` is read at process startup and cleared only in memory after the first
+> successful run. The Azure env var persists, so **every app restart** (deploy, idle
+> recycle, platform maintenance) re-triggers another full multi-hour re-scrape. Once
+> you confirm the first scrape completed (diagnostic email shows a healthy faculty
+> count and `evidence_titles` populated / embeddings at v6), set `FORCE_SCRAPE=false`
+> or delete it. It is idempotent — no data harm — just wasteful if left on.
 
 ## What to watch on the first run
 
