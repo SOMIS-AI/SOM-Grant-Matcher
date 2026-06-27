@@ -135,6 +135,66 @@ matching:
                                           # Keywords below this are too common across faculty.
                                           # IDF 1.5 ≈ keyword appears in ~60% of faculty.
 
+  # ── Phrase-aware scoring (2026-06-26) ─────────────────────────────────────
+  # Fixes the scoring inversion where TWO loose single-word hits ("kidney" +
+  # "cancer") outscored ONE precise concept phrase ("kidney cancer"). A matched
+  # keyword is now weighted by how many MEANINGFUL tokens it carries (long, non-
+  # stop words), and multi-word phrases get a higher IDF cap so a genuinely
+  # specific phrase can dominate. Single-component matches — where a faculty's
+  # only hits are isolated component words of the grant's title concept (e.g. a
+  # polycystic-kidney-disease researcher matching just "kidney" on a kidney-
+  # CANCER grant) — are demoted but kept visible. Set enabled: false to revert
+  # to the old flat min(IDF, 5.0) sum.
+  phrase_scoring:
+    enabled: true
+    token_bonus: 0.6                     # each extra meaningful token multiplies the keyword's
+                                          # IDF weight by (1 + 0.6*(n_tokens-1)): 2-word ×1.6, 3-word ×2.2
+    idf_cap: 5.0                         # per-keyword IDF cap for a SINGLE-word match
+    multiword_cap: 13.0                  # raised IDF cap for a MULTI-word phrase match (lets a
+                                          # specific phrase carry a match on its own)
+    component_only_multiplier: 0.5       # confidence ×0.5 when the ONLY hits are isolated single
+                                          # component words of the grant title concept (demote, keep visible)
+
+  # Separate confidence floor for SEMANTIC-only matches. Semantic confidence =
+  # similarity × 100, and a sim near MiniLM's 0.40–0.57 ceiling is a genuinely
+  # strong match — but min_confidence_score=45 was calibrated for IDF-based
+  # KEYWORD scores, so it was also deleting real semantic matches that scored
+  # 0.40–0.44. 42 reopens that band for the semantic channel without flooding
+  # (the per-grant cap still bounds volume). Watch the diagnostic and nudge
+  # toward 40 (more recall) or 45 (less noise). Leave unset to reuse
+  # min_confidence_score for everything (old behaviour).
+  # MEASURED 2026-06-26: this does NOT rescue sparse-profile near-misses like
+  # Katrina Mark ("substance use in pregnancy" → MMHSUD grant), whose embedding
+  # sim is only ~0.32 — well below the 0.40 threshold, so she never reaches this
+  # floor at all. Catching her needs richer faculty embedding text (publications,
+  # not just self-listed keywords), not a lower floor. See embedder.faculty_to_text.
+  min_semantic_confidence: 42
+
+  # ── Semantic distinctive-concept guard (2026-06-26) ───────────────────────
+  # Publication-enriched embeddings (fix #4) raise recall but reintroduce the
+  # "kidney disease ≠ kidney cancer" confusion on the SEMANTIC channel: a PKD
+  # researcher's titles ("polycystic kidney", "kidney cystogenesis") embed close
+  # to a kidney-CANCER grant, so they clear the 0.40 threshold (measured: Watnick
+  # sim 0.436 on DoW Kidney Cancer). The keyword phrase-scoring fix can't catch
+  # this — it's a semantic-only match with no keyword hit. This guard demotes a
+  # SEMANTIC-ONLY match when the grant is about a distinctive concept (e.g. cancer)
+  # but the faculty's text (keywords + evidence_titles) shows NO evidence of it.
+  # Keyword/"both" matches are lexically grounded and are never guarded.
+  # Each group: grant_markers flag the grant as being about the concept;
+  # evidence_markers are what the faculty must show to be a credible semantic match.
+  semantic_concept_guard:
+    enabled: true
+    demote_multiplier: 0.4        # semantic-only match missing the concept evidence → conf ×0.4
+                                    # (drops below the digest floor; still visible in the diagnostic)
+    groups:
+      - name: oncology
+        grant_markers:    ['cancer', 'carcinoma', 'oncolog', 'tumou?rs?', 'neoplas', 'malignan',
+                           'sarcoma', 'leukem', 'lymphoma', 'melanoma', 'glioma', 'glioblastoma',
+                           'metasta', 'adenocarcinoma']
+        evidence_markers: ['cancer', 'carcinoma', 'oncolog', 'tumou?rs?', 'neoplas', 'malignan',
+                           'sarcoma', 'leukem', 'lymphoma', 'melanoma', 'glioma', 'glioblastoma',
+                           'metasta', 'adenocarcinoma', 'chemotherap', 'immunotherap']
+
   # ── Context-dependent generic terms (Theme 3, 2026-06-23) ─────────────────
   # Terms too generic to anchor a match on their own. A keyword match is dropped
   # when EVERY matched keyword is in this list — i.e. the faculty matched ONLY on

@@ -117,7 +117,15 @@ def is_available() -> bool:
 # Embedding format version — bump this when faculty_to_text() changes so that
 # stale embeddings (generated with an older text format) are auto-regenerated.
 # The version is stored in each faculty profile alongside the embedding.
-EMBEDDING_VERSION = 5    # v1 = pipe-separated, v2 = sentence-style, v3 = force regen, v4 = PubMedBert (too broad), v5 = back to MiniLM + threshold 0.40
+EMBEDDING_VERSION = 6    # v1 = pipe-separated, v2 = sentence-style, v3 = force regen, v4 = PubMedBert (too broad), v5 = back to MiniLM + threshold 0.40, v6 = + publication/grant titles (fix #4)
+
+# Cap how many evidence titles and how much total evidence text feeds the
+# embedding. Measured 2026-06-26: ~10 publication TITLES gives the best lift
+# (0.40 → 0.47 for a sparse-profile faculty vs a topical grant); abstracts add
+# length that dilutes the signal, so we use titles only. Set FACULTY_EMBED_PUBS=0
+# to disable and fall back to keyword-only embedding text.
+_EMBED_MAX_EVIDENCE_TITLES = int(os.getenv("FACULTY_EMBED_MAX_TITLES", "12"))
+_EMBED_INCLUDE_PUBS = os.getenv("FACULTY_EMBED_PUBS", "1").lower() not in ("0", "false", "no")
 
 
 # ── Text preparation ───────────────────────────────────────────────────────────
@@ -164,6 +172,17 @@ def faculty_to_text(faculty: dict) -> str:
             # "a, b, c, and d" format
             kw_str = ", ".join(kws[:-1]) + ", and " + kws[-1]
             parts.append(f"Their research interests include {kw_str}.")
+
+    # Publication / grant TITLES (fix #4): ground the vector in the faculty's
+    # actual research output, not just sparse self-listed keywords. This is what
+    # lifts paraphrase-style profiles (e.g. "substance use in pregnancy") above
+    # the semantic threshold against a topically-matched grant. Titles only —
+    # abstracts dilute the signal (measured 2026-06-26).
+    if _EMBED_INCLUDE_PUBS:
+        titles = faculty.get("evidence_titles") or []
+        if titles:
+            picked = titles[:_EMBED_MAX_EVIDENCE_TITLES]
+            parts.append("Recent publications and projects include: " + " ".join(picked))
 
     return " ".join(parts).strip()
 

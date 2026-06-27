@@ -83,6 +83,29 @@ DEFAULT_MIN_IDF_FOR_MATCH     = 1.5  # Minimum IDF for a grant keyword to count 
                                      # Terms below this are too common across faculty to be
                                      # meaningful match signals.
 
+# ── Phrase-aware scoring defaults (2026-06-26) ────────────────────────────────
+# The old scoring summed min(IDF, 5.0) over each matched keyword, which let TWO
+# loose single-word hits ("kidney" + "cancer") outscore ONE precise multi-word
+# concept ("kidney cancer"), because the phrase was capped at 5.0 while two words
+# summed past it. These defaults reward a matched keyword by how many *meaningful*
+# tokens it carries and raise the cap for phrases, so a full concept phrase wins.
+# Also demotes (but keeps visible) matches that hit ONLY isolated component words
+# of the grant's core title concept (e.g. a PKD researcher matching just "kidney"
+# on a kidney-cancer grant). All tunable in config.yaml under matching.phrase_scoring.
+DEFAULT_PHRASE_TOKEN_BONUS         = 0.6   # each extra meaningful token multiplies the keyword's
+                                           # IDF weight by (1 + bonus*(n_tokens-1))
+DEFAULT_PHRASE_IDF_CAP             = 5.0   # per-keyword IDF cap for a single-word match
+DEFAULT_PHRASE_MULTIWORD_CAP       = 13.0  # raised cap for a multi-word phrase match (lets a
+                                           # genuinely specific phrase dominate the score)
+DEFAULT_COMPONENT_ONLY_MULTIPLIER  = 0.5   # demote a match whose ONLY hits are isolated single
+                                           # component words of the grant's title concept
+
+# Semantic-only matches score confidence = similarity × 100. With semantic_threshold
+# at 0.40 but min_confidence_score at 45, a genuine paraphrase match scoring 0.40–0.44
+# was found and then immediately filtered out (the "dead zone"). When unset in config,
+# min_semantic_confidence falls back to min_confidence_score (no behaviour change).
+DEFAULT_MIN_SEMANTIC_CONFIDENCE    = None
+
 # ── Administrative / procedural keyword blocklist ─────────────────────────────
 # These words appear in NIH notices and grant titles but carry zero scientific
 # signal. Matching on "extension", "change", "correction", "continuation" etc.
@@ -207,6 +230,13 @@ def _phrase_is_all_stops(phrase: str, all_stops: set, min_kw_len: int) -> bool:
 
 # -- Confidence scoring -------------------------------------------------------
 
+def _meaningful_tokens(kw_norm: str, stops: set, min_kw_len: int) -> list:
+    """Tokens of a normalised keyword that carry signal: long enough and not a
+    stop word. Used to tell a real multi-word concept ("kidney cancer") apart from
+    a single content word padded with short/stop tokens ("substance use in ...")."""
+    return [t for t in kw_norm.split() if len(t) >= min_kw_len and t not in stops]
+
+
 def _compute_confidence(
     matched_keywords: list,
     idf_table: dict,
@@ -214,25 +244,46 @@ def _compute_confidence(
     grant_title: str,
     similarity_score: float,
     match_type: str,
+    scoring_ctx: dict | None = None,
 ) -> int:
     """
     Compute a 0-100 confidence score for a single faculty-grant match.
+
+    scoring_ctx (built once per grant in find_matches) enables phrase-aware
+    scoring. When None, scoring falls back to the legacy flat min(IDF, 5.0) sum —
+    used by call sites that have no keywords to weight (e.g. the semantic pass).
+    Keys: stops (set), min_kw_len (int), title_tokens (set of the grant title's
+    meaningful tokens), cfg (the matching.phrase_scoring config dict).
     """
-    # ── Factor 1: IDF-weighted keyword score ──────────────────────────────────
-    # Each matched keyword contributes min(IDF, 5.0) points.
-    # A cap of 5.0 prevents one ultra-specific term from dominating.
-    # Score normalised over 20.0 (raised from 15.0) so that a faculty member needs
-    # more/better keywords to score high — reducing false positives from 1-2 weak matches.
-    # Calibrated spread with new normalizer:
-    #   1 somewhat-specific (IDF 3.0) → 15%  (was 20% — now below min_confidence=20)
-    #   1 specific (IDF 4.5)          → 22%  (was 30%)
-    #   2 specific (IDF 4.5 each)     → 45%  (was 60%)
-    #   3 medium (IDF 3.5 each)       → 52%  (was 70%)
-    #   3 specific (IDF 4.5 each)     → 67%  (was 90%)
-    #   3 highly-specific (IDF 5+)    → 75%  (was 99%)
-    # Effect: a faculty member now needs 2+ genuinely specific keywords to pass min_confidence=20
-    idf_sum = sum(min(idf_table.get(normalize(kw).strip(), 1.0), 5.0)
-                  for kw in matched_keywords)
+    ctx        = scoring_ctx or {}
+    cfg        = ctx.get("cfg") or {}
+    phrase_on  = bool(cfg.get("enabled", True)) and bool(scoring_ctx)
+    stops      = ctx.get("stops", set())
+    min_kw_len = ctx.get("min_kw_len", 4)
+
+    token_bonus  = cfg.get("token_bonus", DEFAULT_PHRASE_TOKEN_BONUS)
+    base_cap     = cfg.get("idf_cap", DEFAULT_PHRASE_IDF_CAP)
+    phrase_cap   = cfg.get("multiword_cap", DEFAULT_PHRASE_MULTIWORD_CAP)
+    demote_mult  = cfg.get("component_only_multiplier", DEFAULT_COMPONENT_ONLY_MULTIPLIER)
+
+    # ── Factor 1: IDF-weighted keyword score (phrase-aware) ───────────────────
+    # Each matched keyword contributes min(IDF, cap) × phrase_factor, where the
+    # phrase_factor grows with the number of meaningful tokens and a multi-word
+    # phrase gets a higher IDF cap. This makes a precise concept ("kidney cancer")
+    # outscore two loose single-word hits ("kidney" + "cancer"). Normalised over
+    # 20.0 (a single strong word still tops out modestly; a specific phrase can
+    # carry a match on its own). Legacy (no ctx): flat min(IDF, 5.0) sum.
+    idf_sum = 0.0
+    for kw in matched_keywords:
+        kw_norm = normalize(kw).strip()
+        idf     = idf_table.get(kw_norm, 1.0)
+        if phrase_on:
+            n_tok  = max(len(_meaningful_tokens(kw_norm, stops, min_kw_len)), 1)
+            cap    = phrase_cap if n_tok >= 2 else base_cap
+            factor = 1.0 + token_bonus * (n_tok - 1)
+            idf_sum += min(idf, cap) * factor
+        else:
+            idf_sum += min(idf, base_cap)
     kw_confidence = min(idf_sum / 20.0, 1.0)
 
     # ── Factor 2: Title match bonus ───────────────────────────────────────────
@@ -250,6 +301,29 @@ def _compute_confidence(
 
     # ── Combine keyword-based confidence ─────────────────────────────────────
     kw_conf = min(kw_confidence + title_bonus + density_bonus, 1.0)
+
+    # ── Factor 3b: single-component demotion ──────────────────────────────────
+    # If the faculty matched ONLY isolated single component words of the grant's
+    # core title concept (e.g. a polycystic-kidney-disease researcher matching just
+    # "kidney" on a kidney-CANCER grant) — no multi-word phrase of their own and
+    # every hit is a lone token drawn from the grant title — they matched the words
+    # but not the meaning. Demote (but keep visible), per the reviewer's preference.
+    if phrase_on and matched_keywords:
+        title_tokens = ctx.get("title_tokens", set())
+        matched_norm = [normalize(kw).strip() for kw in matched_keywords]
+        has_phrase   = any(
+            len(_meaningful_tokens(m, stops, min_kw_len)) >= 2 for m in matched_norm
+        )
+        component_only = (
+            not has_phrase
+            and bool(title_tokens)
+            and all(
+                len(_meaningful_tokens(m, stops, min_kw_len)) <= 1 and m in title_tokens
+                for m in matched_norm
+            )
+        )
+        if component_only:
+            kw_conf *= demote_mult
 
     # ── Factor 4: Apply match type multiplier ─────────────────────────────────
     sem_conf = float(similarity_score or 0.0)
@@ -638,9 +712,75 @@ def _faculty_is_basic_only(faculty: dict, cb) -> bool:
     return basic_hits >= cb["min_basic"]
 
 
+# ── Semantic distinctive-concept guard (2026-06-26) ───────────────────────────
+# Demotes a SEMANTIC-ONLY match when the grant is about a distinctive concept
+# (e.g. cancer) but the faculty shows no textual evidence of it — the
+# "kidney disease ≠ kidney cancer" confusion that publication-enriched embeddings
+# reintroduce on the semantic channel. Keyword/"both" matches are never guarded.
+
+def _compile_semantic_concept_guard(cfg: dict):
+    """Compile matching.semantic_concept_guard into compiled regex groups.
+    Returns None when disabled/empty."""
+    cfg = cfg or {}
+    if not cfg.get("enabled"):
+        return None
+    groups = []
+    for g in cfg.get("groups", []):
+        try:
+            grant_rx = [re.compile(r"\b" + p + r"\b", re.IGNORECASE)
+                        for p in (g.get("grant_markers") or [])]
+            ev_rx    = [re.compile(r"\b" + p + r"\b", re.IGNORECASE)
+                        for p in (g.get("evidence_markers") or [])]
+        except re.error as e:
+            logger.warning(f"Bad semantic_concept_guard regex in group {g.get('name')!r}: {e}")
+            continue
+        if grant_rx and ev_rx:
+            groups.append({"name": g.get("name", ""), "grant": grant_rx, "evidence": ev_rx})
+    if not groups:
+        return None
+    return {"groups": groups, "demote": float(cfg.get("demote_multiplier", 0.4))}
+
+
+def _active_concept_groups(grant: dict, guard) -> list:
+    """Concept groups whose grant_markers fire on this grant's title/text."""
+    if not guard:
+        return []
+    hay = f"{grant.get('title','')} {grant.get('searchable_text','')}"
+    return [g for g in guard["groups"] if any(rx.search(hay) for rx in g["grant"])]
+
+
+# Keyword sources that reflect a faculty member's OWN description of their work.
+# The guard trusts these + publication/grant titles, but NOT auto-attached MeSH
+# terms (PubMed/RePORTER/EuropePMC/S2/CT.gov): a PKD paper carries MeSH like
+# "kidney neoplasms"/"cell line, tumor"/"carcinogenesis" by co-occurrence, which
+# would falsely satisfy the cancer guard for a researcher who studies kidney
+# DISEASE, not cancer. Labels match faculty_scraper._SOURCE_BASE_LABEL.
+_SELF_REPORTED_SOURCE_LABELS = {
+    "UMSOM (Keywords)", "UMSOM (Interests)", "Faculty Self-Reported", "ORCID",
+}
+
+
+def _faculty_evidence_text(fac: dict) -> str:
+    """Clean faculty text the concept guard checks: publication/grant TITLES
+    (evidence_titles, fix #4) + self-reported profile keywords only. Excludes
+    noisy auto-attached MeSH/term buckets so cancer-adjacent co-occurrence terms
+    on a kidney-DISEASE researcher don't falsely pass the cancer guard. Falls back
+    to all keywords when per-source attribution isn't available."""
+    parts = list(fac.get("evidence_titles") or [])
+    kbs = fac.get("keywords_by_source")
+    if kbs:
+        for label, kws in kbs.items():
+            if label in _SELF_REPORTED_SOURCE_LABELS:
+                parts += kws
+    else:
+        parts += list(fac.get("keywords") or [])
+    return " ".join(parts)
+
+
 def _keyword_matches_for_grant(grant, faculty, stop_words, min_kw_len,
                                 idf_table, dynamic_stops,
-                                context_terms=None, context_dropped=None):
+                                context_terms=None, context_dropped=None,
+                                scoring_ctx=None):
     """
     Run regex keyword matching for one grant against all faculty.
     Returns dict keyed by faculty_name for easy merging with semantic pass.
@@ -702,7 +842,8 @@ def _keyword_matches_for_grant(grant, faculty, stop_words, min_kw_len,
 
             confidence = _compute_confidence(
                 matched, idf_table, grant_text, grant_title,
-                similarity_score=0.0, match_type="keyword"
+                similarity_score=0.0, match_type="keyword",
+                scoring_ctx=scoring_ctx,
             )
 
             results[person["name"]] = Match(
@@ -723,7 +864,8 @@ def _keyword_matches_for_grant(grant, faculty, stop_words, min_kw_len,
 # -- Merge & sort -------------------------------------------------------------
 
 def _merge_match_dicts(keyword_matches, semantic_matches, idf_table,
-                        grant_text, grant_title, sim_by_name=None, sem_threshold=None):
+                        grant_text, grant_title, sim_by_name=None, sem_threshold=None,
+                        scoring_ctx=None):
     """
     Merge keyword and semantic matches into a single ranked list.
 
@@ -746,7 +888,8 @@ def _merge_match_dicts(keyword_matches, semantic_matches, idf_table,
             if sem_threshold is not None and sim >= sem_threshold:
                 confidence = _compute_confidence(
                     kw.matched_keywords, idf_table, grant_text, grant_title,
-                    similarity_score=sim, match_type="both"
+                    similarity_score=sim, match_type="both",
+                    scoring_ctx=scoring_ctx,
                 )
                 merged.append(kw._replace(
                     match_type="both", similarity_score=sim, confidence_score=confidence
@@ -789,6 +932,16 @@ def find_matches(grants, faculty, config=None):
     min_idf_match    = matching_cfg.get("min_idf_for_match", DEFAULT_MIN_IDF_FOR_MATCH)
     max_grant_chars  = matching_cfg.get("max_grant_text_chars", 3000)
 
+    # Phrase-aware scoring config (passed per-grant via scoring_ctx)
+    phrase_cfg       = matching_cfg.get("phrase_scoring", {}) or {}
+    # Separate floor for semantic-only matches so a paraphrase match that clears
+    # semantic_threshold isn't immediately killed by the keyword-oriented
+    # min_confidence_score. Falls back to min_confidence when unset (no change).
+    min_sem_conf     = matching_cfg.get("min_semantic_confidence",
+                                        DEFAULT_MIN_SEMANTIC_CONFIDENCE)
+    if min_sem_conf is None:
+        min_sem_conf = min_confidence
+
     # Theme 3: generic terms that can't anchor a match alone
     context_terms    = {normalize(t).strip()
                         for t in matching_cfg.get("context_dependent_terms", [])}
@@ -809,6 +962,17 @@ def find_matches(grants, faculty, config=None):
     pi_track_rx      = _compile_major_mechanism_patterns(
         matching_cfg.get("pi_track_record_patterns", [])
     )
+    # Semantic distinctive-concept guard (kidney-disease vs kidney-cancer, etc.)
+    concept_guard    = _compile_semantic_concept_guard(
+        matching_cfg.get("semantic_concept_guard", {})
+    )
+    concept_guarded_total = 0
+    if concept_guard:
+        logger.info(
+            f"Semantic concept guard: {len(concept_guard['groups'])} group(s) active "
+            f"(demote ×{concept_guard['demote']})"
+        )
+
     # Theme 1: clinical-required-grant vs basic-only-faculty suppression
     cb_filter        = _compile_clinical_basic(matching_cfg.get("clinical_basic_filter", {}))
     basic_only_names = set()
@@ -846,6 +1010,10 @@ def find_matches(grants, faculty, config=None):
         # clinical/human-subjects-required grants. report_only=true logs without
         # dropping so the classifier can be validated before it affects digests.
         "clinical_basic_suppressed": [],    # {grant_title, report_only, count, sample:[faculty]}
+        # Semantic concept guard (2026-06-26): semantic-only matches demoted because
+        # the grant is about a distinctive concept (e.g. cancer) the faculty shows
+        # no evidence of — the kidney-disease-vs-kidney-cancer confusion.
+        "semantic_concept_guarded": [],     # {grant_title, group, count, sample:[faculty]}
         # Detailed audit lists for grants that were skipped before matching.
         # Counts are in summary.grants_skipped_*; these lists let us go back
         # and verify whether the filters dropped anything that should have
@@ -977,10 +1145,24 @@ def find_matches(grants, faculty, config=None):
         grant_text  = normalize(grant["searchable_text"])
         grant_title = normalize(grant["title"])
 
+        # Per-grant scoring context for phrase-aware confidence. title_tokens are
+        # the grant title's meaningful (long, non-stop) words — the components of
+        # its core concept, used to demote isolated single-word matches.
+        all_stops_ctx = stop_words | dynamic_stops
+        title_tokens  = {t for t in grant_title.split()
+                         if len(t) >= min_kw_len and t not in all_stops_ctx}
+        scoring_ctx = {
+            "stops":        all_stops_ctx,
+            "min_kw_len":   min_kw_len,
+            "title_tokens": title_tokens,
+            "cfg":          phrase_cfg,
+        }
+
         context_dropped = []
         keyword_matches = _keyword_matches_for_grant(
             grant, faculty, stop_words, min_kw_len, idf_table, dynamic_stops,
             context_terms=context_terms, context_dropped=context_dropped,
+            scoring_ctx=scoring_ctx,
         )
         if context_dropped:
             context_filtered_total += len(context_dropped)
@@ -1015,7 +1197,8 @@ def find_matches(grants, faculty, config=None):
                         continue
                     confidence = _compute_confidence(
                         [], idf_table, grant_text, grant_title,
-                        similarity_score=sim, match_type="semantic"
+                        similarity_score=sim, match_type="semantic",
+                        scoring_ctx=scoring_ctx,
                     )
                     semantic_matches[name] = Match(
                         faculty_name       = name,
@@ -1059,6 +1242,7 @@ def find_matches(grants, faculty, config=None):
         all_matches = _merge_match_dicts(
             keyword_matches, semantic_matches, idf_table, grant_text, grant_title,
             sim_by_name=sim_by_name, sem_threshold=sem_threshold,
+            scoring_ctx=scoring_ctx,
         )
 
         # ── Theme 2: research track-record weighting + hard gate ─────────────
@@ -1125,6 +1309,43 @@ def find_matches(grants, faculty, config=None):
                     "sample":      suppressed_here[:8],
                 })
 
+        # ── Semantic distinctive-concept guard ───────────────────────────────
+        # Demote SEMANTIC-ONLY matches when the grant is about a distinctive
+        # concept (e.g. cancer) but the faculty's text shows no evidence of it.
+        # This catches the kidney-disease-vs-kidney-cancer confusion that
+        # publication-enriched embeddings reintroduce on the semantic channel,
+        # which the keyword phrase-scoring fix cannot reach. Keyword/"both"
+        # matches are lexically grounded and are left untouched.
+        if all_matches and concept_guard:
+            active_groups = _active_concept_groups(grant, concept_guard)
+            if active_groups:
+                guarded_here = []
+                rescored = []
+                for m in all_matches:
+                    if m.match_type == "semantic":
+                        txt = _faculty_evidence_text(faculty_by_name.get(m.faculty_name, {}))
+                        missing = [g["name"] for g in active_groups
+                                   if not any(rx.search(txt) for rx in g["evidence"])]
+                        if missing:
+                            new_conf = max(int(round(m.confidence_score * concept_guard["demote"])), 0)
+                            m = m._replace(confidence_score=new_conf)
+                            guarded_here.append((m.faculty_name, missing))
+                    rescored.append(m)
+                if guarded_here:
+                    rescored.sort(key=lambda m: (
+                        -m.confidence_score,
+                        0 if m.match_type == "both" else (1 if m.match_type == "keyword" else 2),
+                        -m.similarity_score,
+                    ))
+                    all_matches = rescored
+                    concept_guarded_total += len(guarded_here)
+                    _diag["semantic_concept_guarded"].append({
+                        "grant_title": grant["title"][:80],
+                        "groups":      sorted({g for _, gs in guarded_here for g in gs}),
+                        "count":       len(guarded_here),
+                        "sample":      [n for n, _ in guarded_here[:8]],
+                    })
+
         # ── Confidence histogram (before filtering) ──────────────────────────
         if all_matches:
             conf_scores = [m.confidence_score for m in all_matches]
@@ -1138,11 +1359,18 @@ def find_matches(grants, faculty, config=None):
                 "avg_confidence": round(sum(conf_scores) / len(conf_scores), 1),
             })
 
-        # Apply minimum confidence filter
-        if min_confidence > 0:
+        # Apply minimum confidence filter. Semantic-only matches use their own
+        # floor (min_sem_conf) so a paraphrase match that cleared semantic_threshold
+        # isn't killed by the keyword-oriented min_confidence_score; keyword/both
+        # matches use min_confidence.
+        if min_confidence > 0 or min_sem_conf > 0:
             before = len(all_matches)
             _raw_match_count += before          # tally before filtering
-            all_matches = [m for m in all_matches if m.confidence_score >= min_confidence]
+            all_matches = [
+                m for m in all_matches
+                if m.confidence_score >= (min_sem_conf if m.match_type == "semantic"
+                                          else min_confidence)
+            ]
             suppressed += before - len(all_matches)
         else:
             _raw_match_count += len(all_matches)
@@ -1221,6 +1449,8 @@ def find_matches(grants, faculty, config=None):
     if clinical_basic_suppressed_total:
         _ro = " (report-only)" if (cb_filter and cb_filter["report_only"]) else ""
         logger.info(f"  {clinical_basic_suppressed_total} matches suppressed — basic-only faculty on clinical-required grant{_ro}")
+    if concept_guarded_total:
+        logger.info(f"  {concept_guarded_total} semantic matches demoted — distinctive-concept guard (e.g. kidney-disease vs cancer)")
 
     # ── Standardised diagnostic log lines (parsed by grant_matcher_diagnostics.py) ──
     print(f"Processing {_faculty_count} faculty")
@@ -1246,6 +1476,7 @@ def find_matches(grants, faculty, config=None):
         "context_filtered": context_filtered_total,
         "track_record_gated": track_record_gated_total,
         "clinical_basic_suppressed": clinical_basic_suppressed_total,
+        "semantic_concept_guarded": concept_guarded_total,
         "keyword_only": kw_only,
         "semantic_only": sem_only,
         "both": both,

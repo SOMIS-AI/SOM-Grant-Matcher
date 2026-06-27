@@ -687,6 +687,13 @@ def enrich_from_pubmed(session: requests.Session, faculty: dict) -> dict:
         mesh_terms = set()
         kw_terms = set()
 
+        # Capture article TITLES for the semantic embedding (fix #4). High-signal,
+        # concise text that grounds the faculty vector in their actual research.
+        pub_titles = [t.get_text().strip()
+                      for t in soup.find_all("ArticleTitle") if t.get_text().strip()]
+        if pub_titles:
+            _merge_evidence_text(faculty, pub_titles, f"pubmed({len(ids)}papers)")
+
         for descriptor in soup.find_all("DescriptorName"):
             term = descriptor.get_text().strip()
             if term and len(term) > 3:
@@ -754,6 +761,12 @@ def enrich_from_nih_reporter(session: requests.Session, faculty: dict) -> dict:
             return faculty
 
         all_terms = []
+
+        # Capture grant PROJECT TITLES for the semantic embedding (fix #4).
+        proj_titles = [p.get("ProjectTitle", "").strip()
+                       for p in results if p.get("ProjectTitle", "").strip()]
+        if proj_titles:
+            _merge_evidence_text(faculty, proj_titles, f"nih_reporter({len(results)}grants)")
 
         for project in results:
             # Use the Terms field first (pre-extracted keywords)
@@ -1497,6 +1510,41 @@ def _merge_keywords(faculty: dict, new_keywords: list[str], source: str) -> None
     faculty["keyword_sources"] = sources
     faculty["keyword_source"] = ", ".join(sources)
 
+
+
+def _merge_evidence_text(faculty: dict, titles: list[str], source: str,
+                         max_titles: int = 25) -> None:
+    """
+    Accumulate publication / grant TITLES into faculty["evidence_titles"] for the
+    semantic embedding (fix #4, 2026-06-26). Self-listed keyword phrases are too
+    sparse to embed well — a researcher whose only keyword is "substance use in
+    pregnancy" sits below the semantic threshold against a maternal-SUD grant.
+    Folding the titles of their actual papers/grants into the embedding text lifts
+    the similarity above threshold (measured: 0.40 → 0.47 for K. Mark on MMHSUD).
+    TITLES only (not abstracts) — abstracts add length that dilutes the signal.
+    Deduped case-insensitively, capped, attributed in evidence_titles_by_source for
+    auditing. Does NOT touch faculty["keywords"] (those still drive keyword matching).
+    """
+    clean = [re.sub(r"\s+", " ", t).strip() for t in (titles or []) if t and t.strip()]
+    if not clean:
+        return
+    existing = faculty.get("evidence_titles") or []
+    existing_lower = {t.lower() for t in existing}
+    for t in clean:
+        if t.lower() not in existing_lower and len(existing) < max_titles:
+            existing.append(t)
+            existing_lower.add(t.lower())
+    faculty["evidence_titles"] = existing
+
+    by_src = faculty.get("evidence_titles_by_source") or {}
+    label = _base_source_label(source)
+    bucket = by_src.get(label) or []
+    bucket_lower = {t.lower() for t in bucket}
+    for t in clean:
+        if t.lower() not in bucket_lower:
+            bucket.append(t); bucket_lower.add(t.lower())
+    by_src[label] = bucket
+    faculty["evidence_titles_by_source"] = by_src
 
 
 def enrich_from_orcid(session: requests.Session, faculty: dict) -> dict:
