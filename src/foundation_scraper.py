@@ -410,9 +410,11 @@ def _scrape_generic(name, source_id, url, seen_ids, link_patterns,
     soup = _fetch_page(url)
     if not soup:
         return []
-    # The landing page was reachable — record it so the health tracker treats
-    # a "fetched but nothing new" run as "quiet" rather than "likely_broken".
-    _mark_reached(source_id, 1)
+    # NOTE: reachability is recorded AFTER the link scan (see _mark_reached below),
+    # using the count of real grant-like links found — NOT the mere fact that the
+    # page fetched. Many foundation sites are JS-rendered: requests.get() returns a
+    # 200-OK shell with zero grant links. Marking such a shell "reached" would reset
+    # the zero-streak and permanently mask a silently-broken scraper as "quiet".
 
     skip = skip_words or [
         "privacy", "contact", "about", "login", "careers",
@@ -444,6 +446,15 @@ def _scrape_generic(name, source_id, url, seen_ids, link_patterns,
             source=name, source_id=source_id, title=title, link=link,
             agency=agency or name, extra_search_text=extra_search,
         ))
+
+    # Record reachability only if the page exposed real grant-like links. A
+    # JS-rendered shell yields 0 candidate links → NOT marked reached → after 3
+    # consecutive zero-runs the health tracker correctly flags it likely_broken.
+    # `seen_links` holds every link that passed the length/skip/junk filters
+    # (independent of whether it was already in seen_ids), so it measures what the
+    # page actually offers, not just what was new this run.
+    if seen_links:
+        _mark_reached(source_id, len(seen_links))
 
     logger.info(f"{name}: {len(grants)} opportunities found")
     return grants
@@ -1078,12 +1089,28 @@ def fetch_all_external_grants(seen_ids, config):
 
     _save_scraper_health(health)
 
-    # Build health alerts — only for sources actually tried this run, and only
-    # when something is genuinely wrong:
+    # Build health alerts — only for sources actually tried this run.
     #   "error"         → the scraper raised an exception
-    #   "likely_broken" → has never returned a result in 3+ consecutive runs
-    # A "quiet" source (returned data before, nothing new now) is NOT alerted —
-    # that's the normal state for sources that list a stable set of open RFPs.
+    #   "likely_broken" → has never returned a result in 3+ consecutive runs AND
+    #                     was never even reachable (now correctly catches JS-shell
+    #                     scrapers, since reachability is only marked when real
+    #                     grant-like links are found — see _scrape_generic)
+    #   "quiet_stale"   → reachable/healthy in the past, but no NEW grant in
+    #                     quiet_stale_days (advisory: link patterns may have gone
+    #                     stale, or the source is genuinely dormant — worth a look)
+    # A "quiet" source that produced within the window is NOT alerted — that's the
+    # normal state for sources listing a stable set of open RFPs.
+    stale_days = config.get("external_sources", {}).get("quiet_stale_days", 60)
+
+    def _days_since(iso_ts):
+        """Whole days since an ISO timestamp; None if unparseable/missing."""
+        if not iso_ts:
+            return None
+        try:
+            return (datetime.now() - datetime.fromisoformat(iso_ts)).days
+        except (ValueError, TypeError):
+            return None
+
     health_alerts = []
     for k in per_source_results:
         v = health.get(k, {})
@@ -1100,6 +1127,17 @@ def fetch_all_external_grants(seen_ids, config):
                 "last_success": "never",
                 "detail": "feed/page never reachable and no result since tracking began",
             })
+        else:
+            # Advisory: was healthy before but has gone quiet for too long.
+            since_success = _days_since(v.get("last_success"))
+            if since_success is not None and since_success >= stale_days:
+                health_alerts.append({
+                    "source": k, "status": "quiet_stale", "consecutive_zeros": zeros,
+                    "last_success": v.get("last_success"),
+                    "detail": (f"no new grant in {since_success} days "
+                               f"(threshold {stale_days}) — verify link patterns "
+                               f"still match the source's current page structure"),
+                })
 
     # Build diagnostic summary in the format emailer.py expects
     _last_scraper_health = {

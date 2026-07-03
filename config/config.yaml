@@ -37,6 +37,11 @@ faculty:
   profiles_url: "https://www.medschool.umaryland.edu/faculty/faculty-profiles/"
   cache_file: "data/faculty_profiles.json"
   rescrape_interval_hours: 168           # Re-scrape faculty profiles every 7 days
+  # Safety guard: if a fresh scrape returns fewer than (1 - max_roster_drop_pct)
+  # of the previously-active faculty, treat it as a partial scrape failure —
+  # keep the cached roster, mark no one inactive, and retry next run. Prevents a
+  # flaky department-page scrape from silently cutting faculty off from alerts.
+  max_roster_drop_pct: 0.15
 
   # Exclude faculty from MATCHING when their academic title matches one of these
   # patterns (case-insensitive regex on the title parsed from data-profile-name).
@@ -625,6 +630,11 @@ nih_reporter:
 # to disabled_sources. Or set enabled_sources to only run a specific subset.
 external_sources:
   enabled: true
+  # Advisory health tier: a source that was healthy before but has produced no
+  # NEW grant in this many days is flagged "quiet_stale" in the diagnostic (link
+  # patterns may have silently stopped matching the source's current page). Set
+  # high enough that genuinely-rare funders (e.g. Macy, ~1-3 RFAs/yr) don't spam.
+  quiet_stale_days: 60
   # Sources confirmed to have NEVER returned a result (their pages are
   # JavaScript-rendered or their structure changed, so requests-based scraping
   # gets an empty shell). Disabled to cut ~36s of dead runtime per cycle and

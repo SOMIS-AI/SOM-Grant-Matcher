@@ -1217,6 +1217,34 @@ def get_faculty_profiles(config: dict) -> list[dict]:
     with_kw = sum(1 for f in all_faculty if f.get("keywords"))
     logger.info(f"Pass 1 complete: {len(all_faculty)} unique faculty, {with_kw} with keywords")
 
+    # ── Roster-drop safety guard ──────────────────────────────────────────────
+    # A transient partial scrape (department pages timing out, a renamed slug that
+    # discovery missed, the site briefly serving an error shell) can return far
+    # fewer faculty than reality. The active-faculty check below marks EVERYONE
+    # absent from this scrape inactive — cutting them off from grant alerts for up
+    # to rescrape_interval_hours. So an implausibly small scrape must not be
+    # trusted to overwrite a good roster: keep the cached roster, mark no one
+    # inactive, and don't save (next run re-scrapes and retries). Compares raw
+    # scraped counts (pre title-exclusion) so the intentional emeritus/adjunct/
+    # volunteer filtering never trips this guard.
+    if cache:
+        prev_active = [f for f in cache.get("faculty", []) if not f.get("inactive")]
+        max_drop = config["faculty"].get("max_roster_drop_pct", 0.15)
+        if prev_active and len(all_faculty) < (1 - max_drop) * len(prev_active):
+            logger.error(
+                f"ROSTER GUARD TRIPPED: fresh scrape found only {len(all_faculty)} "
+                f"faculty vs {len(prev_active)} active in cache "
+                f"(drop > {max_drop:.0%}). Treating this as a partial scrape failure "
+                f"— keeping the cached roster, marking no one inactive, not saving. "
+                f"Next run will retry. Investigate department-page scraping/discovery."
+            )
+            return _apply_title_exclusions(
+                prev_active,
+                config["faculty"].get("excluded_title_patterns", []),
+                config["faculty"].get("excluded_employment_statuses", []),
+                config["faculty"].get("excluded_emp_types", []),
+            )
+
     # ── Active faculty check: compare against previous cache ─────────────────
     # Anyone in the previous cache but NOT in this scrape is marked inactive.
     # This prevents departed faculty from receiving grant alerts.
