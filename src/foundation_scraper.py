@@ -1121,11 +1121,19 @@ def fetch_all_external_grants(seen_ids, config):
                 "last_success": v.get("last_success") or "never",
                 "detail": v.get("last_error") or "exception raised",
             })
-        elif v.get("last_success") is None and v.get("last_reachable") is None and zeros >= 3:
+        elif v.get("last_success") is None and zeros >= 3:
+            # Never yielded a grant AND not reachable-with-real-content for 3+
+            # consecutive runs (consecutive_zeros only climbs on not-reached runs,
+            # so zeros>=3 already means "not reachable recently" — we deliberately
+            # do NOT gate on `last_reachable is None`, because a stale last_reachable
+            # timestamp persisted from before the reachability fix would otherwise
+            # suppress this alert forever).
             health_alerts.append({
                 "source": k, "status": "likely_broken", "consecutive_zeros": zeros,
                 "last_success": "never",
-                "detail": "feed/page never reachable and no result since tracking began",
+                "detail": (f"no grant-like content found in {zeros} consecutive runs "
+                           f"and never yielded a result — page likely JS-rendered or "
+                           f"its structure changed (scraper gets an empty shell)"),
             })
         else:
             # Advisory: was healthy before but has gone quiet for too long.
