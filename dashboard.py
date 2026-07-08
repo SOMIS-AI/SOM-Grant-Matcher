@@ -503,6 +503,35 @@ def api_pipeline():
         "log_total_lines":   len(logs),
     })
 
+# ── API: Scraper health ───────────────────────────────────────────────────────
+
+@app.route("/api/scraper-health")
+@login_required
+def api_scraper_health():
+    """Return the raw per-source scraper health tracker (data/scraper_health.json).
+
+    Exposes consecutive_zeros / last_success / last_reachable / last_status per
+    source so the likely_broken vs quiet_stale state can be inspected directly,
+    without reaching into the container. Read-only.
+    """
+    health = load_json(DATA_DIR / "scraper_health.json", {})
+    # Add a derived, human-readable "days since" for quick scanning.
+    summary = {}
+    for src, v in (health.items() if isinstance(health, dict) else []):
+        if not isinstance(v, dict):
+            continue
+        summary[src] = {
+            "consecutive_zeros": v.get("consecutive_zeros", 0),
+            "last_status":       v.get("last_status"),
+            "last_success":      v.get("last_success"),
+            "last_success_ago":  time_ago(v.get("last_success")),
+            "last_reachable":    v.get("last_reachable"),
+            "last_reachable_ago": time_ago(v.get("last_reachable")),
+            "total_found":       v.get("total_found", 0),
+        }
+    return jsonify({"summary": summary, "raw": health})
+
+
 # ── API: Logs ─────────────────────────────────────────────────────────────────
 
 @app.route("/api/logs")

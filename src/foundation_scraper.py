@@ -1147,9 +1147,29 @@ def fetch_all_external_grants(seen_ids, config):
                                f"still match the source's current page structure"),
                 })
 
+    # Per-source health state, surfaced in the diagnostic even when NOT alerting.
+    # Without this, consecutive_zeros/last_success/last_reachable were only visible
+    # inside an active alert entry, so a source silently climbing toward
+    # likely_broken (or a quiet-but-healthy source) was invisible in the daily
+    # diagnostic — you had to read scraper_health.json off the container to tell
+    # whether the health tracker was advancing. This block closes that gap.
+    per_source_health = {
+        k: {
+            "new_this_run": per_source_results.get(k),   # grants kept this run (-1 = error)
+            "consecutive_zeros": health.get(k, {}).get("consecutive_zeros", 0),
+            "last_status": health.get(k, {}).get("last_status"),
+            "last_success": health.get(k, {}).get("last_success"),
+            "last_reachable": health.get(k, {}).get("last_reachable"),
+            "reached_this_run": _reached_this_run.get(k, 0),
+            "total_found": health.get(k, {}).get("total_found", 0),
+        }
+        for k in per_source_results
+    }
+
     # Build diagnostic summary in the format emailer.py expects
     _last_scraper_health = {
         "per_source": per_source_results,
+        "per_source_health": per_source_health,
         "sources_tried": sources_tried,
         "sources_succeeded": sources_succeeded,
         "total_new_grants": len(all_grants),
