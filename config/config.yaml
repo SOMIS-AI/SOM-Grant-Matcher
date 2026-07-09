@@ -635,6 +635,11 @@ external_sources:
   # patterns may have silently stopped matching the source's current page). Set
   # high enough that genuinely-rare funders (e.g. Macy, ~1-3 RFAs/yr) don't spam.
   quiet_stale_days: 60
+  # Broken health tier: a source that reaches no grant-like content for this many
+  # consecutive runs is flagged "likely_broken" (page JS-rendered or structure
+  # changed). consecutive_zeros only climbs on not-reached runs, so ~7 = a week of
+  # daily runs with nothing found. Independent of last_success on purpose.
+  likely_broken_runs: 7
   # Sources confirmed to have NEVER returned a result (their pages are
   # JavaScript-rendered or their structure changed, so requests-based scraping
   # gets an empty shell). Disabled to cut ~36s of dead runtime per cycle and

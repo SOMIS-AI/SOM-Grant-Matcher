@@ -256,6 +256,7 @@ def scrape_arpa_h(seen_ids):
         return []
 
     grants = []
+    candidates = 0   # grant-like links found (pre seen-filter) → reachability signal
     for a in soup.find_all("a", href=True):
         href = a.get("href", "")
         title = _extract_text(a)
@@ -268,6 +269,7 @@ def scrape_arpa_h(seen_ids):
             "learn more", "sign up", "subscribe", "contact"
         ]):
             continue
+        candidates += 1
         link = href if href.startswith("http") else urljoin(used_url, href)
         gid = _make_id("arpa-h", title, link)
         if gid in seen_ids:
@@ -277,6 +279,11 @@ def scrape_arpa_h(seen_ids):
             agency="Advanced Research Projects Agency for Health",
             extra_search_text="biomedical health research",
         ))
+    # Reachability: only if real grant-like links were present (not just a page
+    # that loaded). Lets the health tracker tell "reachable but quiet" from
+    # "structure changed / found nothing" for this custom (non-generic) scraper.
+    if candidates:
+        _mark_reached("arpa_h", candidates)
     logger.info(f"ARPA-H: {len(grants)} opportunities found")
     return grants
 
@@ -705,6 +712,7 @@ def scrape_pcori(seen_ids):
     """
     url = "https://www.pcori.org/funding-opportunities"
     grants = []
+    candidates = 0   # announcement links found (pre seen-filter) → reachability signal
     try:
         soup = _fetch_page(url)
         if not soup:
@@ -738,6 +746,7 @@ def scrape_pcori(seen_ids):
             title = link.get_text(strip=True)
             if not title or len(title) < 10:
                 continue
+            candidates += 1
 
             # Clean up status prefixes from title text (e.g., "Open", "Upcoming")
             for prefix in ["Open", "Upcoming", "Closed",
@@ -782,6 +791,10 @@ def scrape_pcori(seen_ids):
                 "source": "pcori",
             })
 
+        # Reachability: only if the page exposed real announcement links, so the
+        # health tracker can tell "reachable but quiet" from "structure changed".
+        if candidates:
+            _mark_reached("pcori", candidates)
         logger.info(f"PCORI: found {len(grants)} new opportunities")
     except Exception as e:
         logger.error(f"PCORI scraper failed: {e}", exc_info=True)
@@ -1091,16 +1104,20 @@ def fetch_all_external_grants(seen_ids, config):
 
     # Build health alerts — only for sources actually tried this run.
     #   "error"         → the scraper raised an exception
-    #   "likely_broken" → has never returned a result in 3+ consecutive runs AND
-    #                     was never even reachable (now correctly catches JS-shell
-    #                     scrapers, since reachability is only marked when real
-    #                     grant-like links are found — see _scrape_generic)
-    #   "quiet_stale"   → reachable/healthy in the past, but no NEW grant in
-    #                     quiet_stale_days (advisory: link patterns may have gone
-    #                     stale, or the source is genuinely dormant — worth a look)
-    # A "quiet" source that produced within the window is NOT alerted — that's the
-    # normal state for sources listing a stable set of open RFPs.
+    #   "likely_broken" → no grant-like content reached for likely_broken_runs+
+    #                     consecutive runs (regardless of whether it produced once
+    #                     long ago). consecutive_zeros only climbs on not-reached
+    #                     runs, so this cleanly catches JS-shell scrapers and pages
+    #                     whose structure changed. Reachability is marked only when
+    #                     real grant-like links are found (see _scrape_generic,
+    #                     scrape_arpa_h, scrape_pcori).
+    #   "quiet_stale"   → still reachable, but no NEW grant in quiet_stale_days
+    #                     (advisory: link patterns may have drifted, or the source
+    #                     is genuinely dormant — worth a look)
+    # A reachable source that produced within the window is NOT alerted — that's
+    # the normal state for sources listing a stable set of open RFPs.
     stale_days = config.get("external_sources", {}).get("quiet_stale_days", 60)
+    broken_runs = config.get("external_sources", {}).get("likely_broken_runs", 7)
 
     def _days_since(iso_ts):
         """Whole days since an ISO timestamp; None if unparseable/missing."""
@@ -1121,19 +1138,25 @@ def fetch_all_external_grants(seen_ids, config):
                 "last_success": v.get("last_success") or "never",
                 "detail": v.get("last_error") or "exception raised",
             })
-        elif v.get("last_success") is None and zeros >= 3:
-            # Never yielded a grant AND not reachable-with-real-content for 3+
-            # consecutive runs (consecutive_zeros only climbs on not-reached runs,
-            # so zeros>=3 already means "not reachable recently" — we deliberately
-            # do NOT gate on `last_reachable is None`, because a stale last_reachable
-            # timestamp persisted from before the reachability fix would otherwise
-            # suppress this alert forever).
+        elif zeros >= broken_runs:
+            # Not reachable-with-real-content for broken_runs+ consecutive runs.
+            # consecutive_zeros only climbs on not-reached runs (any run that finds
+            # real grant-like links resets it to 0), so this means the page/feed has
+            # yielded no grant-like content for that many runs. We deliberately do
+            # NOT gate on last_success: a source that produced once in an old
+            # backfill and then went unreachable for weeks (stale last_success) is
+            # broken NOW, and that stale timestamp must not mask it.
+            ls = v.get("last_success")
+            ls_days = _days_since(ls)
             health_alerts.append({
                 "source": k, "status": "likely_broken", "consecutive_zeros": zeros,
-                "last_success": "never",
-                "detail": (f"no grant-like content found in {zeros} consecutive runs "
-                           f"and never yielded a result — page likely JS-rendered or "
-                           f"its structure changed (scraper gets an empty shell)"),
+                "last_success": ls or "never",
+                "detail": (
+                    f"no grant-like content found in {zeros} consecutive runs"
+                    + (f" (last new grant {ls_days}d ago)" if ls_days is not None
+                       else " and never yielded a result")
+                    + " — page likely JS-rendered or its structure changed"
+                ),
             })
         else:
             # Advisory: was healthy before but has gone quiet for too long.
