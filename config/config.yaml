@@ -652,6 +652,16 @@ external_sources:
     # are already covered by Grants.gov, so this is a no-loss disable; clears the
     # likely_broken alert noise from the diagnostic. (2026-05-28.)
     - "nih_guide"
+    # czi: two compounding failures. (1) chanzuckerberg.com is reachable from a
+    # normal client but the Azure container's cloud IP gets a blocked/shell
+    # response (0 links since ~2026-07-03, likely_broken). (2) Even fetched, CZI
+    # redesigned /science/science-funding/ so RFA titles moved out of the link
+    # text into "RFA Details" buttons/image cards — the generic scraper extracts
+    # 0. Fixing both needs a bespoke slug-based scraper for a low-volume funder
+    # (~handful of RFAs/yr, mostly already-known), so disabled. Re-enable only
+    # with a dedicated extractor + UA override if CZI coverage becomes a priority.
+    # (2026-07-10.)
+    - "czi"
     - "pnd_rfps"
     - "dod_cdmrp"
     - "burroughs_wellcome"
