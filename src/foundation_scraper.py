@@ -25,7 +25,7 @@ import re
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit, parse_qsl, urlencode
 
 import requests
 from bs4 import BeautifulSoup
@@ -47,9 +47,67 @@ REQUEST_DELAY = 2.0
 # HELPERS
 # ======================================================================
 
+# Query params that carry no identity (tracking/cache-busting). Stripped during
+# URL normalization so their presence/absence doesn't change a grant's ID.
+_TRACKING_PARAMS = {
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+    "fbclid", "gclid", "mc_cid", "mc_eid", "ref", "source",
+}
+
+
+def _normalize_url(url):
+    """Canonicalize a URL so cosmetic differences don't change a grant's ID.
+
+    Folds out the things that flip without changing WHAT the page is:
+      - scheme (http vs https)         - a leading "www."
+      - host case                      - a trailing slash
+      - tracking/cache-bust params     - the #fragment
+    e.g. 'https://www.gold-foundation.org/programs/ghhs/?utm_source=x#top'
+      -> 'gold-foundation.org/programs/ghhs'
+    Without this, a site switching www→bare domain (as Gold did 2026-07-10)
+    re-hashes every grant ID and re-emits its whole catalog as "new".
+    """
+    if not url:
+        return ""
+    try:
+        p = urlsplit(url.strip())
+        host = (p.hostname or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        path = p.path.rstrip("/")
+        kept = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True)
+                if k.lower() not in _TRACKING_PARAMS]
+        canon = host + path
+        if kept:
+            canon += "?" + urlencode(sorted(kept))
+        return canon or url.strip().lower()
+    except Exception:
+        return url.strip().lower()
+
+
 def _make_id(source, title, url):
+    """Stable grant ID: hash of source + title + NORMALIZED url (see _normalize_url)."""
+    raw = f"{source}|{title}|{_normalize_url(url)}"
+    return f"{source.lower().replace(' ', '-')}-{hashlib.md5(raw.encode()).hexdigest()[:12]}"
+
+
+def _legacy_make_id(source, title, url):
+    """Pre-normalization ID scheme (hashed the raw URL).
+
+    Kept ONLY so grants already recorded in seen_grants.json (under the old raw-URL
+    hash) are still recognized during the transition and don't re-emit as new when
+    _make_id switched to normalized URLs. Retire once seen_grants has cycled over.
+    """
     raw = f"{source}|{title}|{url}"
     return f"{source.lower().replace(' ', '-')}-{hashlib.md5(raw.encode()).hexdigest()[:12]}"
+
+
+def _already_seen(seen_ids, source, title, url):
+    """True if this grant was seen before, under EITHER the normalized or the
+    legacy (raw-URL) ID. Prevents a one-time re-emit flood on the switch to
+    normalized IDs while making all newly-saved grants immune to URL churn."""
+    return (_make_id(source, title, url) in seen_ids
+            or _legacy_make_id(source, title, url) in seen_ids)
 
 
 def _fetch_page(url, timeout=20):
@@ -160,8 +218,7 @@ def scrape_nih_guide(seen_ids):
         link = item["link"]
         if not title or len(title) < 10:
             continue
-        gid = _make_id("nih-guide", title, link)
-        if gid in seen_ids:
+        if _already_seen(seen_ids, "nih-guide", title, link):
             continue
         grants.append(_make_grant(
             source="NIH Guide", source_id="nih-guide", title=title,
@@ -188,8 +245,7 @@ def scrape_nsf_funding(seen_ids):
         link = item["link"]
         if not title or len(title) < 10:
             continue
-        gid = _make_id("nsf", title, link)
-        if gid in seen_ids:
+        if _already_seen(seen_ids, "nsf", title, link):
             continue
         grants.append(_make_grant(
             source="NSF", source_id="nsf", title=title,
@@ -220,8 +276,7 @@ def scrape_pnd_rfps(seen_ids):
     for item in items:
         title = item["title"]
         link = item["link"]
-        gid = _make_id("pnd", title, link)
-        if gid in seen_ids:
+        if _already_seen(seen_ids, "pnd", title, link):
             continue
         grants.append(_make_grant(
             source="PND RFP Bulletin", source_id="pnd", title=title,
@@ -271,8 +326,7 @@ def scrape_arpa_h(seen_ids):
             continue
         candidates += 1
         link = href if href.startswith("http") else urljoin(used_url, href)
-        gid = _make_id("arpa-h", title, link)
-        if gid in seen_ids:
+        if _already_seen(seen_ids, "arpa-h", title, link):
             continue
         grants.append(_make_grant(
             source="ARPA-H", source_id="arpa-h", title=title, link=link,
@@ -303,8 +357,7 @@ def scrape_dod_cdmrp(seen_ids):
                 if any(k in href.lower() for k in ["funding", "program"]):
                     if title and len(title) >= 10:
                         link = href if href.startswith("http") else urljoin(url, href)
-                        gid = _make_id("cdmrp", title, link)
-                        if gid not in seen_ids:
+                        if not _already_seen(seen_ids, "cdmrp", title, link):
                             grants.append(_make_grant(
                                 source="DoD CDMRP", source_id="cdmrp",
                                 title=title, link=link,
@@ -445,8 +498,7 @@ def _scrape_generic(name, source_id, url, seen_ids, link_patterns,
             continue
 
         seen_links.add(link)
-        gid = _make_id(source_id, title, link)
-        if gid in seen_ids:
+        if _already_seen(seen_ids, source_id, title, link):
             continue
 
         grants.append(_make_grant(
@@ -758,7 +810,7 @@ def scrape_pcori(seen_ids):
             full_url = href if href.startswith("http") else f"https://www.pcori.org{href}"
             grant_id = _make_id("pcori", title, full_url)
 
-            if grant_id in seen_ids:
+            if _already_seen(seen_ids, "pcori", title, full_url):
                 continue
 
             # Check for junk
@@ -912,8 +964,7 @@ def scrape_ebrap(seen_ids):
         seen_titles.add(title)
         total += 1
         link = urljoin(base, a["href"])
-        gid = _make_id("ebrap", title, link)
-        if gid in seen_ids:
+        if _already_seen(seen_ids, "ebrap", title, link):
             continue
         grants.append(_make_grant(
             source="DoD CDMRP (eBRAP)", source_id="ebrap", title=title, link=link,
