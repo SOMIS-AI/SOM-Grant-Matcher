@@ -120,21 +120,33 @@ def fetch_new_grants(config: dict) -> list:
 
     payload = build_search_payload(statuses, max_results)
 
+    def _record_failure(status):
+        # Record fetch health even when the call fails, so the diagnostic can
+        # distinguish a broken Grants.gov from a genuinely quiet (0-new) run.
+        if record_grants_fetch_stats:
+            record_grants_fetch_stats(
+                grants_retrieved=0, new_grants=0,
+                seen_total=len(seen_ids), status=status,
+            )
+
     try:
         resp = requests.post(api_url, headers=HEADERS, json=payload, timeout=30)
         resp.raise_for_status()
         data = resp.json()
     except requests.RequestException as e:
         logger.error(f"Grants.gov API request failed: {e}")
+        _record_failure(f"request_failed: {str(e)[:120]}")
         return []
     except json.JSONDecodeError as e:
         logger.error(f"Could not parse Grants.gov API response: {e}")
+        _record_failure("json_decode_error")
         return []
 
     # Log errorcode so we know if the API itself reported a problem
     errorcode = data.get("errorcode", -1)
     if errorcode != 0:
         logger.error(f"Grants.gov API returned errorcode={errorcode}, msg={data.get('msg')}")
+        _record_failure(f"api_errorcode_{errorcode}")
         return []
 
     raw_opps = extract_opps(data)
@@ -176,6 +188,7 @@ def fetch_new_grants(config: dict) -> list:
             grants_retrieved=len(raw_opps),
             new_grants=len(new_grants),
             seen_total=len(updated_seen),
+            status="ok",
         )
     return new_grants
 

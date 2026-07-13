@@ -231,6 +231,17 @@ def run_pipeline(config: dict, force_scrape: bool = False):
         logger.error(f"Multi-source grant fetch failed: {e}", exc_info=True)
         return None
 
+    # Surface Grants.gov fetch health in the diagnostic. Grants.gov is the primary
+    # source but had no health visibility, so a silent fetch failure looked
+    # identical to a quiet weekend (grants_checked=0). Recorded on every fetch
+    # path (ok / request_failed / json_decode_error / api_errorcode_N).
+    try:
+        from matcher import get_last_grants_fetch_stats
+        if isinstance(scraper_health, dict):
+            scraper_health["grants_gov"] = get_last_grants_fetch_stats()
+    except Exception:
+        pass
+
     if not new_grants:
         logger.info("  ✓ No new grants found this run.")
         empty_diag = {

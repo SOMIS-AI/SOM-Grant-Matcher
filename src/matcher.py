@@ -1823,7 +1823,7 @@ def record_scrape_stats(faculty_count, with_keywords, dept_pages, errors):
     _save_stats(stats)
 
 
-def record_grants_fetch_stats(grants_retrieved, new_grants, seen_total):
+def record_grants_fetch_stats(grants_retrieved, new_grants, seen_total, status="ok"):
     stats = _load_stats()
     prev = stats.get("last_grants_run", {})
     stats["last_grants_run"] = {
@@ -1832,5 +1832,15 @@ def record_grants_fetch_stats(grants_retrieved, new_grants, seen_total):
         "grants_retrieved":  grants_retrieved,
         "new_grants_found":  new_grants,
         "seen_grants_total": seen_total,
+        # "ok" on a successful fetch (even if it returned 0 grants — a genuinely
+        # quiet weekend); a failure string (request_failed / json_decode_error /
+        # api_errorcode_N) when the Grants.gov call itself failed. Lets the
+        # diagnostic tell "healthy but 0 new" apart from "fetch broke".
+        "status":            status,
     }
     _save_stats(stats)
+
+
+def get_last_grants_fetch_stats():
+    """Grants.gov fetch health from the last run (see record_grants_fetch_stats)."""
+    return _load_stats().get("last_grants_run", {})
