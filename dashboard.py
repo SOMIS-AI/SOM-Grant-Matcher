@@ -27,9 +27,53 @@ DASHBOARD_USER = os.environ.get("DASHBOARD_USER", "admin")
 DASHBOARD_PASS = os.environ.get("DASHBOARD_PASS", "changeme")
 APP_ENV        = os.environ.get("APP_ENV", "production")
 
+# Fail CLOSED if production is running on the default password. If the env var
+# is ever unset (new slot, App Settings typo, config drift after a redeploy),
+# the app must NOT silently serve an internet-facing admin dashboard as
+# admin/changeme. We disable login entirely rather than crash the process,
+# because this container also runs the matcher pipeline — faculty digests keep
+# flowing while the dashboard stays locked until DASHBOARD_PASS is set.
+_CREDS_UNSAFE = APP_ENV not in ("dev", "development") and DASHBOARD_PASS in ("", "changeme")
+if _CREDS_UNSAFE:
+    import logging as _logging
+    _logging.getLogger(__name__).critical(
+        "DASHBOARD_PASS is unset or still the default in production — "
+        "dashboard login is DISABLED until it is configured in App Settings."
+    )
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
+# In-process brute-force throttle for /login: the dashboard is public-internet
+# facing with a single shared credential, so unlimited guessing is not OK.
+# Per-IP sliding window; state is in-memory (single-process deployment), so a
+# restart clears it — fine, the goal is stopping online guessing, not forensics.
+_LOGIN_MAX_FAILURES = 5      # failures allowed per window
+_LOGIN_WINDOW_SECS  = 300    # 5-minute sliding window
+_login_failures: dict = {}   # ip -> [failure_epoch, ...]
+
+
+def _client_ip():
+    # Azure's front end terminates TLS and forwards the client in XFF.
+    fwd = request.headers.get("X-Forwarded-For", "")
+    return (fwd.split(",")[0].strip() or request.remote_addr or "unknown")
+
+
+def _login_throttled(ip):
+    import time as _t
+    now = _t.time()
+    recent = [t for t in _login_failures.get(ip, []) if now - t < _LOGIN_WINDOW_SECS]
+    _login_failures[ip] = recent
+    return len(recent) >= _LOGIN_MAX_FAILURES
+
+
+def _record_login_failure(ip):
+    import time as _t
+    _login_failures.setdefault(ip, []).append(_t.time())
+
+
 def check_auth(u, p):
+    if _CREDS_UNSAFE:
+        return False
     return (secrets.compare_digest(u, DASHBOARD_USER) and
             secrets.compare_digest(p, DASHBOARD_PASS))
 
@@ -1004,12 +1048,26 @@ button:hover{background:#2563eb}
 
 @app.route("/login", methods=["GET","POST"])
 def login():
+    import logging as _logging
     error = None
     if request.method == "POST":
-        if check_auth(request.form.get("username",""), request.form.get("password","")):
+        ip = _client_ip()
+        if _login_throttled(ip):
+            _logging.getLogger(__name__).warning(f"Login throttled for {ip} (too many failures)")
+            error = "Too many failed attempts — try again in a few minutes."
+        elif check_auth(request.form.get("username",""), request.form.get("password","")):
+            _login_failures.pop(ip, None)
             session["logged_in"] = True
-            return redirect(request.args.get("next") or "/")
-        error = "Invalid credentials."
+            # Only follow local relative paths — never an absolute/scheme-relative
+            # URL (open-redirect: //evil.com would bounce the fresh session off-site).
+            nxt = request.args.get("next") or "/"
+            if not nxt.startswith("/") or nxt.startswith("//"):
+                nxt = "/"
+            return redirect(nxt)
+        else:
+            _record_login_failure(ip)
+            _logging.getLogger(__name__).warning(f"Failed login attempt from {ip}")
+            error = "Invalid credentials."
     return render_template_string(LOGIN_HTML, error=error)
 
 @app.route("/logout")
@@ -2511,7 +2569,7 @@ async function loadMatches() {
       return `<div class="fac-row">
         <div class="fac-avatar">${esc(initials)}</div>
         <div class="fac-info">
-          <a class="fac-name-link" href="${m.faculty_url||'#'}" target="_blank">${esc(m.faculty_name)}</a>
+          <a class="fac-name-link" href="${safeUrl(m.faculty_url)}" target="_blank" rel="noopener">${esc(m.faculty_name)}</a>
           <div class="fac-dept">${esc(m.faculty_department||'—')}</div>
           ${m.faculty_email ? `<div class="fac-email">${esc(m.faculty_email)}</div>` : ''}
           <div class="kw-list" style="margin-top:7px">
@@ -2556,7 +2614,7 @@ async function loadMatches() {
           ${grant.grant_award_ceiling ? `<div class="meta-chip award">Award: <span>$${Number(String(grant.grant_award_ceiling).replace(/\D/g,'')||0).toLocaleString()}</span></div>` : ''}
           <div class="meta-chip">Matched: <span>${g.faculty.length} faculty</span></div>
           <div class="meta-chip">Detected: <span>${fmtTs(grant.timestamp)}</span></div>
-          <a href="${grant.grant_link||'#'}" target="_blank" class="btn-sm" style="margin-left:auto;text-decoration:none">View on Grants.gov ↗</a>
+          <a href="${safeUrl(grant.grant_link)}" target="_blank" rel="noopener" class="btn-sm" style="margin-left:auto;text-decoration:none">View on Grants.gov ↗</a>
         </div>
       </div>
       ${(() => {
@@ -2708,7 +2766,7 @@ async function loadFaculty() {
       const sources = parseSources(f.keyword_sources||[]);
       const ext     = f.url || f.profile_url || '';
       return `<tr data-fac-name="${esc(f.name)}" onclick="openFacModal(this.dataset.facName)" style="cursor:pointer" title="Click for keyword/source/match detail">
-        <td><div class="td-name"><span style="color:var(--text)">${esc(f.name)}</span>${ext?`<a href="${ext}" target="_blank" onclick="event.stopPropagation()" title="Open external profile" style="margin-left:6px;color:var(--text3);text-decoration:none;font-size:11px">↗</a>`:''}</div></td>
+        <td><div class="td-name"><span style="color:var(--text)">${esc(f.name)}</span>${ext?`<a href="${safeUrl(ext)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Open external profile" style="margin-left:6px;color:var(--text3);text-decoration:none;font-size:11px">↗</a>`:''}</div></td>
         <td class="td-dept">${esc(f.department||'—')}</td>
         <td class="td-email" onclick="event.stopPropagation()">${f.email?`<a href="mailto:${esc(f.email)}" style="color:inherit">${esc(f.email)}</a>`:'—'}</td>
         <td class="td-num"><span class="tip" data-tip="${kwCount} keywords from ${sources.length} sources">${kwCount}</span></td>
@@ -2921,7 +2979,11 @@ function renderPg(page, pages, cb) {
 
 function setText(id, v) { const el=document.getElementById(id); if(el) el.textContent=v; }
 function fmtTs(iso) { if(!iso)return'—'; try{return new Date(iso+'Z').toLocaleString();}catch{return iso;} }
-function esc(s) { if(!s)return''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function esc(s) { if(!s)return''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+// Sanitize scraped URLs (grant_link, faculty_url come from external pages)
+// before inserting into href/onclick: only http(s) survives — javascript: or
+// data: schemes, and quote-breakout attempts, all collapse to '#'.
+function safeUrl(u) { if(!u)return'#'; try{ const p=new URL(String(u), location.href); return ['http:','https:'].includes(p.protocol) ? esc(String(u)) : '#'; }catch{ return '#'; } }
 function setUpdated() { document.getElementById('last-updated').textContent = 'Updated '+new Date().toLocaleTimeString(); }
 
 
@@ -3009,7 +3071,7 @@ async function loadGrantExplorer() {
         <div class="ge-pill ${urgCls}">Closes: <span>${g.grant_close_date||'—'} (${daysLbl})</span></div>
         <div class="ge-pill">Matched: <span>${g.faculty_count} faculty · ${types}</span></div>
         <div class="ge-pill">Detected: <span>${fmtTs(g.first_seen)}</span></div>
-        <a href="${g.grant_link||'#'}" target="_blank" class="btn-sm" style="margin-left:auto;text-decoration:none;font-size:10px">Grants.gov ↗</a>
+        <a href="${safeUrl(g.grant_link)}" target="_blank" rel="noopener" class="btn-sm" style="margin-left:auto;text-decoration:none;font-size:10px">Grants.gov ↗</a>
       </div>
       <div class="ge-body">
         <div class="ge-fac-chips">${facChips}${extraFac>0?`<div class="ge-fac-chip" style="opacity:.6">+${extraFac} more</div>`:''}</div>
@@ -3163,7 +3225,7 @@ function renderUrgencyStrip(matches) {
   items.innerHTML = urgent.slice(0,8).map(g => {
     const cl = g.days_left <= 3 ? 'var(--red)' : g.days_left <= 14 ? 'var(--yellow)' : 'var(--green)';
     const dl = g.days_left === 0 ? 'Today!' : g.days_left < 0 ? 'Yesterday' : `${g.days_left}d left`;
-    return `<div class="urgency-item" onclick="window.open('${g.grant_link||'#'}','_blank')">
+    return `<div class="urgency-item" data-link="${safeUrl(g.grant_link)}" onclick="window.open(this.dataset.link,'_blank','noopener')">
       <div class="ui-days" style="color:${cl}">${dl}</div>
       <div class="ui-title" title="${esc(g.grant_title)}">${esc(g.grant_title)}</div>
       <div class="ui-meta">${esc(g.grant_agency||'—')} · ${g.grant_close_date||'—'}</div>
@@ -3355,7 +3417,7 @@ function renderModalMatches(d){
     <thead><tr><th>Grant</th><th>Agency</th><th>Type</th><th style="text-align:right">Conf.</th><th>Recorded</th></tr></thead>
     <tbody>` + ms.map(m=>{
       const conf=(m.confidence_score!==undefined ? m.confidence_score : Math.min((m.match_score||0)*10,99))+'%';
-      const link=m.grant_link ? `<a href="${m.grant_link}" target="_blank" style="color:var(--blue2);text-decoration:none">${esc((m.grant_title||'').slice(0,70))}</a>` : esc((m.grant_title||'').slice(0,70));
+      const link=m.grant_link ? `<a href="${safeUrl(m.grant_link)}" target="_blank" rel="noopener" style="color:var(--blue2);text-decoration:none">${esc((m.grant_title||'').slice(0,70))}</a>` : esc((m.grant_title||'').slice(0,70));
       const date=(m.timestamp||'').slice(0,10);
       const mt=m.match_type||'';
       const mtColor = mt==='both' ? 'var(--green)' : (mt==='semantic' ? 'var(--purple)' : 'var(--blue2)');

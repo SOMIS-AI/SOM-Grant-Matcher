@@ -203,8 +203,8 @@ def run_pipeline(config: dict, force_scrape: bool = False):
                                 slot["embedding"]         = active_f.get("embedding")
                                 slot["embedding_version"] = active_f.get("embedding_version")
                                 updated += 1
-                        with open(cache_path, "w") as f:
-                            json.dump(existing, f)
+                        from atomic_io import atomic_write_json
+                        atomic_write_json(cache_path, existing)
                         logger.info(
                             f"  ✓ Updated embeddings saved to cache "
                             f"({updated}/{len(faculty)} faculty merged; "

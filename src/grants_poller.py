@@ -13,12 +13,17 @@ API response structure for Grants.gov (typical):
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
 
 logger = logging.getLogger(__name__)
+
+try:
+    from atomic_io import atomic_write_json
+except ImportError:
+    atomic_write_json = None
 
 try:
     from matcher import record_grants_fetch_stats
@@ -46,24 +51,80 @@ HEADERS = {
 }
 
 
-def load_seen_grants(seen_file: str) -> set:
+# How long a seen id is remembered. Grants.gov re-windows only the last 2 days
+# (oppAge=2) and foundation pages list catalogs for months, so a year of
+# retention makes re-emails effectively impossible while keeping the file
+# bounded by age (~5-6k entries/yr at current volume) instead of by count.
+SEEN_RETENTION_DAYS = 365
+
+
+def _load_seen_timestamps(seen_file: str) -> dict:
+    """Return {grant_id: first_seen_iso} from disk, tolerating both formats.
+
+    New format: {"seen": {id: iso, ...}}. Legacy format: {"seen_ids": [...]}
+    (no timestamps — those ids get stamped 'now' on the next save, which just
+    restarts their retention clock; harmless).
+    """
     path = Path(seen_file)
     if path.exists():
         try:
             with open(path) as f:
                 data = json.load(f)
-                return set(data.get("seen_ids", []))
+            if isinstance(data.get("seen"), dict):
+                return dict(data["seen"])
+            return {gid: None for gid in data.get("seen_ids", [])}
         except (json.JSONDecodeError, IOError) as e:
             logger.warning(f"Could not read seen grants file: {e}")
-    return set()
+    return {}
+
+
+def load_seen_grants(seen_file: str) -> set:
+    return set(_load_seen_timestamps(seen_file))
 
 
 def save_seen_grants(seen_file: str, seen_ids: set):
-    path = Path(seen_file)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    ids_list = list(seen_ids)[-10000:]
-    with open(path, "w") as f:
-        json.dump({"seen_ids": ids_list, "updated_at": datetime.utcnow().isoformat()}, f)
+    """Persist seen ids with first-seen timestamps, pruning by AGE.
+
+    The previous implementation kept `list(seen_ids)[-10000:]` — but seen_ids
+    is a set, whose iteration order is arbitrary, so past 10k ids the slice
+    dropped a RANDOM subset (including ids added that same run). Any dropped
+    grant still listed at its source resurfaced as "new" and was re-emailed to
+    all recipients — the same failure family as the 2026-06-06..08 duplicate
+    digests. Age-based pruning is recency-correct and still bounds the file.
+    """
+    now = datetime.utcnow()
+    prev = _load_seen_timestamps(seen_file)
+    cutoff = now - timedelta(days=SEEN_RETENTION_DAYS)
+
+    seen, pruned = {}, 0
+    for gid in seen_ids:
+        ts = prev.get(gid) or now.isoformat()
+        try:
+            if datetime.fromisoformat(ts) < cutoff:
+                pruned += 1
+                continue
+        except (ValueError, TypeError):
+            ts = now.isoformat()  # unparseable stamp — keep the id, restart its clock
+        seen[gid] = ts
+    if pruned:
+        logger.info(f"Seen-grants: pruned {pruned} id(s) older than {SEEN_RETENTION_DAYS}d")
+
+    # Also write the legacy "seen_ids" list so a rollback to an older image
+    # (which reads only seen_ids) still sees the full set instead of an empty
+    # one — an empty set would re-email the entire catalog. Remove once the
+    # timestamped format has been in production long enough to trust.
+    payload = {
+        "seen": seen,
+        "seen_ids": list(seen.keys()),
+        "updated_at": now.isoformat(),
+    }
+    if atomic_write_json:
+        atomic_write_json(seen_file, payload)
+    else:  # fallback if atomic_io is unavailable — preserves old behavior
+        path = Path(seen_file)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(payload, f)
 
 
 def build_search_payload(statuses: list, max_results: int) -> dict:

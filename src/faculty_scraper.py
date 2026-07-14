@@ -1106,10 +1106,12 @@ def load_faculty_cache(cache_file: str) -> Optional[dict]:
 
 
 def save_faculty_cache(cache_file: str, data: dict):
-    path = Path(cache_file)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
+    # Atomic write: this is the largest state file in the app (1267+ profiles
+    # with embeddings, multi-MB on an SMB mount) and therefore the longest
+    # write window. A torn write here looks like a stale cache → full 3-6h
+    # re-scrape and loss of all departed-faculty history.
+    from atomic_io import atomic_write_json
+    atomic_write_json(cache_file, data, indent=2)
     logger.info(f"Faculty cache saved: {len(data['faculty'])} profiles → {cache_file}")
 
 

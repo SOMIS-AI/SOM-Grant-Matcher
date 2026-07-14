@@ -1061,10 +1061,8 @@ def _load_scraper_health(path="data/scraper_health.json"):
 
 def _save_scraper_health(health, path="data/scraper_health.json"):
     try:
-        from pathlib import Path
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(health, f, indent=2)
+        from atomic_io import atomic_write_json
+        atomic_write_json(path, health, indent=2)
     except Exception as e:
         logger.warning(f"Could not save scraper health: {e}")
 

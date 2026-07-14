@@ -1630,8 +1630,8 @@ def _save_match_results(results, total_grants_checked, semantic_used=False, conf
 
     # Cap at 5000 entries (newest first) — authoritative count is in run_stats.json
     combined = (new_entries + existing)[:5000]
-    with open(MATCHES_FILE, "w") as f:
-        json.dump(combined, f, indent=2)
+    from atomic_io import atomic_write_json
+    atomic_write_json(MATCHES_FILE, combined, indent=2)
 
     stats = _load_stats()
     kw_count  = sum(1 for r in results for m in r["matches"] if m.match_type in ("keyword", "both"))
@@ -1727,10 +1727,9 @@ def _write_diagnostic_log(results, total_grants_checked, stats, config):
     }
 
     try:
-        Path(_LOG_DIR).mkdir(parents=True, exist_ok=True)
+        from atomic_io import atomic_write_json
         log_path = Path(_LOG_DIR) / f"run_{run_date}.json"
-        with open(log_path, "w") as f:
-            json.dump(summary, f, indent=2)
+        atomic_write_json(log_path, summary, indent=2)
         logger.info(f"Diagnostic run log written → {log_path}")
     except Exception as e:
         logger.warning(f"Could not write diagnostic run log: {e}")
@@ -1806,9 +1805,8 @@ def _load_stats():
 
 
 def _save_stats(stats):
-    Path("data").mkdir(parents=True, exist_ok=True)
-    with open(STATS_FILE, "w") as f:
-        json.dump(stats, f, indent=2)
+    from atomic_io import atomic_write_json
+    atomic_write_json(STATS_FILE, stats, indent=2)
 
 
 def record_scrape_stats(faculty_count, with_keywords, dept_pages, errors):
