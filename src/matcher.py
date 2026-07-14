@@ -1841,6 +1841,21 @@ def record_grants_fetch_stats(grants_retrieved, new_grants, seen_total, status="
     _save_stats(stats)
 
 
+# The fetch recorder writes these; everything else in last_grants_run is match
+# stats owned by the match recorder (matcher.py) and consumed by the dashboard.
+_GRANTS_FETCH_FIELDS = (
+    "timestamp", "status", "grants_retrieved", "new_grants_found", "seen_grants_total",
+)
+
+
 def get_last_grants_fetch_stats():
-    """Grants.gov fetch health from the last run (see record_grants_fetch_stats)."""
-    return _load_stats().get("last_grants_run", {})
+    """Grants.gov FETCH health from the last run — fetch fields only.
+
+    run_stats.json's last_grants_run is a combined fetch+match summary shared with
+    the dashboard (the fetch recorder preserves the match fields via **prev so the
+    dashboard view stays complete). For the diagnostic we return ONLY the fetch
+    fields, so stale match numbers from a prior run don't ride along beside fresh
+    fetch stats in the grants_gov block.
+    """
+    run = _load_stats().get("last_grants_run", {})
+    return {k: run[k] for k in _GRANTS_FETCH_FIELDS if k in run}
