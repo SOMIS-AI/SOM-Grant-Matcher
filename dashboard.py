@@ -1075,6 +1075,52 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
+
+# ── Health check ──────────────────────────────────────────────────────────────
+# Deliberately UNAUTHENTICATED (Azure health probes can't log in) and minimal —
+# it reveals only ok/degraded plus which internal check failed, no data.
+# Detects the failure mode where the matcher daemon thread has died (or wedged)
+# while Flask keeps serving: previously Azure saw a "healthy" web app and the
+# only symptom was that digests silently stopped. Configure this path as the
+# Azure Health check so the platform restarts the container when it degrades.
+
+_matcher_thread = None
+
+
+def register_matcher_thread(t):
+    """Called by run.py so /health can report on the scheduler thread."""
+    global _matcher_thread
+    _matcher_thread = t
+
+
+# Heartbeat is written by the scheduler at least every 15 min (each sleep-chunk
+# wake) — see main._write_heartbeat. Flag stale past 45 min (3 missed beats).
+_HEARTBEAT_STALE_SECS = 45 * 60
+
+
+@app.route("/health")
+def health():
+    problems = []
+    if _matcher_thread is not None and not _matcher_thread.is_alive():
+        problems.append("matcher_thread_dead")
+    hb = load_json(DATA_DIR / "scheduler_heartbeat.json", {})
+    beat = hb.get("beat")
+    if beat:
+        try:
+            beat_dt = datetime.fromisoformat(beat)
+            if beat_dt.tzinfo is None:
+                beat_dt = beat_dt.replace(tzinfo=timezone.utc)
+            age = (datetime.now(timezone.utc) - beat_dt).total_seconds()
+            if age > _HEARTBEAT_STALE_SECS:
+                problems.append("scheduler_heartbeat_stale")
+        except (ValueError, TypeError):
+            pass
+    # No heartbeat file at all is fine on first boot (written within 15 min);
+    # only an EXISTING-but-stale beat or a dead thread degrades health.
+    if problems:
+        return jsonify({"status": "degraded", "problems": problems}), 500
+    return jsonify({"status": "ok"}), 200
+
 # ══════════════════════════════════════════════════════════════════════════════
 # API: SUBSCRIPTIONS (faculty digests + dept-admin digests)
 # ══════════════════════════════════════════════════════════════════════════════

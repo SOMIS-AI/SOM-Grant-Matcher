@@ -33,7 +33,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from faculty_scraper import get_faculty_profiles
-from grants_poller import fetch_new_grants, fetch_all_sources
+from grants_poller import fetch_new_grants, fetch_all_sources, commit_seen_grants
 from matcher import find_matches, get_last_diagnostic, load_recent_matched_results
 from emailer import (
     send_email,
@@ -46,6 +46,7 @@ from emailer import (
     build_faculty_email,
     build_dept_admin_email,
     send_personal_email,
+    send_failure_alert,
 )
 import subscriptions
 
@@ -125,17 +126,17 @@ def run_pipeline(config: dict, force_scrape: bool = False):
     logger.info("=" * 60)
     logger.info("Starting grant matching pipeline")
 
-    if force_scrape:
-        # Force a fresh scrape by invalidating the cache
-        cache_file = Path(config["faculty"]["cache_file"])
-        if cache_file.exists():
-            cache_file.unlink()
-            logger.info("Faculty cache cleared — forcing fresh scrape")
-
-    # Step 1: Load faculty profiles (from cache or fresh scrape)
+    # Step 1: Load faculty profiles (from cache or fresh scrape).
+    # force_scrape is passed THROUGH rather than deleting the cache file first:
+    # unlinking up-front left a 3-6h window with no cache on disk, which (a)
+    # bypassed the roster-drop guard (it needs the previous roster to compare
+    # against), and (b) made all prior enrichment + departed-faculty history
+    # unrecoverable if the scrape failed or the container restarted mid-way.
     logger.info("Step 1/3 — Loading faculty profiles...")
+    if force_scrape:
+        logger.info("  FORCE_SCRAPE: ignoring cache age — fresh scrape (cache retained for the roster guard)")
     try:
-        faculty = get_faculty_profiles(config)
+        faculty = get_faculty_profiles(config, force=force_scrape)
     except Exception as e:
         logger.error(f"Faculty scraping failed: {e}", exc_info=True)
         return None
@@ -220,7 +221,11 @@ def run_pipeline(config: dict, force_scrape: bool = False):
     logger.info("Step 2/3 — Fetching new grants from all sources...")
     scraper_health = {}
     try:
-        new_grants = fetch_all_sources(config)
+        # defer_seen_save: grants are NOT marked seen at fetch time. The commit
+        # happens below, after matching succeeds — so a crash/exception between
+        # fetch and match means the same grants are simply re-fetched next run
+        # instead of being silently lost forever.
+        new_grants = fetch_all_sources(config, defer_seen_save=True)
         # Collect scraper health data for diagnostic email
         try:
             from foundation_scraper import get_last_scraper_health
@@ -244,6 +249,7 @@ def run_pipeline(config: dict, force_scrape: bool = False):
 
     if not new_grants:
         logger.info("  ✓ No new grants found this run.")
+        _commit_seen(logger)  # nothing at risk — persists pruning/migration
         empty_diag = {
             "summary": {"faculty_count": len(faculty), "grants_checked": 0,
                         "grants_matched": 0, "raw_matches": 0,
@@ -260,7 +266,26 @@ def run_pipeline(config: dict, force_scrape: bool = False):
     matched_results = find_matches(new_grants, faculty, config=config)
     logger.info(f"  ✓ {len(matched_results)} grants with faculty matches")
 
+    # Matching succeeded and match_results.json is persisted (find_matches saves
+    # it) — NOW mark this run's grants as seen. Send failures after this point
+    # are alerted (send_failure_alert) and recoverable via --send-digest; they
+    # deliberately do NOT roll back "seen", because with multiple send targets
+    # (admin digest, personalized, weekly) a partial-send rollback would
+    # re-email the recipients whose sends DID succeed.
+    _commit_seen(logger)
+
     return matched_results, get_last_diagnostic(), scraper_health
+
+
+def _commit_seen(logger):
+    try:
+        if commit_seen_grants():
+            logger.info("  ✓ Seen-grants tracker committed")
+    except Exception as e:
+        # A failed commit means next run re-fetches (and could re-email) this
+        # run's grants — loud ERROR so it's visible in logs and the log viewer.
+        logger.error(f"Seen-grants commit FAILED — next run may re-email today's grants: {e}",
+                     exc_info=True)
 
 
 def run_cycle(config: dict, force_scrape: bool = False):
@@ -481,6 +506,8 @@ def _send_personalized_digests(config: dict, matched_results: list,
     """
     stats = {"faculty_sent": 0, "faculty_skipped_no_match": 0,
              "dept_admin_sent": 0, "depts_with_matches": 0,
+             "faculty_failed": 0, "dept_admin_failed": 0,
+             "failed_recipients": [],
              "budget_exhausted": False}
 
     if not matched_results:
@@ -530,13 +557,29 @@ def _send_personalized_digests(config: dict, matched_results: list,
         name = sub.get("name", "")
         subject, html = build_faculty_email(name, bucket, run_date, dashboard_url,
                                             digest_label=digest_label)
-        if send_personal_email(config, email, subject, html):
+        sent = send_personal_email(config, email, subject, html)
+        if not sent:  # one retry — most SendGrid failures are transient blips
+            time.sleep(2)
+            sent = send_personal_email(config, email, subject, html)
+        if sent:
             subscriptions.log_email(
                 kind="faculty", to=email, subject=subject,
                 matches_count=len(bucket), faculty_name=name,
                 department=sub.get("department", ""),
             )
             stats["faculty_sent"] += 1
+        else:
+            # Previously a failed send vanished: not logged, not counted, not
+            # retryable. Record it in the audit log + stats so the scheduler
+            # can alert with the exact recipient list.
+            stats["faculty_failed"] += 1
+            stats["failed_recipients"].append(email)
+            logging.getLogger("main").error(f"Faculty digest send FAILED after retry: {email}")
+            subscriptions.log_email(
+                kind="faculty_failed", to=email, subject=subject,
+                matches_count=len(bucket), faculty_name=name,
+                department=sub.get("department", ""),
+            )
 
     # ── 3. Per-department admin digests ─────────────────────────────────────
     stats["depts_with_matches"] = len(by_dept)
@@ -562,7 +605,11 @@ def _send_personalized_digests(config: dict, matched_results: list,
                 return stats
             subject, html = build_dept_admin_email(dept_label, dept_bucket, run_date,
                                                    dashboard_url, digest_label=digest_label)
-            if send_personal_email(config, admin["email"], subject, html):
+            sent = send_personal_email(config, admin["email"], subject, html)
+            if not sent:  # one retry, same rationale as the faculty loop
+                time.sleep(2)
+                sent = send_personal_email(config, admin["email"], subject, html)
+            if sent:
                 subscriptions.log_email(
                     kind="dept_admin", to=admin["email"], subject=subject,
                     matches_count=len(dept_bucket),
@@ -570,7 +617,147 @@ def _send_personalized_digests(config: dict, matched_results: list,
                     department=dept_label,
                 )
                 stats["dept_admin_sent"] += 1
+            else:
+                stats["dept_admin_failed"] += 1
+                stats["failed_recipients"].append(admin["email"])
+                logging.getLogger("main").error(
+                    f"Dept-admin digest send FAILED after retry: {admin['email']}")
+                subscriptions.log_email(
+                    kind="dept_admin_failed", to=admin["email"], subject=subject,
+                    matches_count=len(dept_bucket),
+                    faculty_name=admin.get("name", ""),
+                    department=dept_label,
+                )
     return stats
+
+
+def _alert_partial_send_failures(config, stats, label):
+    """If any personalized sends failed (after retry), tell the admins WHO —
+    a mid-batch SendGrid blip previously meant some faculty silently got
+    nothing, with no record of which ones."""
+    failed = stats.get("faculty_failed", 0) + stats.get("dept_admin_failed", 0)
+    if failed:
+        send_failure_alert(
+            config, f"personalized_{label}_partial_failure",
+            f"{stats.get('faculty_failed', 0)} faculty and "
+            f"{stats.get('dept_admin_failed', 0)} dept-admin send(s) failed after retry. "
+            f"Failed recipients: {', '.join(stats.get('failed_recipients', [])[:25])}",
+        )
+
+
+def _run_sends(config, fire_time, matched_results, matcher_diag,
+               scraper_health, weekly_weekday):
+    """All send targets for one scheduled fire (extracted from run_scheduler so
+    the loop can wrap the entire send phase in a single watchdog try/except)."""
+    logger = logging.getLogger("main")
+
+    # ── Daily digest (every day) ─────────────────────────────────────────
+    daily_recipients = get_daily_recipients()
+    if not daily_recipients:
+        logger.info("  Daily digest: no DAILY_RECIPIENTS configured — not sent.")
+    elif not matched_results:
+        logger.info("  Daily digest: no matches this run — not sent.")
+    else:
+        for attempt in (1, 2):  # one retry — most SendGrid failures are transient
+            try:
+                send_email(config, matched_results, recipients=daily_recipients)
+                logger.info(f"  ✓ Daily digest sent to {len(daily_recipients)} recipient(s)")
+                break
+            except Exception as e:
+                logger.error(f"Daily digest attempt {attempt} failed: {e}", exc_info=True)
+                if attempt == 1:
+                    time.sleep(5)
+                else:
+                    send_failure_alert(config, "daily_digest_send",
+                                       f"Both attempts failed: {type(e).__name__}: {e}. "
+                                       f"Recoverable via: python main.py --send-digest --days 1")
+
+    # ── Per-faculty + per-dept personalized digests (daily cadence) ─────
+    # Opt-in via the dashboard Subscriptions tab. Skipped silently if no
+    # one is enrolled. SendGrid free-tier cap enforced inside the helper.
+    if matched_results:
+        try:
+            run_date = fire_time.strftime("%Y-%m-%d")
+            stats = _send_personalized_digests(config, matched_results,
+                                               run_date, cadence="daily")
+            logger.info(
+                f"  ✓ Personalized digests — faculty sent: {stats['faculty_sent']}, "
+                f"dept admins sent: {stats['dept_admin_sent']} "
+                f"(across {stats['depts_with_matches']} dept(s))"
+                + (f"  ⚠ {stats['faculty_failed'] + stats['dept_admin_failed']} FAILED"
+                   if stats.get("faculty_failed") or stats.get("dept_admin_failed") else "")
+                + ("  ⚠ budget exhausted" if stats["budget_exhausted"] else "")
+            )
+            _alert_partial_send_failures(config, stats, "daily")
+        except Exception as e:
+            logger.error(f"Personalized digest fan-out failed: {e}", exc_info=True)
+
+    # ── Weekly 7-day roundup (only on the configured weekday) ────────────
+    weekly_roundup_cache = None  # share the 7-day fetch with the personalized fan-out below
+    if fire_time.weekday() == weekly_weekday:
+        weekly_recipients = get_weekly_recipients()
+        if not weekly_recipients:
+            logger.info("  Weekly roundup: no WEEKLY_RECIPIENTS configured — not sent.")
+        else:
+            weekly_roundup_cache = load_recent_matched_results(7)
+            if not weekly_roundup_cache:
+                logger.info("  Weekly roundup: no matches in the last 7 days — not sent.")
+            else:
+                try:
+                    send_email(config, weekly_roundup_cache, recipients=weekly_recipients, digest_label="Weekly")
+                    logger.info(f"  ✓ Weekly roundup sent to {len(weekly_recipients)} recipient(s)")
+                except Exception as e:
+                    logger.error(f"Weekly roundup failed: {e}", exc_info=True)
+
+        # ── Personalized weekly digests (mirror of the daily fan-out) ────
+        # Same opt-in mechanism, same budget cap, but reads the 7-day
+        # roundup and pulls only weekly-cadence enrollees. Always attempts
+        # the fetch even if WEEKLY_RECIPIENTS is empty, so faculty/dept-admin
+        # weekly subs work independently of the admin weekly setting.
+        try:
+            if weekly_roundup_cache is None:
+                weekly_roundup_cache = load_recent_matched_results(7)
+            if weekly_roundup_cache:
+                run_date_w = fire_time.strftime("%Y-%m-%d")
+                stats_w = _send_personalized_digests(
+                    config, weekly_roundup_cache, run_date_w,
+                    cadence="weekly", digest_label="Weekly",
+                )
+                logger.info(
+                    f"  ✓ Personalized weekly digests — faculty sent: {stats_w['faculty_sent']}, "
+                    f"dept admins sent: {stats_w['dept_admin_sent']} "
+                    f"(across {stats_w['depts_with_matches']} dept(s))"
+                    + (f"  ⚠ {stats_w['faculty_failed'] + stats_w['dept_admin_failed']} FAILED"
+                       if stats_w.get("faculty_failed") or stats_w.get("dept_admin_failed") else "")
+                    + ("  ⚠ budget exhausted" if stats_w["budget_exhausted"] else "")
+                )
+                _alert_partial_send_failures(config, stats_w, "weekly")
+            else:
+                logger.info("  Personalized weekly digests: no matches in the last 7 days — none sent.")
+        except Exception as e:
+            logger.error(f"Personalized weekly fan-out failed: {e}", exc_info=True)
+
+    # ── Diagnostic (admin only, every run) ───────────────────────────────
+    try:
+        send_diagnostic_email(config, matcher_diag, scraper_health)
+        logger.info("  ✓ Diagnostic email sent")
+    except Exception as e:
+        logger.error(f"Diagnostic email failed: {e}", exc_info=True)
+
+
+def _write_heartbeat(fire_at=None):
+    """Stamp data/scheduler_heartbeat.json so /health can detect a dead or
+    wedged scheduler thread. Written at least every 15 min (each sleep-chunk
+    wake) — the dashboard's /health flags the heartbeat stale past 45 min."""
+    try:
+        from datetime import timezone as _tz
+        from atomic_io import atomic_write_json
+        atomic_write_json("data/scheduler_heartbeat.json", {
+            "beat": datetime.now(_tz.utc).isoformat(),
+            "next_fire": fire_at.isoformat() if fire_at else None,
+        })
+    except Exception:
+        pass  # heartbeat is best-effort; never disturb the scheduler
 
 
 def run_scheduler(config: dict):
@@ -618,10 +805,30 @@ def run_scheduler(config: dict):
         logger.error(f"Restart notification failed: {e}", exc_info=True)
 
     # FORCE_SCRAPE=true forces a fresh faculty re-scrape on the FIRST scheduled run
-    # (e.g. after a deploy that changed keyword extraction). Applied once, then cleared.
-    force_scrape = os.environ.get("FORCE_SCRAPE", "").lower() in ("1", "true", "yes")
-    if force_scrape:
-        logger.info("FORCE_SCRAPE is set — the first scheduled run will re-scrape faculty.")
+    # (e.g. after a deploy that changed keyword extraction). One-shot via a marker
+    # file: Azure App Settings persist across container restarts (platform patching
+    # restarts Web Apps routinely), so without the marker a lingering FORCE_SCRAPE
+    # re-triggered the destructive 3-6h scrape on EVERY restart until someone
+    # remembered to unset it. Unsetting the env var clears the marker, so setting
+    # it again later forces again.
+    _force_marker = Path("data/.force_scrape_done")
+    force_scrape = False
+    if os.environ.get("FORCE_SCRAPE", "").lower() in ("1", "true", "yes"):
+        if _force_marker.exists():
+            logger.info(
+                "FORCE_SCRAPE is set but was already consumed (data/.force_scrape_done "
+                "exists) — ignoring. Unset and re-set FORCE_SCRAPE (or delete the marker) "
+                "to force another scrape."
+            )
+        else:
+            force_scrape = True
+            logger.info("FORCE_SCRAPE is set — the first scheduled run will re-scrape faculty.")
+    elif _force_marker.exists():
+        try:
+            _force_marker.unlink()
+            logger.info("FORCE_SCRAPE unset — cleared the consumed-marker so a future force works.")
+        except OSError:
+            pass
 
     while True:
         now = datetime.now(tz)
@@ -635,6 +842,7 @@ def run_scheduler(config: dict):
         # and a long sleep can't drastically overshoot the fire time.
         while True:
             now = datetime.now(tz)
+            _write_heartbeat(fire_at)
             remaining = (fire_at - now).total_seconds()
             if remaining <= 0:
                 break
@@ -652,92 +860,39 @@ def run_scheduler(config: dict):
             result = run_pipeline(config, force_scrape=force_scrape)
         except Exception as e:
             logger.error(f"Pipeline error during scheduled run: {e}", exc_info=True)
+            send_failure_alert(config, "pipeline_exception", f"{type(e).__name__}: {e}")
             continue
 
         if result is None:
             logger.warning("Pipeline aborted (no faculty or fetch failed) — no emails sent this run.")
+            send_failure_alert(
+                config, "pipeline_aborted",
+                "run_pipeline returned None: faculty load failed/empty or the grant "
+                "fetch failed. No emails were sent this run — check the logs.",
+            )
             continue
-        force_scrape = False  # only force on the first successful run
+        if force_scrape:
+            force_scrape = False  # only force on the first successful run
+            try:
+                _force_marker.write_text(datetime.utcnow().isoformat())
+                logger.info("FORCE_SCRAPE consumed — marker written (restarts will not re-trigger).")
+            except OSError as e:
+                logger.warning(f"Could not write FORCE_SCRAPE marker: {e}")
         matched_results, matcher_diag, scraper_health = result
 
-        # ── Daily digest (every day) ─────────────────────────────────────────
-        daily_recipients = get_daily_recipients()
-        if not daily_recipients:
-            logger.info("  Daily digest: no DAILY_RECIPIENTS configured — not sent.")
-        elif not matched_results:
-            logger.info("  Daily digest: no matches this run — not sent.")
-        else:
-            try:
-                send_email(config, matched_results, recipients=daily_recipients)
-                logger.info(f"  ✓ Daily digest sent to {len(daily_recipients)} recipient(s)")
-            except Exception as e:
-                logger.error(f"Daily digest failed: {e}", exc_info=True)
-
-        # ── Per-faculty + per-dept personalized digests (daily cadence) ─────
-        # Opt-in via the dashboard Subscriptions tab. Skipped silently if no
-        # one is enrolled. SendGrid free-tier cap enforced inside the helper.
-        if matched_results:
-            try:
-                run_date = fire_time.strftime("%Y-%m-%d")
-                stats = _send_personalized_digests(config, matched_results,
-                                                   run_date, cadence="daily")
-                logger.info(
-                    f"  ✓ Personalized digests — faculty sent: {stats['faculty_sent']}, "
-                    f"dept admins sent: {stats['dept_admin_sent']} "
-                    f"(across {stats['depts_with_matches']} dept(s))"
-                    + ("  ⚠ budget exhausted" if stats["budget_exhausted"] else "")
-                )
-            except Exception as e:
-                logger.error(f"Personalized digest fan-out failed: {e}", exc_info=True)
-
-        # ── Weekly 7-day roundup (only on the configured weekday) ────────────
-        weekly_roundup_cache = None  # share the 7-day fetch with the personalized fan-out below
-        if fire_time.weekday() == weekly_weekday:
-            weekly_recipients = get_weekly_recipients()
-            if not weekly_recipients:
-                logger.info("  Weekly roundup: no WEEKLY_RECIPIENTS configured — not sent.")
-            else:
-                weekly_roundup_cache = load_recent_matched_results(7)
-                if not weekly_roundup_cache:
-                    logger.info("  Weekly roundup: no matches in the last 7 days — not sent.")
-                else:
-                    try:
-                        send_email(config, weekly_roundup_cache, recipients=weekly_recipients, digest_label="Weekly")
-                        logger.info(f"  ✓ Weekly roundup sent to {len(weekly_recipients)} recipient(s)")
-                    except Exception as e:
-                        logger.error(f"Weekly roundup failed: {e}", exc_info=True)
-
-            # ── Personalized weekly digests (mirror of the daily fan-out) ────
-            # Same opt-in mechanism, same budget cap, but reads the 7-day
-            # roundup and pulls only weekly-cadence enrollees. Always attempts
-            # the fetch even if WEEKLY_RECIPIENTS is empty, so faculty/dept-admin
-            # weekly subs work independently of the admin weekly setting.
-            try:
-                if weekly_roundup_cache is None:
-                    weekly_roundup_cache = load_recent_matched_results(7)
-                if weekly_roundup_cache:
-                    run_date_w = fire_time.strftime("%Y-%m-%d")
-                    stats_w = _send_personalized_digests(
-                        config, weekly_roundup_cache, run_date_w,
-                        cadence="weekly", digest_label="Weekly",
-                    )
-                    logger.info(
-                        f"  ✓ Personalized weekly digests — faculty sent: {stats_w['faculty_sent']}, "
-                        f"dept admins sent: {stats_w['dept_admin_sent']} "
-                        f"(across {stats_w['depts_with_matches']} dept(s))"
-                        + ("  ⚠ budget exhausted" if stats_w["budget_exhausted"] else "")
-                    )
-                else:
-                    logger.info("  Personalized weekly digests: no matches in the last 7 days — none sent.")
-            except Exception as e:
-                logger.error(f"Personalized weekly fan-out failed: {e}", exc_info=True)
-
-        # ── Diagnostic (admin only, every run) ───────────────────────────────
+        # WATCHDOG: everything send-related runs inside _run_sends behind one
+        # try/except. Before this, several calls in the send section (e.g.
+        # get_daily_recipients, load_recent_matched_results) sat outside any
+        # handler — an unexpected exception there killed this daemon thread
+        # permanently while Flask kept serving and Azure saw a "healthy" app;
+        # the only symptom was that digests silently stopped.
         try:
-            send_diagnostic_email(config, matcher_diag, scraper_health)
-            logger.info("  ✓ Diagnostic email sent")
+            _run_sends(config, fire_time, matched_results, matcher_diag,
+                       scraper_health, weekly_weekday)
         except Exception as e:
-            logger.error(f"Diagnostic email failed: {e}", exc_info=True)
+            logger.error(f"Send-phase error during scheduled run: {e}", exc_info=True)
+            send_failure_alert(config, "send_phase", f"{type(e).__name__}: {e}")
+            continue
 
         logger.info("Scheduled run complete.")
 

@@ -786,6 +786,72 @@ def send_restart_email(config: dict, info_rows: list, recipients: list = None,
         # Don't raise — a restart-notice failure shouldn't crash the scheduler.
 
 
+def send_failure_alert(config: dict, stage: str, detail: str, extra_rows: list = None):
+    """Notify admins that a scheduled run FAILED.
+
+    Before this existed, every failure path was silent: the pipeline logged and
+    `continue`d, and since a quiet no-match day also sends nothing, an admin
+    could not distinguish "quiet week" from "broken for two weeks" without
+    noticing the *diagnostic* email had stopped arriving. This sends a short,
+    explicit failure notice instead.
+
+    Recipients: DIAGNOSTIC_RECIPIENTS, else RESTART_RECIPIENTS, else
+    DAILY_RECIPIENTS. Never raises — an alert failure must not take down the
+    scheduler it is reporting on.
+    """
+    try:
+        api_key    = os.environ.get("SENDGRID_API_KEY",    config["email"].get("sendgrid_api_key", ""))
+        from_email = os.environ.get("SENDGRID_FROM_EMAIL", config["email"].get("sender", ""))
+        recipients = (_parse_env_recipients("DIAGNOSTIC_RECIPIENTS")
+                      or get_restart_recipients()
+                      or get_daily_recipients())
+        if not (api_key and from_email and recipients):
+            logger.error(f"FAILURE ALERT (unsendable — no key/sender/recipients): {stage}: {detail}")
+            return
+
+        now_str = datetime.utcnow().strftime("%B %d, %Y %H:%M UTC")
+        rows = [("Failed stage", stage), ("Time (UTC)", now_str)] + (extra_rows or [])
+        rows_html = "".join(
+            f'<tr><td style="padding:5px 16px 5px 0;color:#666;font-size:13px;vertical-align:top;">{esc(str(l))}</td>'
+            f'<td style="padding:5px 0;font-weight:600;font-size:13px;">{esc(str(v))}</td></tr>'
+            for l, v in rows
+        )
+        html_body = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:Arial,sans-serif;">
+  <div style="max-width:640px;margin:0 auto;padding:24px 16px;">
+    <div style="background:#8b1a1a;border-radius:8px 8px 0 0;padding:18px 24px;">
+      <h1 style="margin:0;font-size:17px;color:#ffffff;">Grant Matcher — RUN FAILED</h1>
+      <p style="margin:6px 0 0;color:#f0c0c0;font-size:13px;">{now_str}</p>
+    </div>
+    <div style="background:#fff;border:1px solid #ddd;border-top:none;border-radius:0 0 8px 8px;padding:16px 24px;">
+      <p style="font-size:13px;color:#333;margin:0 0 12px;">
+        A scheduled run did not complete. Faculty digests may not have gone out.
+        Check the container logs / dashboard for details.
+      </p>
+      <table style="border-collapse:collapse;width:100%;">{rows_html}</table>
+      <pre style="background:#f7f7f7;border:1px solid #eee;border-radius:4px;padding:10px;
+                  font-size:12px;white-space:pre-wrap;word-break:break-word;">{esc(detail[:2000])}</pre>
+    </div>
+  </div>
+</body></html>"""
+        text_body = (f"Grant Matcher — RUN FAILED ({now_str})\n" + "=" * 50 + "\n"
+                     + "\n".join(f"  {l}: {v}" for l, v in rows)
+                     + f"\n\n{detail[:2000]}")
+        message = Mail(
+            from_email=from_email,
+            to_emails=[To(r) for r in recipients],
+            subject=f"[Grant Matcher] ⚠ RUN FAILED — {stage} — {now_str}",
+            plain_text_content=text_body,
+            html_content=html_body,
+        )
+        SendGridAPIClient(api_key).send(message)
+        logger.info(f"Failure alert sent to {len(recipients)} recipient(s): {stage}")
+    except Exception as e:
+        # Last-resort: never let alerting crash the scheduler.
+        logger.error(f"Could not send failure alert ({stage}): {e}")
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # DIAGNOSTIC EMAIL — Separate from the grant match email
 # ═══════════════════════════════════════════════════════════════════════════════

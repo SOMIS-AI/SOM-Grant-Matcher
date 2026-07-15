@@ -170,13 +170,22 @@ def extract_opps(data: dict) -> list:
     return []
 
 
-def fetch_new_grants(config: dict) -> list:
+def fetch_new_grants(config: dict, seen_ids: set = None, save: bool = True) -> list:
+    """Fetch new Grants.gov opportunities.
+
+    seen_ids: optional shared seen-set. When provided it is used for filtering
+      and MUTATED with the newly-seen ids (so the caller owns persistence).
+      When None (legacy/standalone use), the set is loaded from disk here.
+    save: persist the updated set from this function. fetch_all_sources passes
+      save=False and commits once, later — see commit_seen_grants().
+    """
     api_url = config["grants"]["api_url"]
     seen_file = config["grants"]["seen_grants_file"]
     max_results = config["grants"]["max_results_per_check"]
     statuses = config["grants"]["statuses"]
 
-    seen_ids = load_seen_grants(seen_file)
+    if seen_ids is None:
+        seen_ids = load_seen_grants(seen_file)
     logger.info(f"Checking Grants.gov API (tracking {len(seen_ids)} seen grants)")
 
     payload = build_search_payload(statuses, max_results)
@@ -240,15 +249,16 @@ def fetch_new_grants(config: dict) -> list:
         new_grants.append(grant)
         newly_seen_ids.add(opp_id)
 
-    updated_seen = seen_ids | newly_seen_ids
-    save_seen_grants(seen_file, updated_seen)
+    seen_ids |= newly_seen_ids   # mutate in place — shared with fetch_all_sources
+    if save:
+        save_seen_grants(seen_file, seen_ids)
 
     logger.info(f"Found {len(new_grants)} new (unseen) grants")
     if record_grants_fetch_stats:
         record_grants_fetch_stats(
             grants_retrieved=len(raw_opps),
             new_grants=len(new_grants),
-            seen_total=len(updated_seen),
+            seen_total=len(seen_ids),
             status="ok",
         )
     return new_grants
@@ -256,7 +266,29 @@ def fetch_new_grants(config: dict) -> list:
 
 # ── Multi-Source Orchestrator ─────────────────────────────────────────────────
 
-def fetch_all_sources(config: dict) -> list:
+# Deferred seen-grants commit (see fetch_all_sources / commit_seen_grants).
+_pending_seen = None
+
+
+def commit_seen_grants() -> bool:
+    """Persist the seen-set stashed by fetch_all_sources(defer_seen_save=True).
+
+    Called by the pipeline AFTER matching succeeds. Deferring the save closes
+    the pure-loss window where grants were marked seen at fetch time: a crash
+    between fetch and match meant those grants were "seen" but never matched or
+    emailed — gone forever. With the deferred commit, an aborted run simply
+    re-fetches the same grants next time. Returns True if a commit happened.
+    """
+    global _pending_seen
+    if _pending_seen is None:
+        return False
+    seen_file, ids = _pending_seen
+    save_seen_grants(seen_file, ids)
+    _pending_seen = None
+    return True
+
+
+def fetch_all_sources(config: dict, defer_seen_save: bool = False) -> list:
     """
     Fetch new grants from ALL configured sources:
       1. Grants.gov (existing)
@@ -266,28 +298,32 @@ def fetch_all_sources(config: dict) -> list:
     Returns a combined, de-duplicated list of new grant dicts.
     Each source uses the shared seen_grants tracker so grants are
     never reported twice regardless of which source found them.
+
+    defer_seen_save=True stashes the updated seen-set instead of persisting it;
+    the caller commits after matching via commit_seen_grants(). A single shared
+    set is loaded once and passed through every source (fetch_new_grants no
+    longer does its own load/save here), which also removes the reload dance
+    that previously guarded against the 2026-06-06..08 double-save bug.
     """
+    global _pending_seen
+    _pending_seen = None  # drop any stale stash from a previously aborted run
+
     seen_file = config["grants"]["seen_grants_file"]
     all_new_grants = []
     source_stats = {}
 
+    # One shared seen-set for ALL sources this run.
+    seen_ids = load_seen_grants(seen_file)
+
     # Source 1: Grants.gov (original)
-    # fetch_new_grants() does its OWN load/filter/save against the seen_grants
-    # file, so we don't pre-load here — doing so and then saving our local copy
-    # at the end of this function would overwrite the IDs Grants.gov just
-    # persisted (the bug that caused duplicate digests on 2026-06-06..08).
     logger.info("─── Source 1/3: Grants.gov ───")
     try:
-        grants_gov = fetch_new_grants(config)
+        grants_gov = fetch_new_grants(config, seen_ids=seen_ids, save=False)
         all_new_grants.extend(grants_gov)
         source_stats["grants_gov"] = len(grants_gov)
     except Exception as e:
         logger.error(f"Grants.gov fetch failed: {e}", exc_info=True)
         source_stats["grants_gov"] = 0
-
-    # Now read seen_ids back from disk so reporter+external sources see
-    # whatever Grants.gov just persisted, and our final save below preserves it.
-    seen_ids = load_seen_grants(seen_file)
 
     # Source 2: NIH RePORTER + Federal RePORTER
     if fetch_all_reporter_grants is not None:
@@ -323,8 +359,12 @@ def fetch_all_sources(config: dict) -> list:
         logger.info("─── Source 3/3: External Sources (skipped — not available) ───")
         source_stats["external_sources"] = 0
 
-    # Save all seen IDs (including new ones from all sources)
-    save_seen_grants(seen_file, seen_ids)
+    # Persist (or stash) all seen IDs, including new ones from all sources.
+    if defer_seen_save:
+        _pending_seen = (seen_file, seen_ids)
+        logger.info("Seen-grants save deferred — will commit after matching succeeds.")
+    else:
+        save_seen_grants(seen_file, seen_ids)
 
     # Summary
     total = len(all_new_grants)

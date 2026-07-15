@@ -1172,7 +1172,15 @@ def _apply_title_exclusions(faculty_list: list[dict], patterns: list[str],
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-def get_faculty_profiles(config: dict) -> list[dict]:
+def get_faculty_profiles(config: dict, force: bool = False) -> list[dict]:
+    """Load faculty from cache, or re-scrape when the cache is stale.
+
+    force=True skips the cache-AGE check (fresh scrape now) but still LOADS the
+    cache: the roster-drop guard and the inactive-marking diff both need the
+    previous roster to compare against. (The old FORCE_SCRAPE behavior deleted
+    the cache file up-front, which silently disabled both protections and made
+    prior enrichment unrecoverable if the scrape failed mid-way.)
+    """
     cache_file = config["faculty"]["cache_file"]
     rescrape_hours = config["faculty"]["rescrape_interval_hours"]
 
@@ -1180,7 +1188,9 @@ def get_faculty_profiles(config: dict) -> list[dict]:
     if cache:
         last_scraped = datetime.fromisoformat(cache.get("scraped_at", "2000-01-01"))
         age_hours = (datetime.utcnow() - last_scraped).total_seconds() / 3600
-        if age_hours < rescrape_hours:
+        if force:
+            logger.info(f"Force-scrape requested — ignoring cache age ({age_hours:.1f}h), re-scraping...")
+        elif age_hours < rescrape_hours:
             logger.info(f"Using cached faculty data ({len(cache['faculty'])} profiles, {age_hours:.1f}h old)")
             # Return only active faculty — exclude anyone marked inactive
             active = [f for f in cache["faculty"] if not f.get("inactive")]
