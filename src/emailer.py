@@ -156,7 +156,7 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
         agencies[ag] = agencies.get(ag, 0) + 1
     top_agencies = sorted(agencies.items(), key=lambda x: x[1], reverse=True)[:4]
     agency_pills = "".join(
-        f'<span style="background:#e8f4fd;color:#1a4b6e;padding:3px 10px;border-radius:12px;'        f'font-size:12px;margin:2px;display:inline-block;">{ag} ({n})</span>'
+        f'<span style="background:#e8f4fd;color:#1a4b6e;padding:3px 10px;border-radius:12px;'        f'font-size:12px;margin:2px;display:inline-block;">{esc(ag)} ({n})</span>'
         for ag, n in top_agencies
     )
 
@@ -175,9 +175,10 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
         if agency_str: meta_parts.append(agency_str)
         if number_str: meta_parts.append(number_str)
         if award_str:  meta_parts.append(f"Up to {award_str}")
-        meta_html = " &nbsp;&middot;&nbsp; ".join(meta_parts)
+        # esc() the scraped parts; the &middot; separator stays literal HTML
+        meta_html = " &nbsp;&middot;&nbsp; ".join(esc(p) for p in meta_parts)
 
-        deadline_cell = deadline_html if deadline_html else (grant.get("close_date","") or "—")
+        deadline_cell = deadline_html if deadline_html else esc(grant.get("close_date","") or "—")
 
         # ── Faculty rows — one per matched faculty member ───────────────────
         faculty_rows_html = ""
@@ -203,7 +204,7 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
             # Keyword pills
             if kws:
                 kw_html = "".join(
-                    f'<span style="display:inline-block;background:#f0f4ff;color:#1a3a6b;border:1px solid #c5d0e8;'                    f'padding:2px 8px;border-radius:10px;font-size:11px;margin:2px 2px 2px 0;">{kw}</span>'
+                    f'<span style="display:inline-block;background:#f0f4ff;color:#1a3a6b;border:1px solid #c5d0e8;'                    f'padding:2px 8px;border-radius:10px;font-size:11px;margin:2px 2px 2px 0;">{esc(kw)}</span>'
                     for kw in kws
                 )
             else:
@@ -211,11 +212,11 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
 
             # Faculty name — linked if URL available
             if furl:
-                name_html = f'<a href="{furl}" style="color:#1a3a6b;text-decoration:none;font-weight:600;font-size:13px;">{fname}</a>'
+                name_html = f'<a href="{esc(furl)}" style="color:#1a3a6b;text-decoration:none;font-weight:600;font-size:13px;">{esc(fname)}</a>'
             else:
-                name_html = f'<span style="font-weight:600;font-size:13px;color:#1a3a6b;">{fname}</span>'
+                name_html = f'<span style="font-weight:600;font-size:13px;color:#1a3a6b;">{esc(fname)}</span>'
 
-            dept_html = f'<div style="color:#777;font-size:11px;margin-top:1px;">{fdept}</div>' if fdept else ""
+            dept_html = f'<div style="color:#777;font-size:11px;margin-top:1px;">{esc(fdept)}</div>' if fdept else ""
 
             faculty_rows_html += f"""
             <tr>
@@ -237,8 +238,8 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
 
         <!-- Grant header -->
         <div style="background:#1a2e45;padding:14px 20px;">
-          <a href="{grant.get('link','#')}" style="color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;line-height:1.4;display:block;">
-            {grant['title'][:160]}{'...' if len(grant.get('title','')) > 160 else ''}
+          <a href="{esc(grant.get('link','#'))}" style="color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;line-height:1.4;display:block;">
+            {esc(grant['title'][:160])}{'...' if len(grant.get('title','')) > 160 else ''}
           </a>
           <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
             <span style="color:#a8c4e0;font-size:12px;">{meta_html}</span>
@@ -490,6 +491,7 @@ def send_email(config: dict, matched_results: list, recipients: list = None,
             f"Email sent via SendGrid: To={visible_to}, BCC={len(recipients)} recipient(s) "
             f"({', '.join(recipients)}) (status {response.status_code})"
         )
+        _ledger("digest", recipients, subject)
     except Exception as e:
         logger.error(f"Failed to send email via SendGrid: {e}")
         raise
@@ -521,6 +523,25 @@ def esc(s) -> str:
     if s is None:
         return ""
     return _html_mod.escape(str(s), quote=True)
+
+
+def _ledger(kind: str, recipients: list, subject: str):
+    """Record a non-personalized send in the subscriptions audit log so the
+    SendGrid daily-cap budget counts EVERY send at its true recipient cost.
+    Previously only the personalized fan-out was logged — the BCC digest,
+    diagnostic, restart, and alert emails silently consumed budget the ledger
+    never saw, so remaining_budget_today() over-committed and later
+    personalized sends hit SendGrid's hard reject. Never raises."""
+    try:
+        import subscriptions
+        subscriptions.log_email(
+            kind=kind,
+            to=(recipients[0] if recipients else ""),
+            subject=subject or "",
+            recipients_count=len(recipients or []),
+        )
+    except Exception as e:
+        logger.warning(f"Email ledger record failed ({kind}): {e}")
 
 
 def _faculty_grants_table_html(matches_by_grant: list, dashboard_url: str = "") -> str:
@@ -781,6 +802,7 @@ def send_restart_email(config: dict, info_rows: list, recipients: list = None,
             f"Restart email sent via SendGrid to {len(recipients)} recipient(s): "
             f"{', '.join(recipients)} (status {response.status_code})"
         )
+        _ledger("restart", recipients, subject)
     except Exception as e:
         logger.error(f"Failed to send restart email via SendGrid: {e}")
         # Don't raise — a restart-notice failure shouldn't crash the scheduler.
@@ -847,6 +869,7 @@ def send_failure_alert(config: dict, stage: str, detail: str, extra_rows: list =
         )
         SendGridAPIClient(api_key).send(message)
         logger.info(f"Failure alert sent to {len(recipients)} recipient(s): {stage}")
+        _ledger("alert", recipients, f"RUN FAILED — {stage}")
     except Exception as e:
         # Last-resort: never let alerting crash the scheduler.
         logger.error(f"Could not send failure alert ({stage}): {e}")
@@ -912,7 +935,7 @@ def build_diagnostic_html(matcher_diag: dict, scraper_health: dict, run_date: st
     for g in per_grant:
         grant_rows += f"""
         <tr>
-          <td style="padding:6px 12px 6px 0;border-bottom:1px solid #eee;font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;">{g['grant_title'][:80]}</td>
+          <td style="padding:6px 12px 6px 0;border-bottom:1px solid #eee;font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;">{esc(g['grant_title'][:80])}</td>
           <td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:12px;text-align:center;">{g['keyword_matches']}</td>
           <td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:12px;text-align:center;">{g['semantic_matches']}</td>
           <td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:12px;text-align:center;font-weight:600;">{g['after_confidence_filter']}</td>
@@ -951,10 +974,10 @@ def build_diagnostic_html(matcher_diag: dict, scraper_health: dict, run_date: st
             agency = (r.get("agency", "") or "").strip()
             link   = r.get("link", "") or ""
             reason = (r.get("reason", "") or "").strip()
-            title_html = (f'<a href="{link}" style="color:#1a2e45;text-decoration:none;">{title[:90]}</a>'
-                          if link else title[:90])
-            meta = agency or "—"
-            reason_html = (f'<div style="font-size:11px;color:#b03a2e;margin-top:2px;">↳ {reason}</div>'
+            title_html = (f'<a href="{esc(link)}" style="color:#1a2e45;text-decoration:none;">{esc(title[:90])}</a>'
+                          if link else esc(title[:90]))
+            meta = esc(agency) or "—"
+            reason_html = (f'<div style="font-size:11px;color:#b03a2e;margin-top:2px;">↳ {esc(reason)}</div>'
                            if (show_reason and reason) else "")
             out.append(
                 f'<tr><td style="padding:5px 12px 5px 0;border-bottom:1px solid #f0f0f0;font-size:12px;">'
@@ -998,7 +1021,7 @@ def build_diagnostic_html(matcher_diag: dict, scraper_health: dict, run_date: st
             hg = h.get("histogram", {})
             hist_rows += f"""
             <tr>
-              <td style="padding:4px 8px 4px 0;border-bottom:1px solid #eee;font-size:11px;">{h['grant_title'][:60]}</td>
+              <td style="padding:4px 8px 4px 0;border-bottom:1px solid #eee;font-size:11px;">{esc(h['grant_title'][:60])}</td>
               <td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:11px;text-align:center;">{h['total_before_filter']}</td>
               <td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:11px;text-align:center;">{hg.get('>=60%', 0)}</td>
               <td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:11px;text-align:center;">{hg.get('>=50%', 0)}</td>
@@ -1037,7 +1060,7 @@ def build_diagnostic_html(matcher_diag: dict, scraper_health: dict, run_date: st
             top5_str = ", ".join(f"{name} ({score:.3f})" for name, score in top5[:3])
             sem_rows += f"""
             <tr>
-              <td style="padding:4px 8px 4px 0;border-bottom:1px solid #eee;font-size:11px;">{sd['grant_title'][:50]}</td>
+              <td style="padding:4px 8px 4px 0;border-bottom:1px solid #eee;font-size:11px;">{esc(sd['grant_title'][:50])}</td>
               <td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:11px;text-align:center;font-weight:600;">{sd['max']}</td>
               <td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:11px;text-align:center;">{sd['p95']}</td>
               <td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:11px;text-align:center;">{sd['p90']}</td>
@@ -1066,7 +1089,7 @@ def build_diagnostic_html(matcher_diag: dict, scraper_health: dict, run_date: st
         <tbody>{sem_rows}</tbody>
       </table>
       <div style="margin-top:10px;font-size:11px;color:#666;">
-        Top matches per grant: {'; '.join(f"{sd['grant_title'][:30]}: {sd['top_5'][0][0]} ({sd['top_5'][0][1]:.3f})" for sd in sem_dists if sd.get('top_5')) or 'none'}
+        Top matches per grant: {esc('; '.join(f"{sd['grant_title'][:30]}: {sd['top_5'][0][0]} ({sd['top_5'][0][1]:.3f})" for sd in sem_dists if sd.get('top_5'))) or 'none'}
       </div>
     </div>"""
     else:
@@ -1081,7 +1104,7 @@ def build_diagnostic_html(matcher_diag: dict, scraper_health: dict, run_date: st
     capped_html = ""
     if capped:
         capped_rows = "".join(
-            f'<tr><td style="padding:4px 8px 4px 0;border-bottom:1px solid #eee;font-size:12px;">{c["grant_title"][:60]}</td>'
+            f'<tr><td style="padding:4px 8px 4px 0;border-bottom:1px solid #eee;font-size:12px;">{esc(c["grant_title"][:60])}</td>'
             f'<td style="padding:4px 8px;border-bottom:1px solid #eee;font-size:12px;text-align:center;">{c["original"]}</td>'
             f'<td style="padding:4px 8px;border-bottom:1px solid #eee;font-size:12px;text-align:center;">{c["capped_to"]}</td>'
             f'<td style="padding:4px 8px;border-bottom:1px solid #eee;font-size:12px;text-align:center;">{c["min_conf_kept"]}%</td></tr>'
@@ -1374,9 +1397,10 @@ def send_diagnostic_email(config: dict, matcher_diag: dict, scraper_health: dict
         sg = SendGridAPIClient(api_key)
         response = sg.send(message)
         logger.info(
-            f"Diagnostic email sent via SendGrid to {len(recipients)} recipient(s): {', '.join(recipients)} "
-            f"(status {response.status_code})"
+            f"Diagnostic email sent via SendGrid to {len(recipients)} recipient(s): "
+            f"{', '.join(recipients)} (status {response.status_code})"
         )
+        _ledger("diagnostic", recipients, subject)
     except Exception as e:
         logger.error(f"Failed to send diagnostic email via SendGrid: {e}")
         # Don't raise — diagnostic email failure shouldn't stop the main flow

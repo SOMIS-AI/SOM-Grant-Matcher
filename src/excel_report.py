@@ -42,11 +42,12 @@ def _keywords(m) -> str:
     return ", ".join(kws)
 
 
-# ── Sheet-name sanitisation (Excel: <=31 chars, no []:*?/\, must be unique) ──
+# ── Sheet-name sanitisation (Excel: <=31 chars, no []:*?/\, must be unique,
+#    must not START or END with an apostrophe) ─────────────────────────────────
 
 def _safe_sheet_name(title: str, used: set) -> str:
     name = re.sub(r"[\[\]:*?/\\]", " ", title or "Grant").strip() or "Grant"
-    name = name[:31]
+    name = name[:31].strip("'").strip() or "Grant"   # edge apostrophes are illegal
     base = name
     n = 2
     while name.lower() in used:
@@ -55,6 +56,27 @@ def _safe_sheet_name(title: str, used: set) -> str:
         n += 1
     used.add(name.lower())
     return name
+
+
+def _sheet_ref(sheet_name: str) -> str:
+    """Internal hyperlink target for a sheet. Apostrophes INSIDE a quoted sheet
+    reference must be doubled ('' ) or Excel reports \"Reference isn't valid\" —
+    which hit every Summary link for titles like \"Alzheimer's Disease ...\"."""
+    return "#'{}'!A1".format(sheet_name.replace("'", "''"))
+
+
+_FORMULA_PREFIXES = ("=", "+", "-", "@")
+
+
+def _text_cell(ws, row, column, value):
+    """Write a TEXT cell, never a formula. openpyxl treats any string starting
+    with '=' as a live formula, so a scraped grant title crafted (or accidentally
+    formed) as '=HYPERLINK(...)' would execute in a report emailed to leadership.
+    Forces string storage for the risky prefixes (=, +, -, @)."""
+    cell = ws.cell(row=row, column=column, value=value)
+    if isinstance(value, str) and value.startswith(_FORMULA_PREFIXES):
+        cell.data_type = "s"
+    return cell
 
 
 def build_workbook_bytes(matched_results: list, run_date: str, label: str = "Daily"):
@@ -87,7 +109,9 @@ def build_workbook_bytes(matched_results: list, run_date: str, label: str = "Dai
     wb = Workbook()
     summary = wb.active
     summary.title = "Summary"
-    used_names = {"summary"}
+    # "history" reserved: Excel treats a sheet literally named History as the
+    # shared-workbook history sheet and prompts a repair on open.
+    used_names = {"summary", "history"}
 
     total_grants = len(results)
     total_matches = sum(len(r.get("matches", [])) for r in results)
@@ -114,14 +138,14 @@ def build_workbook_bytes(matched_results: list, run_date: str, label: str = "Dai
 
         row = 5 + idx
         summary.cell(row=row, column=1, value=idx)
-        title_cell = summary.cell(row=row, column=2, value=grant.get("title", ""))
-        # Internal hyperlink to the grant's tab
-        title_cell.hyperlink = f"#'{sheet_name}'!A1"
+        title_cell = _text_cell(summary, row, 2, grant.get("title", ""))
+        # Internal hyperlink to the grant's tab (apostrophe-safe reference)
+        title_cell.hyperlink = _sheet_ref(sheet_name)
         title_cell.font = link_font
-        summary.cell(row=row, column=3, value=grant.get("agency", ""))
+        _text_cell(summary, row, 3, grant.get("agency", ""))
         summary.cell(row=row, column=4, value=len(matches))
         summary.cell(row=row, column=5, value=f"{avg_conf}%")
-        summary.cell(row=row, column=6, value=grant.get("close_date", "") or "N/A")
+        _text_cell(summary, row, 6, grant.get("close_date", "") or "N/A")
 
     for col, width in zip("ABCDEF", (5, 60, 32, 10, 14, 14)):
         summary.column_dimensions[col].width = width
@@ -132,7 +156,7 @@ def build_workbook_bytes(matched_results: list, run_date: str, label: str = "Dai
         matches = sorted(r.get("matches", []), key=lambda m: -_conf(m))
         ws = wb.create_sheet(title=sheet_name)
 
-        ws["A1"] = grant.get("title", "")
+        _text_cell(ws, 1, 1, grant.get("title", ""))
         ws["A1"].font = title_font
 
         meta = [
@@ -145,7 +169,7 @@ def build_workbook_bytes(matched_results: list, run_date: str, label: str = "Dai
         rownum = 2
         for lbl, val in meta:
             ws.cell(row=rownum, column=1, value=lbl).font = label_font
-            ws.cell(row=rownum, column=2, value=str(val))
+            _text_cell(ws, rownum, 2, str(val))
             rownum += 1
         # Grant page link
         ws.cell(row=rownum, column=1, value="Grant Page:").font = label_font
@@ -171,12 +195,12 @@ def build_workbook_bytes(matched_results: list, run_date: str, label: str = "Dai
         rownum += 1
 
         for m in matches:
-            ws.cell(row=rownum, column=1, value=_attr(m, "faculty_name", ""))
-            ws.cell(row=rownum, column=2, value=_attr(m, "faculty_department", ""))
-            ws.cell(row=rownum, column=3, value=_attr(m, "faculty_email", ""))
+            _text_cell(ws, rownum, 1, _attr(m, "faculty_name", ""))
+            _text_cell(ws, rownum, 2, _attr(m, "faculty_department", ""))
+            _text_cell(ws, rownum, 3, _attr(m, "faculty_email", ""))
             ws.cell(row=rownum, column=4, value=f"{_conf(m)}%")
             ws.cell(row=rownum, column=5, value=_attr(m, "match_type", "keyword"))
-            ws.cell(row=rownum, column=6, value=_keywords(m))
+            _text_cell(ws, rownum, 6, _keywords(m))
             furl = _attr(m, "faculty_url", "")
             pcell = ws.cell(row=rownum, column=7, value="View Profile" if furl else "")
             if furl:

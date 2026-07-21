@@ -258,8 +258,15 @@ def admins_for_department(dept: str, *, cadence: Optional[str] = None) -> list:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def log_email(*, kind: str, to: str, subject: str, matches_count: int = 0,
-              faculty_name: str = "", department: str = "") -> None:
-    """Append one entry to the rolling audit log. `kind` is 'faculty' or 'dept_admin'."""
+              faculty_name: str = "", department: str = "",
+              recipients_count: int = 1) -> None:
+    """Append one entry to the rolling audit log.
+
+    `kind`: 'faculty' / 'dept_admin' (personalized), their *_failed variants,
+    or 'digest' / 'diagnostic' / 'restart' / 'alert' (admin sends).
+    `recipients_count`: how many SendGrid recipients this send consumed — a BCC
+    digest to N addresses burns N against the free-tier daily cap, so the
+    budget ledger must count N, not 1."""
     entry = {
         "timestamp":     _now_iso(),
         "kind":          kind,
@@ -268,6 +275,7 @@ def log_email(*, kind: str, to: str, subject: str, matches_count: int = 0,
         "matches_count": int(matches_count),
         "faculty_name":  faculty_name,
         "department":    department,
+        "recipients_count": max(1, int(recipients_count)),
     }
     with _write_lock:
         log = _load_json(EMAIL_LOG_FILE, {"log": []}).get("log", [])
@@ -277,11 +285,15 @@ def log_email(*, kind: str, to: str, subject: str, matches_count: int = 0,
 
 
 def count_today_emails() -> int:
-    """How many emails has the audit log recorded today (UTC date)? Used to
-    enforce the SendGrid free-tier cap."""
+    """How many SendGrid recipients has the audit log recorded today (UTC)?
+    Sums recipients_count (default 1 for older entries) so multi-recipient BCC
+    sends count at their true cost. Previously only personalized sends were
+    logged at all, so the digest/diagnostic/restart emails silently consumed
+    budget the ledger never saw — and the fan-out then over-committed and hit
+    SendGrid's hard reject."""
     today = datetime.now(timezone.utc).date().isoformat()
     log = _load_json(EMAIL_LOG_FILE, {"log": []}).get("log", [])
-    return sum(1 for e in log
+    return sum(max(1, int(e.get("recipients_count", 1) or 1)) for e in log
                if isinstance(e.get("timestamp"), str)
                and e["timestamp"].startswith(today))
 

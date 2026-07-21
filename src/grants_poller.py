@@ -11,6 +11,7 @@ API response structure for Grants.gov (typical):
     "data": { "searchParams": {...}, "hitCount": N, "oppHits": [...grants...] } }
 """
 
+import html
 import json
 import logging
 from datetime import datetime, timedelta
@@ -233,17 +234,24 @@ def fetch_new_grants(config: dict, seen_ids: set = None, save: bool = True) -> l
         if not opp_id or opp_id in seen_ids:
             continue
 
+        # Decode HTML entities at INGEST so all downstream consumers work from
+        # real Unicode text. Grants.gov titles/synopses arrive with entities
+        # ("NIH Director&rsquo;s..."), which previously (a) injected junk tokens
+        # (rsquo, amp) into matching, (b) rendered as literal "&rsquo;" in the
+        # escaped personalized emails, and (c) landed raw in Excel cells.
+        title    = html.unescape(opp.get("title") or "Untitled")
+        synopsis = html.unescape(opp.get("synopsis") or opp.get("description") or "")
         grant = {
             "id": opp_id,
-            "title": opp.get("title") or "Untitled",
-            "agency": opp.get("agency") or opp.get("agencyCode") or "",
+            "title": title,
+            "agency": html.unescape(opp.get("agency") or opp.get("agencyCode") or ""),
             "number": opp.get("number") or "",
-            "synopsis": opp.get("synopsis") or opp.get("description") or "",
+            "synopsis": synopsis,
             "close_date": opp.get("closeDate") or "",
             "open_date": opp.get("openDate") or "",
             "award_ceiling": opp.get("awardCeiling") or "",
             "link": GRANT_DETAIL_URL.format(opp_id=opp_id),
-            "searchable_text": f"{opp.get('title', '')} {opp.get('synopsis', '')}".lower()
+            "searchable_text": f"{title} {synopsis}".lower()
         }
 
         new_grants.append(grant)

@@ -780,7 +780,7 @@ def _faculty_evidence_text(fac: dict) -> str:
 def _keyword_matches_for_grant(grant, faculty, stop_words, min_kw_len,
                                 idf_table, dynamic_stops,
                                 context_terms=None, context_dropped=None,
-                                scoring_ctx=None):
+                                scoring_ctx=None, min_idf=None, idf_dropped=None):
     """
     Run regex keyword matching for one grant against all faculty.
     Returns dict keyed by faculty_name for easy merging with semantic pass.
@@ -790,6 +790,13 @@ def _keyword_matches_for_grant(grant, faculty, stop_words, min_kw_len,
     the match is dropped — they matched only on generic population/method words
     with no disease/domain-specific term. When dropped, an audit entry is
     appended to context_dropped (if provided) for the diagnostic.
+
+    min_idf: IDF floor for a keyword to be allowed to MATCH. Terms so prevalent
+    across the roster that their IDF falls below this carry no discriminative
+    signal. This floor was advertised in config + diagnostics as
+    min_idf_for_match since the June tuning, but never actually enforced —
+    low-IDF terms were only softly down-weighted in confidence. Dropped terms
+    are collected into idf_dropped (set) for the diagnostic.
     """
     grant_text  = normalize(grant["searchable_text"])
     grant_title = normalize(grant["title"])
@@ -813,6 +820,11 @@ def _keyword_matches_for_grant(grant, faculty, stop_words, min_kw_len,
             # Suppress phrases where every token is a stop word
             # e.g. "community health centers", "service delivery", "program evaluation"
             if _phrase_is_all_stops(kw_norm, all_stops, min_kw_len):
+                continue
+            # IDF floor: too-common-across-roster terms can't anchor a match
+            if min_idf is not None and idf_table.get(kw_norm, 1.0) < min_idf:
+                if idf_dropped is not None:
+                    idf_dropped.add(kw_norm)
                 continue
             pattern = r"\b" + re.escape(kw_norm) + r"\b"
             if re.search(pattern, grant_text):
@@ -1159,11 +1171,18 @@ def find_matches(grants, faculty, config=None):
         }
 
         context_dropped = []
+        idf_dropped = set()
         keyword_matches = _keyword_matches_for_grant(
             grant, faculty, stop_words, min_kw_len, idf_table, dynamic_stops,
             context_terms=context_terms, context_dropped=context_dropped,
-            scoring_ctx=scoring_ctx,
+            scoring_ctx=scoring_ctx, min_idf=min_idf_match, idf_dropped=idf_dropped,
         )
+        if idf_dropped:
+            _diag["idf_filtered_keywords"].append({
+                "grant_title": grant["title"][:80],
+                "count":       len(idf_dropped),
+                "keywords":    sorted(idf_dropped)[:15],
+            })
         if context_dropped:
             context_filtered_total += len(context_dropped)
             _diag["context_filtered"].append({
@@ -1628,8 +1647,25 @@ def _save_match_results(results, total_grants_checked, semantic_used=False, conf
                 "confidence_score":    m.confidence_score,
             })
 
-    # Cap at 5000 entries (newest first) — authoritative count is in run_stats.json
-    combined = (new_entries + existing)[:5000]
+    # Prune by AGE, not by count. The old flat [:5000] cap was ~2.5-4 days of
+    # history at realistic volume (dozens of grants × up to 40 matches/day),
+    # which silently starved the 7-day weekly roundup that
+    # load_recent_matched_results(7) rebuilds from this file. 14 days retention
+    # comfortably covers the roundup window; a high count guard (25k) bounds
+    # the file against pathological volume and LOGS when it trims in-window
+    # entries instead of dropping them silently.
+    _cutoff = (datetime.utcnow() - timedelta(days=14)).isoformat()
+    combined = [e for e in (new_entries + existing)
+                if e.get("timestamp", "") >= _cutoff]
+    aged_out = len(new_entries) + len(existing) - len(combined)
+    if len(combined) > 25000:
+        logger.warning(
+            f"match_results.json count guard trimming {len(combined) - 25000} "
+            f"in-window entries (>{25000}) — weekly roundup may be incomplete"
+        )
+        combined = combined[:25000]
+    if aged_out:
+        logger.info(f"match_results.json: pruned {aged_out} entries older than 14d")
     from atomic_io import atomic_write_json
     atomic_write_json(MATCHES_FILE, combined, indent=2)
 
