@@ -777,6 +777,21 @@ def _faculty_evidence_text(fac: dict) -> str:
     return " ".join(parts)
 
 
+# Per-run compiled-pattern cache. Keywords repeat across all faculty and all
+# grants (~millions of re.search calls/run over only a few thousand DISTINCT
+# patterns), which thrashed Python's 512-entry internal regex cache into
+# constant recompilation. Cleared at the start of each find_matches run.
+_kw_pattern_cache: dict = {}
+
+
+def _kw_pattern(kw_norm: str):
+    pat = _kw_pattern_cache.get(kw_norm)
+    if pat is None:
+        pat = re.compile(r"\b" + re.escape(kw_norm) + r"\b")
+        _kw_pattern_cache[kw_norm] = pat
+    return pat
+
+
 def _keyword_matches_for_grant(grant, faculty, stop_words, min_kw_len,
                                 idf_table, dynamic_stops,
                                 context_terms=None, context_dropped=None,
@@ -826,8 +841,7 @@ def _keyword_matches_for_grant(grant, faculty, stop_words, min_kw_len,
                 if idf_dropped is not None:
                     idf_dropped.add(kw_norm)
                 continue
-            pattern = r"\b" + re.escape(kw_norm) + r"\b"
-            if re.search(pattern, grant_text):
+            if _kw_pattern(kw_norm).search(grant_text):
                 matched.append(kw)
 
         # Theme 3: a match must rest on ≥1 domain-specific keyword. If every
@@ -932,6 +946,16 @@ def find_matches(grants, faculty, config=None):
     _run_start_time  = time.time()
     _raw_match_count = 0
     _faculty_count   = sum(1 for f in faculty if not f.get("inactive"))
+
+    # Reset per-run caches: compiled keyword patterns (bounded memory) and the
+    # embedder's faculty-matrix cache (so this run's faculty list / freshly
+    # regenerated embeddings can never be served a stale matrix).
+    _kw_pattern_cache.clear()
+    try:
+        from embedder import reset_similarity_cache
+        reset_similarity_cache()
+    except ImportError:
+        pass
 
     matching_cfg     = (config or {}).get("matching", {})
     min_kw_len       = matching_cfg.get("min_keyword_length", 4)

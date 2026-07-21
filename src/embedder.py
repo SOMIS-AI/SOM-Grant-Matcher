@@ -283,6 +283,28 @@ def embed_faculty_batch(faculty_list: list[dict]) -> bool:
 
 # ── Similarity search ──────────────────────────────────────────────────────────
 
+# Per-run cache of the faculty embedding matrix. Building the ~1267x384 float32
+# matrix from Python lists was previously done PER GRANT (up to 100x/run) even
+# though only the grant vector changes between calls. The matcher calls
+# reset_similarity_cache() at the start of each run so a fresh faculty list
+# (or regenerated embeddings) can never be served a stale matrix.
+_matrix_cache = {"key": None, "candidates": None, "matrix": None}
+
+
+def reset_similarity_cache():
+    _matrix_cache.update(key=None, candidates=None, matrix=None)
+
+
+def _faculty_matrix(faculty_list: list[dict]):
+    key = (id(faculty_list), len(faculty_list))
+    if _matrix_cache["key"] != key:
+        candidates = [f for f in faculty_list if f.get("embedding")]
+        matrix = (np.array([f["embedding"] for f in candidates], dtype=np.float32)
+                  if candidates else None)
+        _matrix_cache.update(key=key, candidates=candidates, matrix=matrix)
+    return _matrix_cache["candidates"], _matrix_cache["matrix"]
+
+
 def grant_similarity_map(grant: dict, faculty_list: list[dict]) -> dict:
     """
     Return {faculty_name: cosine_similarity} for every faculty member that has an
@@ -298,7 +320,7 @@ def grant_similarity_map(grant: dict, faculty_list: list[dict]) -> dict:
     if model is None:
         return {}
 
-    candidates = [f for f in faculty_list if f.get("embedding")]
+    candidates, faculty_matrix = _faculty_matrix(faculty_list)
     if not candidates:
         return {}
 
@@ -307,7 +329,6 @@ def grant_similarity_map(grant: dict, faculty_list: list[dict]) -> dict:
         return {}
     grant_vec = grant_emb[0]
 
-    faculty_matrix = np.array([f["embedding"] for f in candidates], dtype=np.float32)
     # Embeddings are L2-normalised, so dot product == cosine similarity.
     sims = faculty_matrix @ grant_vec
     return {f.get("name", ""): float(s) for f, s in zip(candidates, sims)}
