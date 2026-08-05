@@ -293,6 +293,8 @@ _matrix_cache = {"key": None, "candidates": None, "matrix": None}
 
 def reset_similarity_cache():
     _matrix_cache.update(key=None, candidates=None, matrix=None)
+    _evidence_term_cache.clear()
+    _grant_vec_cache.clear()
 
 
 def _faculty_matrix(faculty_list: list[dict]):
@@ -332,6 +334,77 @@ def grant_similarity_map(grant: dict, faculty_list: list[dict]) -> dict:
     # Embeddings are L2-normalised, so dot product == cosine similarity.
     sims = faculty_matrix @ grant_vec
     return {f.get("name", ""): float(s) for f, s in zip(candidates, sims)}
+
+
+# ── Semantic match evidence (2026-08-04) ──────────────────────────────────────
+# 60% of delivered matches were semantic-only with a BLANK "Matched Keywords"
+# cell — faculty saw no justification at all. semantic_evidence() ranks the
+# faculty member's OWN profile terms (curated keywords + publication titles) by
+# similarity to the grant text and returns the top few, so reports can show
+# "≈ global health security, ≈ infectious disease surveillance" instead of
+# nothing. Per-run caches keep the cost to one encode per faculty + one per
+# grant (reset via reset_similarity_cache()).
+
+_evidence_term_cache: dict = {}   # faculty_name -> (terms, matrix)
+_grant_vec_cache: dict = {}       # grant id/title -> vector
+
+EVIDENCE_TOP_K = 3
+EVIDENCE_MIN_SIM = 0.25           # below this a term isn't meaningful evidence
+_EVIDENCE_MAX_KEYWORDS = 40
+_EVIDENCE_MAX_TITLES = 8
+_EVIDENCE_TITLE_DISPLAY_CHARS = 70
+
+
+def semantic_evidence(grant: dict, faculty: dict,
+                      top_k: int = EVIDENCE_TOP_K,
+                      min_sim: float = EVIDENCE_MIN_SIM) -> list[str]:
+    """
+    Return up to top_k of the faculty's own profile terms most similar to the
+    grant text — the "why" behind a semantic match. [] if the model is
+    unavailable or nothing clears min_sim (callers must tolerate empty).
+    """
+    model = _load_model()
+    if model is None or not faculty:
+        return []
+
+    name = faculty.get("name", "")
+    if name not in _evidence_term_cache:
+        terms = []
+        for kw in (faculty.get("keywords") or [])[:_EVIDENCE_MAX_KEYWORDS]:
+            kw = str(kw).strip()
+            if 3 <= len(kw) <= 60:
+                terms.append(kw)
+        # Publication/project titles ground the evidence in real output —
+        # truncated for display but embedded in full.
+        for title in (faculty.get("evidence_titles") or [])[:_EVIDENCE_MAX_TITLES]:
+            title = str(title).strip().rstrip(".")
+            if len(title) > 10:
+                terms.append(title)
+        matrix = embed_texts(terms) if terms else None
+        _evidence_term_cache[name] = (terms, matrix)
+
+    terms, matrix = _evidence_term_cache[name]
+    if matrix is None:
+        return []
+
+    gkey = grant.get("id") or grant.get("title", "")
+    if gkey not in _grant_vec_cache:
+        gvec = embed_texts([grant_to_text(grant)])
+        _grant_vec_cache[gkey] = None if gvec is None else gvec[0]
+    grant_vec = _grant_vec_cache[gkey]
+    if grant_vec is None:
+        return []
+
+    sims = matrix @ grant_vec
+    ranked = sorted(zip(terms, sims), key=lambda t: -t[1])
+    out = []
+    for term, sim in ranked[:top_k]:
+        if sim < min_sim:
+            break
+        if len(term) > _EVIDENCE_TITLE_DISPLAY_CHARS:
+            term = term[:_EVIDENCE_TITLE_DISPLAY_CHARS - 1].rstrip() + "…"
+        out.append(term)
+    return out
 
 
 def find_semantic_matches(

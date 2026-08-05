@@ -67,7 +67,9 @@ def load_config(config_path: str = "config/config.yaml") -> dict:
     WEEKLY_RECIPIENTS / DIAGNOSTIC_RECIPIENTS (see emailer.py and
     run_scheduler below). The legacy ALERT_RECIPIENTS variable is retired.
     """
-    with open(config_path) as f:
+    # utf-8 explicitly: the config carries em-dashes/emoji in comments, which
+    # breaks Windows dev machines where the default codec is cp1252.
+    with open(config_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
     # Override email settings from environment variables if set
@@ -76,6 +78,20 @@ def load_config(config_path: str = "config/config.yaml") -> dict:
 
     if os.environ.get("SENDGRID_API_KEY"):
         config["email"]["sendgrid_api_key"] = os.environ["SENDGRID_API_KEY"]
+
+    # Faculty-feedback links (2026-08-04): register the prefilled-Form template
+    # with the emailer here — the single choke point every entry path passes
+    # through (scheduler, --send-digest, manual sends). FEEDBACK_FORM_URL in
+    # Azure App Settings overrides config so the template can be rotated
+    # without a redeploy.
+    feedback_cfg = dict(config.get("feedback") or {})
+    if os.environ.get("FEEDBACK_FORM_URL"):
+        feedback_cfg["form_url_template"] = os.environ["FEEDBACK_FORM_URL"]
+    from emailer import set_feedback_config, set_about_url
+    set_feedback_config(feedback_cfg)
+
+    # "Learn more" page link for all email footers (ABOUT_URL overrides config)
+    set_about_url(os.environ.get("ABOUT_URL") or config.get("about_url", ""))
 
     return config
 
@@ -604,7 +620,8 @@ def _send_personalized_digests(config: dict, matched_results: list,
                 logger.warning("SendGrid daily cap reached — skipping remaining dept-admin digests.")
                 return stats
             subject, html = build_dept_admin_email(dept_label, dept_bucket, run_date,
-                                                   dashboard_url, digest_label=digest_label)
+                                                   dashboard_url, digest_label=digest_label,
+                                                   recipient_email=admin["email"])
             sent = send_personal_email(config, admin["email"], subject, html)
             if not sent:  # one retry, same rationale as the faculty loop
                 time.sleep(2)

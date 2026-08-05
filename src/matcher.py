@@ -41,6 +41,7 @@ score that accounts for:
 Results are merged, de-duplicated, sorted by confidence desc, and persisted.
 """
 
+import html as _html
 import json
 import logging
 import math
@@ -873,9 +874,15 @@ def _keyword_matches_for_grant(grant, faculty, stop_words, min_kw_len,
             )
 
             results[person["name"]] = Match(
+                # NOTE: faculty_name stays EXACTLY as stored — it is the lookup
+                # key into faculty_by_name for downstream guards. Only the
+                # department (display-only) gets entity-decoded here.
                 faculty_name       = person["name"],
                 faculty_url        = person.get("url", ""),
-                faculty_department = person.get("department", ""),
+                # unescape: cached rosters scraped before 2026-08-04 store
+                # entities ("Epidemiology &amp; Public Health"); decode here so
+                # reports are clean without waiting for the next re-scrape.
+                faculty_department = _html.unescape(person.get("department", "")),
                 faculty_email      = person.get("email", ""),
                 matched_keywords   = sorted(set(matched)),
                 match_score        = raw_score,
@@ -1244,9 +1251,10 @@ def find_matches(grants, faculty, config=None):
                         scoring_ctx=scoring_ctx,
                     )
                     semantic_matches[name] = Match(
-                        faculty_name       = name,
+                        faculty_name       = name,   # exact key — see keyword-path note
                         faculty_url        = fac.get("url", ""),
-                        faculty_department = fac.get("department", ""),
+                        # unescape: see keyword-path note — covers pre-08/04 cache
+                        faculty_department = _html.unescape(fac.get("department", "")),
                         faculty_email      = fac.get("email", ""),
                         matched_keywords   = [],
                         match_score        = 0,
@@ -1448,6 +1456,25 @@ def find_matches(grants, faculty, config=None):
             logger.info(
                 f"  Capped '{grant['title'][:50]}...' from {original_count} to {max_per_grant} matches"
             )
+
+        # ── Semantic match evidence (2026-08-04) ─────────────────────────────
+        # Fill the blank "Matched Keywords" cell on semantic-only matches with
+        # the faculty's own profile terms closest to this grant ("≈ term"), so
+        # faculty see WHY they were matched. Runs after the cap so only
+        # delivered rows pay the embedding cost; failures leave the cell blank.
+        if sem_enabled and sim_by_name:
+            try:
+                from embedder import semantic_evidence
+                for i, m in enumerate(all_matches):
+                    if m.match_type == "semantic" and not m.matched_keywords:
+                        fac = faculty_by_name.get(m.faculty_name)
+                        ev = semantic_evidence(grant, fac) if fac else []
+                        if ev:
+                            all_matches[i] = m._replace(
+                                matched_keywords=[f"≈ {t}" for t in ev]
+                            )
+            except Exception as e:
+                logger.warning(f"semantic evidence generation failed: {e}")
 
         if all_matches:
             for m in all_matches:
@@ -1770,6 +1797,11 @@ def _write_diagnostic_log(results, total_grants_checked, stats, config):
         "grants_with_matches":  len(results),
         "avg_confidence":       grants_run.get("avg_confidence", 0),
         "high_confidence_matches": grants_run.get("high_confidence_matches", 0),
+        # Matched faculty with no published email (verified 2026-08-04: their
+        # profile pages genuinely carry none — a source-data gap, not a scraper
+        # bug). These faculty can't receive pilot notifications; surface the
+        # count so ops can chase addresses out-of-band.
+        "matches_missing_email": sum(1 for fm in flat_matches if not fm["faculty_email"]),
         "source_breakdown":     source_counts,
         "config": {
             "semantic_threshold":          matching_cfg.get("semantic_threshold", DEFAULT_SEMANTIC_THRESHOLD),

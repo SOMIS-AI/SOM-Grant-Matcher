@@ -1177,6 +1177,87 @@ def api_subs_faculty():
     return jsonify({"ok": True, "record": rec})
 
 
+@app.route("/api/subscriptions/faculty/bulk", methods=["POST"])
+@login_required
+def api_subs_faculty_bulk():
+    """Bulk-enroll faculty from pasted text (2026-08-05).
+
+    Body: {"text": "<one entry per line>", "cadence": "weekly"}
+    Line formats (comma-, semicolon-, or tab-separated — Excel paste works):
+        email
+        email, Full Name
+        email, Full Name, Department
+    The field containing '@' is the email wherever it appears; remaining
+    fields are taken as name then department. Missing name/department are
+    auto-filled from the scraped faculty roster when the email is found there.
+
+    Safety: an existing record with cadence 'off' is an OPT-OUT and is
+    SKIPPED (never silently re-enrolled) — re-enroll individually from the
+    Opt-Outs panel instead.
+    """
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    cadence = (data.get("cadence") or "weekly").strip().lower()
+    if not text:
+        return _json_err("text is required — paste one entry per line")
+    if cadence not in ("daily", "weekly"):
+        return _json_err("bulk cadence must be 'daily' or 'weekly'")
+
+    # Roster lookup: email → (name, department) for auto-enrichment
+    roster = {}
+    for f in get_faculty():
+        em = (f.get("email") or "").strip().lower()
+        if em:
+            roster[em] = (f.get("name", ""), f.get("department", ""))
+
+    existing = _subs.load_faculty_subs()
+    added, updated, skipped = [], [], []
+    seen_in_paste = set()
+
+    for lineno, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [p.strip() for p in re.split(r"[\t,;]", line) if p.strip()]
+        email = next((p for p in parts if "@" in p), "")
+        if not email:
+            skipped.append({"line": lineno, "entry": line[:80], "reason": "no email address found"})
+            continue
+        email_key = email.lower()
+        if email_key in seen_in_paste:
+            skipped.append({"line": lineno, "entry": line[:80], "reason": "duplicate of an earlier line"})
+            continue
+        seen_in_paste.add(email_key)
+
+        prior = existing.get(email_key) or {}
+        if prior.get("cadence") == "off":
+            skipped.append({"line": lineno, "entry": line[:80],
+                            "reason": "opted out — re-enroll from the Opt-Outs panel"})
+            continue
+
+        rest = [p for p in parts if p != email]
+        name = rest[0] if len(rest) >= 1 else ""
+        dept = rest[1] if len(rest) >= 2 else ""
+        if (not name or not dept) and email_key in roster:
+            rname, rdept = roster[email_key]
+            name = name or rname
+            dept = dept or rdept
+
+        try:
+            _subs.upsert_faculty_sub(
+                email_key, name=name, department=dept, cadence=cadence,
+                enrolled_by=f"{session.get('user', 'admin')} (bulk)",
+            )
+        except ValueError as e:
+            skipped.append({"line": lineno, "entry": line[:80], "reason": str(e)})
+            continue
+        (updated if prior else added).append(email_key)
+
+    return jsonify({"ok": True, "cadence": cadence,
+                    "added": len(added), "updated": len(updated),
+                    "skipped": skipped, "skipped_count": len(skipped)})
+
+
 @app.route("/api/subscriptions/dept-admins", methods=["GET", "POST", "DELETE"])
 @login_required
 def api_subs_dept_admins():
@@ -2217,8 +2298,32 @@ tr:hover td{background:rgba(255,255,255,.018)}
         <span class="panel-title">Faculty Subscriptions</span>
         <span class="sec-count" id="subs-faculty-count" style="margin-left:auto"></span>
         <button class="btn-sm" style="margin-left:10px" onclick="openSubFacultyForm()">+ Add faculty</button>
+        <button class="btn-sm" style="margin-left:6px" onclick="openBulkForm()">⇪ Bulk add</button>
       </div>
       <div class="panel-body">
+        <!-- Bulk add form (hidden until opened) -->
+        <div id="subs-bulk-form" style="display:none;margin-bottom:14px;padding:12px;
+             background:var(--surf2);border:1px solid var(--border);border-radius:4px">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:6px;line-height:1.5">
+            Paste one faculty member per line — <strong>email</strong> alone, or
+            <strong>email, name, department</strong> (commas, semicolons, or tabs — pasting straight
+            from Excel works). Name and department are auto-filled from the faculty roster when only
+            an email is given. Lines matching an <strong>opted-out</strong> record are skipped, never
+            re-enrolled.
+          </div>
+          <textarea class="search-box" id="bulk-text" rows="8" style="width:100%;resize:vertical;
+            font-family:inherit" placeholder="jsmith@som.umaryland.edu&#10;mjones@som.umaryland.edu, Mary Jones, Pediatrics&#10;…"></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+            <select class="filter-sel" id="bulk-cadence" style="width:auto">
+              <option value="weekly" selected>Weekly</option>
+              <option value="daily">Daily</option>
+            </select>
+            <button class="btn-sm" onclick="importBulk()">Import</button>
+            <button class="btn-sm" onclick="closeBulkForm()" style="background:var(--surf2)">Cancel</button>
+            <span id="bulk-status" style="margin-left:10px;font-size:11px;color:var(--text3)"></span>
+          </div>
+          <div id="bulk-result" style="margin-top:8px;font-size:11px;line-height:1.6"></div>
+        </div>
         <!-- Add/edit form (hidden until opened) -->
         <div id="subs-faculty-form" style="display:none;margin-bottom:14px;padding:12px;
              background:var(--surf2);border:1px solid var(--border);border-radius:4px">
@@ -2246,6 +2351,39 @@ tr:hover td{background:rgba(255,255,255,.018)}
               <th>Enrolled</th><th>Updated</th><th></th>
             </tr></thead>
             <tbody id="subs-faculty-tbody"><tr><td colspan="7" style="color:var(--text3)">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Opt-outs -->
+    <div class="panel" style="margin-top:14px">
+      <div class="panel-hdr">
+        <span class="panel-title">Opt-Outs</span>
+        <span class="sec-count" id="subs-optout-count" style="margin-left:auto"></span>
+      </div>
+      <div class="panel-body">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.5">
+          Opted-out recipients receive no emails and are <strong>protected from bulk re-enrollment</strong>.
+          Use this when someone clicks "Opt out of these emails" in an email footer (check the
+          Microsoft Form responses for Verdict = "Opt out of emails") or asks to stop receiving
+          notifications.
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+          <input class="search-box" id="optout-email" placeholder="email to opt out"
+                 style="width:280px" list="subs-optout-suggest">
+          <datalist id="subs-optout-suggest"></datalist>
+          <button class="btn-sm" style="background:#ef444422;color:#ef4444"
+                  onclick="optOutUser()">Opt out</button>
+          <span id="optout-status" style="font-size:11px;color:var(--text3)"></span>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr>
+              <th>Email</th><th>Name</th><th>Department</th>
+              <th>Opted out</th><th></th>
+            </tr></thead>
+            <tbody id="subs-optout-tbody"><tr><td colspan="5" style="color:var(--text3)">Loading…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -3522,14 +3660,17 @@ async function loadSubscriptions() {
   // Faculty subs
   try {
     const r = await fetch('/api/subscriptions/faculty').then(r=>r.json());
-    const subs = r.ok ? (r.subscriptions||[]) : [];
+    const all = r.ok ? (r.subscriptions||[]) : [];
+    // cadence 'off' = opted out → its own panel; everything else = active
+    const subs = all.filter(s=>s.cadence!=='off');
+    const optedOut = all.filter(s=>s.cadence==='off');
     document.getElementById('subs-faculty-count').textContent =
       subs.length + ' enrolled';
     document.getElementById('sb-subs-count').textContent = subs.length;
     document.getElementById('sb-subs-count').style.display = subs.length ? '' : 'none';
     const tb = document.getElementById('subs-faculty-tbody');
     if (!subs.length) {
-      tb.innerHTML = '<tr><td colspan="7" style="color:var(--text3)">No faculty subscribers yet. Click "+ Add faculty" to enroll one.</td></tr>';
+      tb.innerHTML = '<tr><td colspan="7" style="color:var(--text3)">No faculty subscribers yet. Click "+ Add faculty" or "⇪ Bulk add" to enroll.</td></tr>';
     } else {
       tb.innerHTML = subs.map(s=>`<tr>
         <td><a href="javascript:editFacultySub('${escHtml(s.email)}')"
@@ -3541,6 +3682,24 @@ async function loadSubscriptions() {
         <td style="font-size:11px;color:var(--text3)">${shortDate(s.updated_at)}</td>
         <td><button class="btn-sm" style="background:#ef444422;color:#ef4444"
             onclick="deleteFacultySub('${escHtml(s.email)}')">×</button></td>
+      </tr>`).join('');
+    }
+
+    // Opt-Outs panel
+    document.getElementById('subs-optout-count').textContent =
+      optedOut.length + ' opted out';
+    document.getElementById('subs-optout-suggest').innerHTML =
+      subs.map(s=>`<option value="${escHtml(s.email)}">`).join('');
+    const ot = document.getElementById('subs-optout-tbody');
+    if (!optedOut.length) {
+      ot.innerHTML = '<tr><td colspan="5" style="color:var(--text3)">Nobody has opted out.</td></tr>';
+    } else {
+      ot.innerHTML = optedOut.map(s=>`<tr>
+        <td>${escHtml(s.email)}</td>
+        <td>${escHtml(s.name||'')}</td>
+        <td>${escHtml(s.department||'')}</td>
+        <td style="font-size:11px;color:var(--text3)">${shortDate(s.updated_at)}</td>
+        <td><button class="btn-sm" onclick="reEnrollUser('${escHtml(s.email)}')">Re-enroll (weekly)</button></td>
       </tr>`).join('');
     }
   } catch(e) {
@@ -3650,6 +3809,71 @@ async function deleteFacultySub(email) {
   await fetch('/api/subscriptions/faculty', {
     method:'DELETE', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({email})
+  });
+  loadSubscriptions();
+}
+
+// ══ Bulk add (2026-08-05) ══
+function openBulkForm() {
+  document.getElementById('subs-bulk-form').style.display = '';
+  document.getElementById('subs-faculty-form').style.display = 'none';
+  document.getElementById('bulk-text').value = '';
+  document.getElementById('bulk-status').textContent = '';
+  document.getElementById('bulk-result').innerHTML = '';
+  document.getElementById('bulk-cadence').value = 'weekly';
+  document.getElementById('bulk-text').focus();
+}
+function closeBulkForm() {
+  document.getElementById('subs-bulk-form').style.display = 'none';
+}
+async function importBulk() {
+  const text = document.getElementById('bulk-text').value.trim();
+  const status = document.getElementById('bulk-status');
+  const result = document.getElementById('bulk-result');
+  if (!text) { status.textContent = 'Paste at least one line first.'; return; }
+  status.textContent = 'Importing…';
+  result.innerHTML = '';
+  try {
+    const r = await fetch('/api/subscriptions/faculty/bulk', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({text, cadence: document.getElementById('bulk-cadence').value})
+    }).then(r=>r.json());
+    if (!r.ok) { status.textContent = 'Error: ' + (r.error||'unknown'); return; }
+    status.textContent = '';
+    let html = `<span style="color:#22c55e"><strong>${r.added}</strong> added</span>` +
+               ` &middot; <strong>${r.updated}</strong> updated` +
+               (r.skipped_count ? ` &middot; <span style="color:#f59e0b"><strong>${r.skipped_count}</strong> skipped</span>` : '');
+    if (r.skipped_count) {
+      html += '<div style="margin-top:4px;color:var(--text3)">' +
+        r.skipped.map(s=>`line ${s.line}: ${escHtml(s.entry)} — <em>${escHtml(s.reason)}</em>`).join('<br>') +
+        '</div>';
+    }
+    result.innerHTML = html;
+    loadSubscriptions();
+  } catch(e) { status.textContent = 'Error: ' + e.message; }
+}
+
+// ══ Opt-outs (2026-08-05) ══
+async function optOutUser() {
+  const email = document.getElementById('optout-email').value.trim();
+  const status = document.getElementById('optout-status');
+  if (!email || email.indexOf('@') < 0) { status.textContent = 'Enter a valid email.'; return; }
+  if (!confirm('Opt ' + email + ' out of all Grant Matcher emails? They will be protected from bulk re-enrollment.')) return;
+  status.textContent = 'Saving…';
+  try {
+    const r = await fetch('/api/subscriptions/faculty', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email, cadence:'off'})
+    }).then(r=>r.json());
+    status.textContent = r.ok ? 'Opted out.' : ('Error: ' + (r.error||'unknown'));
+    if (r.ok) { document.getElementById('optout-email').value = ''; loadSubscriptions(); }
+  } catch(e) { status.textContent = 'Error: ' + e.message; }
+}
+async function reEnrollUser(email) {
+  if (!confirm('Re-enroll ' + email + ' at weekly cadence?')) return;
+  await fetch('/api/subscriptions/faculty', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({email, cadence:'weekly'})
   });
   loadSubscriptions();
 }

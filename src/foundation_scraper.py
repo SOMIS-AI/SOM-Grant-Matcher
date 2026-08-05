@@ -1112,9 +1112,17 @@ def fetch_all_external_grants(seen_ids, config):
             if dropped:
                 logger.info(f"  '{key}': dropped {dropped} junk/nav title(s), kept {len(grants)}")
             all_grants.extend(grants)
-            sources_succeeded += 1
             per_source_results[key] = len(grants)
             health[key]["last_error"] = None
+
+            # "Succeeded" = the source yielded grants OR was demonstrably
+            # reachable this run (feed items fetched). A scraper that merely
+            # didn't THROW but got an empty JS-shell/blocked response is NOT a
+            # success — before 2026-08-04 those counted, so the diagnostic
+            # showed 14/14 succeeded while three sources had been dead for
+            # 77 straight runs.
+            if len(grants) > 0 or _reached_this_run.get(key, 0) > 0:
+                sources_succeeded += 1
 
             if len(grants) > 0:
                 health[key]["consecutive_zeros"] = 0
