@@ -32,6 +32,26 @@ email:
     - "set-via-azure-app-settings"
   subject_prefix: "[Grant Match]"
 
+# --- Faculty Feedback (pilot, 2026-08-04) ---
+# Per-match 👍/👎 links in the FACULTY digest emails, wired to a prefilled
+# Microsoft Form. Setup (one time):
+#   1. Create a Microsoft Form with exactly these questions:
+#        Q1 "Match ID"  — text (this is machine-filled; note in the description
+#                          that faculty should leave it as-is)
+#        Q2 "Verdict"   — choice with options EXACTLY: "Good match", "Not relevant"
+#        Q3 "Comments"  — text, long answer, optional ("Why? Optional but very helpful")
+#   2. Form → (…) → Get pre-filled link: type {match} into Match ID, pick
+#      "Good match" for Verdict, copy the generated URL.
+#   3. In that URL replace the encoded answer "Good%20match" (the Verdict value)
+#      with {verdict}, then paste it below as form_url_template.
+#   The app substitutes {match} and {verdict} (URL-encoded) at send time.
+#   {match} = "email|grant_number|run_date|confidence|match_type" — everything
+#   needed to join responses back to the diagnostics for calibration.
+#   Leave form_url_template empty to disable the links entirely.
+feedback:
+  enabled: true
+  form_url_template: ""
+
 # --- Faculty Profile Scraping ---
 faculty:
   profiles_url: "https://www.medschool.umaryland.edu/faculty/faculty-profiles/"
@@ -116,11 +136,13 @@ matching:
 
   # Minimum confidence score to include a match in results and the email digest.
   # 0 = include all matches (no filtering). Raise to 20-30 to suppress weak matches.
-  min_confidence_score: 45              # Raised 35->45 (2026-05-27). At 35%, broad infrastructure grants
-                                          # (NCORP, cancer-informatics, archived-data) filled the per-grant
-                                          # cap down to 36-42% with marginal matches (~81% of the 35%+ pool
-                                          # sat below 45%). 45 trims that padding; genuine grants (TBI/prostate,
-                                          # 60-94%) are unaffected. Pairs with the higher cap below.
+  min_confidence_score: 50              # Raised 35->45 (2026-05-27), 45->50 (2026-08-04) for the faculty
+                                          # pilot: the Jul-26..Aug-04 diag review showed 65% of delivered
+                                          # matches sat at 45-49 — mostly semantic-only rows with no visible
+                                          # justification. 50 gives faculty a cleaner first impression;
+                                          # the 👍/👎 feedback data will tell us where to set this properly.
+                                          # (Historical context, 05-27: at 35%, broad infrastructure grants
+                                          # filled the per-grant cap with marginal matches.)
 
   # v4.1 — New parameters
   max_matches_per_grant: 40              # Cap faculty matches per grant. Keeps email digest manageable
@@ -173,7 +195,11 @@ matching:
   # sim is only ~0.32 — well below the 0.40 threshold, so she never reaches this
   # floor at all. Catching her needs richer faculty embedding text (publications,
   # not just self-listed keywords), not a lower floor. See embedder.faculty_to_text.
-  min_semantic_confidence: 42
+  # 2026-08-04: raised 42->50 with min_confidence_score for the faculty pilot —
+  # otherwise the semantic channel would keep flooding the 42-49 band the pilot
+  # floor is meant to cut. sim>=0.50 is genuinely strong for MiniLM (its ceiling
+  # over 10 days of diags was 0.573). Revisit both floors once 👍/👎 data lands.
+  min_semantic_confidence: 50
 
   # ── Semantic distinctive-concept guard (2026-06-26) ───────────────────────
   # Publication-enriched embeddings (fix #4) raise recall but reintroduce the
@@ -283,9 +309,11 @@ matching:
   # so we can tune the term lists or disable. Config-only; no re-scrape.
   clinical_basic_filter:
     enabled: true
-    report_only: true             # PHASE-1: log who WOULD be suppressed (diag) but don't drop.
-                                    # Flip to false once the 6/24 diag confirms the classifier's
-                                    # precision on real faculty keyword pools. true = validation mode.
+    report_only: false            # FLIPPED LIVE 2026-08-04 (user approved). In 6 weeks of
+                                    # report-only validation the filter fired once (2026-06-25,
+                                    # 5 basic scientists on an AIDS Research Center grant) and the
+                                    # call was correct. Conservative trigger conditions + full
+                                    # diagnostic audit trail (clinical_basic_suppressed) retained.
     # Grant requires human-subjects / clinical / registry / direct-services work.
     # NOTE: "Clinical Trials Not Allowed" is NOT a clinical-required signal (it
     # permits basic research), so we match "required/optional" but not that.
@@ -611,6 +639,10 @@ matching:
     - "learning"         # accepted risk: "machine learning" still keeps "machine"
     - "novel"
     - "informatics"      # "cancer informatics" survives (cancer not a stop)
+    # ── 2026-08-04 additions (10-day diag review) ──
+    - "white"            # proper-noun leak: "Ryan White HIV/AIDS Program" matched
+                         # faculty on the bare token 'white' (48-62% conf, 08-01).
+                         # Phrase-safe: "white matter" survives the phrase-level check.
 
 # --- Logging ---
 logging:
@@ -683,6 +715,13 @@ external_sources:
     # stanford_rmg scrapes Stanford's internal research-admin site (process pages
     # like "Budget Development", "Subaward Closeout") — not a funding source.
     - "stanford_rmg"
+    # 2026-08-04 (10-day diag review): all three below hit 77 consecutive
+    # zero-content runs since 2026-05-25 with last_reachable=null — same
+    # JS-rendered/blocked failure mode as czi. Disabled per the czi precedent;
+    # re-enable individually only if a headless/bespoke scraper is built.
+    - "alexs_lemonade"
+    - "alzheimers_assoc"
+    - "proposal_central"
   #
   # Available source keys:
   #   Tier 3 — Major Biomedical Research Funders:

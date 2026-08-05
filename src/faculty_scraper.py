@@ -21,6 +21,7 @@ All external sources merge keywords rather than replace; UMSOM profile keywords
 always appear first (highest trust). Sources are tracked per faculty member.
 """
 
+import html
 import json
 import logging
 import re
@@ -92,7 +93,11 @@ DEPARTMENT_PAGES = [
 
 
 def clean_text(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip()
+    # html.unescape: dept pages carry entities ("Epidemiology &amp; Public
+    # Health") which otherwise render literally in the digest/Excel (seen in
+    # every report through 2026-08-04). Decode at capture so names/departments
+    # are stored clean.
+    return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
 def discover_department_pages(session: requests.Session, index_url: str) -> list:

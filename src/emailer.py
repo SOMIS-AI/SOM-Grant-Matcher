@@ -12,7 +12,10 @@ Optional:
 
 import logging
 import os
+import re
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
+from urllib.parse import quote
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -139,15 +142,148 @@ def _get_match_type(m) -> str:
     return mt or "keyword"
 
 
+# ── Faculty feedback links (2026-08-04, pilot) ────────────────────────────────
+# Per-match 👍/👎 links in the faculty digest, wired to a prefilled Microsoft
+# Form. The config supplies a URL TEMPLATE built once from the Form's
+# "Get pre-filled link" feature with three placeholders the app substitutes:
+#   {match}   → "email|grant_number|run_date|confidence|match_type" (the label
+#               record — carries everything needed to join feedback back to the
+#               diagnostics for calibration)
+#   {verdict} → "Good match" / "Not relevant" (must EXACTLY equal the Form's
+#               choice labels)
+# set_feedback_config() is called from main.load_config() so every entry point
+# (scheduler, --send-digest, manual) picks it up. Empty template = links off.
+
+_FEEDBACK_CFG: dict = {}
+
+
+def set_feedback_config(feedback_cfg: dict):
+    global _FEEDBACK_CFG
+    _FEEDBACK_CFG = feedback_cfg or {}
+
+
+def _feedback_url(match_id: str, verdict: str) -> str:
+    tmpl = (_FEEDBACK_CFG.get("form_url_template") or "").strip()
+    if not tmpl or not _FEEDBACK_CFG.get("enabled", True):
+        return ""
+    return (tmpl.replace("%7Bmatch%7D", quote(match_id, safe=""))   # tolerate pre-encoded template
+                .replace("%7Bverdict%7D", quote(verdict, safe=""))
+                .replace("{match}", quote(match_id, safe=""))
+                .replace("{verdict}", quote(verdict, safe="")))
+
+
+def _match_feedback_id(m, grant: dict, run_date: str) -> str:
+    email = getattr(m, "faculty_email", None) or (m.get("faculty_email", "") if isinstance(m, dict) else "")
+    gid = grant.get("number") or grant.get("id") or grant.get("title", "")[:60]
+    return f"{email}|{gid}|{run_date}|{_get_conf(m)}|{_get_match_type(m)}"
+
+
+def _feedback_links_html(m, grant: dict, run_date: str) -> str:
+    """Two compact 👍/👎 links for one match row. '' when feedback is not
+    configured OR run_date is empty (dept-admin emails pass no run_date —
+    admins shouldn't rate matches on faculty's behalf)."""
+    if not run_date:
+        return ""
+    mid = _match_feedback_id(m, grant, run_date)
+    up = _feedback_url(mid, "Good match")
+    down = _feedback_url(mid, "Not relevant")
+    if not up:
+        return ""
+    return (
+        f"<div style='margin-top:4px;font-size:11px;'>"
+        f"<a href='{esc(up)}' target='_blank' style='color:#2e7d32;text-decoration:none;"
+        f"border:1px solid #a5d6a7;background:#e8f5e9;border-radius:10px;padding:2px 8px;margin-right:6px;'>"
+        f"&#128077; Good match</a>"
+        f"<a href='{esc(down)}' target='_blank' style='color:#c62828;text-decoration:none;"
+        f"border:1px solid #ef9a9a;background:#ffebee;border-radius:10px;padding:2px 8px;'>"
+        f"&#128078; Not relevant</a></div>"
+    )
+
+
+# ── NOFO series clustering (2026-08-04) ────────────────────────────────────────
+# Agencies often post near-identical NOFOs as a series (2026-08-04: nine CDC-GHC
+# "global health security … in <Country>" grants produced 9 near-duplicate cards
+# and 70 overlapping faculty rows in one digest). Cluster same-agency grants
+# whose titles are near-identical (token-Jaccard OR difflib ratio) and render
+# ONE card per series: union of faculty (max confidence each) + a link list of
+# every variant. Excel keeps one tab per grant — this is presentation-only.
+
+def _series_title_tokens(title: str) -> set:
+    toks = re.findall(r"[a-z]{3,}", (title or "").lower())
+    out = set()
+    for t in toks:
+        for suf in ("ships", "ing", "ers", "s"):   # light stemming: partnerships/partners
+            if len(t) > 5 and t.endswith(suf):
+                t = t[: -len(suf)]
+                break
+        out.add(t)
+    return out
+
+
+def _series_similar(t1: str, t2: str,
+                    jaccard_min: float = 0.5, ratio_min: float = 0.48) -> bool:
+    a, b = _series_title_tokens(t1), _series_title_tokens(t2)
+    if len(a & b) / max(1, len(a | b)) >= jaccard_min:
+        return True
+    return SequenceMatcher(None, (t1 or "").lower(), (t2 or "").lower()).ratio() >= ratio_min
+
+
+def cluster_grant_series(matched_results: list) -> list:
+    """Group {grant, matches} results into series (single-linkage, same agency
+    only). Returns a list of clusters, each a list of results. Validated
+    2026-08-04 against the Aug-4 digest: the 9 CDC-GHC country NOFOs form one
+    cluster; four distinct same-family CDC grants all stay separate."""
+    clusters: list[list] = []
+    for r in matched_results:
+        g = r["grant"]
+        ag = (g.get("agency") or "").strip().lower()
+        placed = False
+        for c in clusters:
+            if ag != (c[0]["grant"].get("agency") or "").strip().lower():
+                continue
+            if any(_series_similar(g.get("title", ""), m["grant"].get("title", ""))
+                   for m in c):
+                c.append(r)
+                placed = True
+                break
+        if not placed:
+            clusters.append([r])
+    return clusters
+
+
+def merge_series_cluster(cluster: list) -> dict:
+    """Collapse one cluster into a single {grant, matches, series} result.
+    Primary grant = most matches (ties → best confidence). Faculty union keeps
+    each person's highest-confidence row so nobody disappears. `series` lists
+    every variant for link rendering ([] for singleton clusters)."""
+    if len(cluster) == 1:
+        return {**cluster[0], "series": []}
+    primary = max(cluster, key=lambda r: (len(r["matches"]),
+                                          _get_conf(r["matches"][0]) if r["matches"] else 0))
+    best_by_name: dict = {}
+    for r in cluster:
+        for m in r["matches"]:
+            name = getattr(m, "faculty_name", None) or (m.get("faculty_name", "") if isinstance(m, dict) else "")
+            if name not in best_by_name or _get_conf(m) > _get_conf(best_by_name[name]):
+                best_by_name[name] = m
+    merged = sorted(best_by_name.values(), key=_get_conf, reverse=True)
+    series = [{"title": r["grant"].get("title", ""),
+               "link": r["grant"].get("link", ""),
+               "matches": len(r["matches"])} for r in cluster]
+    return {"grant": primary["grant"], "matches": merged, "series": series}
+
+
 def build_html_email(matched_results: list, run_date: str, dashboard_url: str = "",
                      digest_label: str = "Daily") -> str:
     total_grants = len(matched_results)
     total_faculty_matches = sum(len(r["matches"]) for r in matched_results)
 
-    # Sort by best confidence score descending, then by faculty count
+    # Collapse NOFO series (e.g. per-country CDC twins) into one card each,
+    # then sort by best confidence score descending, then by faculty count
     def _best_conf(r):
         return _get_conf(r["matches"][0]) if r["matches"] else 0
-    sorted_results = sorted(matched_results, key=lambda r: (_best_conf(r), len(r["matches"])), reverse=True)
+    merged_results = [merge_series_cluster(c) for c in cluster_grant_series(matched_results)]
+    sorted_results = sorted(merged_results, key=lambda r: (_best_conf(r), len(r["matches"])), reverse=True)
 
     # --- Stats bar: top agencies ---
     agencies = {}
@@ -165,6 +301,25 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
     for result in sorted_results:
         grant   = result["grant"]
         matches = result["matches"]
+        series  = result.get("series") or []
+
+        # Series strip: every variant NOFO in the cluster, each with its own link
+        series_html = ""
+        if series:
+            items = "".join(
+                f'<div style="font-size:12px;color:#334155;margin:3px 0;">&#8226; '
+                f'<a href="{esc(s["link"] or "#")}" style="color:#1a3a6b;text-decoration:none;">'
+                f'{esc(s["title"][:110])}</a>'
+                f' <span style="color:#94a3b8;">({s["matches"]} match{"es" if s["matches"] != 1 else ""})</span></div>'
+                for s in series
+            )
+            series_html = (
+                f'<div style="background:#f6f8fb;border-top:1px solid #e8edf5;padding:10px 20px 12px;">'
+                f'<div style="font-size:11px;color:#888;font-weight:600;text-transform:uppercase;'
+                f'letter-spacing:0.5px;margin-bottom:4px;">'
+                f'Grant series &mdash; {len(series)} similar opportunities (faculty matches combined above)</div>'
+                f'{items}</div>'
+            )
 
         deadline_html = _days_until(grant.get("close_date", ""))
         award_str  = format_currency(grant.get("award_ceiling")) if grant.get("award_ceiling") else ""
@@ -265,7 +420,7 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
             </tbody>
           </table>
         </div>
-
+        {series_html}
       </div>"""
 
     return f"""<!DOCTYPE html>
@@ -352,11 +507,17 @@ def build_text_body(matched_results: list, run_date: str, dashboard_url: str = "
     if dashboard_url:
         lines += [f"Full dashboard: {dashboard_url}", ""]
 
-    sorted_results = sorted(matched_results, key=lambda r: len(r["matches"]), reverse=True)
+    merged_results = [merge_series_cluster(c) for c in cluster_grant_series(matched_results)]
+    sorted_results = sorted(merged_results, key=lambda r: len(r["matches"]), reverse=True)
     for result in sorted_results:
         grant   = result["grant"]
         matches = result["matches"]
+        series  = result.get("series") or []
         lines.append(f"GRANT: {grant['title']}")
+        if series:
+            lines.append(f"  (series of {len(series)} similar opportunities — faculty matches combined)")
+            for s in series:
+                lines.append(f"    * {s['title'][:90]} — {s['link']}")
         lines.append(f"  Link:    {grant.get('link','N/A')}")
         if grant.get("agency"):
             lines.append(f"  Agency:  {grant['agency']}")
@@ -544,15 +705,21 @@ def _ledger(kind: str, recipients: list, subject: str):
         logger.warning(f"Email ledger record failed ({kind}): {e}")
 
 
-def _faculty_grants_table_html(matches_by_grant: list, dashboard_url: str = "") -> str:
+def _faculty_grants_table_html(matches_by_grant: list, dashboard_url: str = "",
+                               run_date: str = "") -> str:
     """Render a compact HTML table of grants. `matches_by_grant` is a list of
     {grant, matches} entries (same shape as the admin digest), but only one
     match per grant (the recipient themselves for faculty emails, OR multiple
     faculty for dept-admin emails)."""
     rows_html = []
-    for r in matches_by_grant:
+    # Collapse NOFO series here too — a faculty member matched on 5 country
+    # variants of one CDC NOFO gets ONE row (their best confidence) plus a
+    # compact list of the sibling opportunities.
+    merged = [merge_series_cluster(c) for c in cluster_grant_series(matches_by_grant)]
+    for r in merged:
         g = r["grant"]
         ms = r["matches"]
+        series = r.get("series") or []
         title  = g.get("title", "")
         agency = g.get("agency", "")
         number = g.get("number", "")
@@ -574,6 +741,7 @@ def _faculty_grants_table_html(matches_by_grant: list, dashboard_url: str = "") 
                 f"<strong>{esc(name)}</strong>{dept_str} "
                 f"<span style='background:#dbeafe;color:#1e3a8a;padding:1px 6px;border-radius:3px;font-size:11px;margin-left:4px'>{conf}%</span>"
                 f"<div style='font-size:11px;color:#64748b;margin-left:4px'>{esc(kw_str)}</div>"
+                f"{_feedback_links_html(m, g, run_date)}"
                 f"</div>"
             )
 
@@ -583,12 +751,29 @@ def _faculty_grants_table_html(matches_by_grant: list, dashboard_url: str = "") 
         if ceil:   meta_parts.append(f"Up to {ceil}")
         meta_html = " &nbsp;&middot;&nbsp; ".join(meta_parts)
 
+        series_html = ""
+        if series:
+            items = "".join(
+                f"<div style='font-size:11px;color:#475569;margin:2px 0'>&#8226; "
+                f"<a href='{esc(s['link'] or '#')}' target='_blank' style='color:#1e3a8a;text-decoration:none'>"
+                f"{esc(s['title'][:95])}</a></div>"
+                for s in series
+            )
+            series_html = (
+                f"<div style='margin-top:8px;background:#f8fafc;border:1px solid #e5e7eb;"
+                f"border-radius:4px;padding:6px 10px'>"
+                f"<div style='font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;"
+                f"letter-spacing:.05em;margin-bottom:2px'>Series of {len(series)} similar opportunities</div>"
+                f"{items}</div>"
+            )
+
         rows_html.append(
             f"<tr><td style='padding:14px 18px;border-bottom:1px solid #e5e7eb;vertical-align:top'>"
             f"<div style='font-size:14px;line-height:1.35'>{title_html}</div>"
             f"<div style='font-size:11px;color:#64748b;margin-top:3px'>{meta_html}</div>"
             f"<div style='font-size:11px;color:#dc2626;margin-top:4px'><strong>Deadline:</strong> {esc(close)}</div>"
             f"<div style='margin-top:8px'>{''.join(match_lines)}</div>"
+            f"{series_html}"
             f"</td></tr>"
         )
 
@@ -627,8 +812,32 @@ def build_faculty_email(faculty_name: str, matches_for_faculty: list,
     intro = (f"You have <strong>{n}</strong> grant match"
              f"{'' if n==1 else 'es'} {period_phrase}. Each match below was selected by the "
              f"SOM Grant Matcher's hybrid keyword + AI matching against your research keywords.")
-    body = _faculty_grants_table_html(matches_for_faculty, dashboard_url)
-    footer = (f"<p style='font-size:11px;color:#64748b;margin-top:18px;line-height:1.5'>"
+    body = _faculty_grants_table_html(matches_for_faculty, dashboard_url, run_date=run_date)
+
+    # Email-level escape hatch: one click to say the whole digest missed.
+    # Cheap, honest signal that would otherwise be lost to silence.
+    fb_email = ""
+    for r in matches_for_faculty:
+        for m in r["matches"]:
+            fb_email = getattr(m, "faculty_email", "") or ""
+            if fb_email:
+                break
+        if fb_email:
+            break
+    none_url = _feedback_url(f"{fb_email}|ALL|{run_date}|-|-", "Not relevant")
+    none_link = (
+        f"<p style='text-align:center;margin:16px 0 0;font-size:12px'>"
+        f"<a href='{esc(none_url)}' target='_blank' style='color:#64748b'>"
+        f"None of these matches are relevant to my research &rarr;</a></p>"
+    ) if none_url else ""
+    fb_note = (
+        "<p style='font-size:11px;color:#64748b;margin-top:14px;line-height:1.5'>"
+        "Your <strong>Good match / Not relevant</strong> clicks teach the matcher &mdash; "
+        "feedback directly improves what you're sent next.</p>"
+    ) if none_url else ""
+
+    footer = (f"{none_link}{fb_note}"
+              f"<p style='font-size:11px;color:#64748b;margin-top:18px;line-height:1.5'>"
               f"{esc(UNSUB_NOTICE)}</p>")
     html = (
         f"<!DOCTYPE html><html><body style='font-family:Arial,sans-serif;"
