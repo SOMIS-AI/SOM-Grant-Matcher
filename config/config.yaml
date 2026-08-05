@@ -32,22 +32,29 @@ email:
     - "set-via-azure-app-settings"
   subject_prefix: "[Grant Match]"
 
-# --- Faculty Feedback (pilot, 2026-08-04) ---
-# Per-match 👍/👎 links in the FACULTY digest emails, wired to a prefilled
-# Microsoft Form. Setup (one time):
+# --- Faculty Feedback (pilot, 2026-08-04; rater + opt-out 2026-08-05) ---
+# Per-match 👍/👎 links in the faculty AND dept-research-administrator emails
+# (admins answer ON BEHALF of their faculty), plus a form-recorded opt-out
+# link in every footer — all wired to ONE prefilled Microsoft Form.
+# Setup (one time):
 #   1. Create a Microsoft Form with exactly these questions:
-#        Q1 "Match ID"  — text (this is machine-filled; note in the description
-#                          that faculty should leave it as-is)
-#        Q2 "Verdict"   — choice with options EXACTLY: "Good match", "Not relevant"
+#        Q1 "Match ID"  — text (machine-filled; note in the description that
+#                          respondents should leave it as-is)
+#        Q2 "Verdict"   — choice with options EXACTLY:
+#                          "Good match", "Not relevant", "Opt out of emails"
 #        Q3 "Comments"  — text, long answer, optional ("Why? Optional but very helpful")
 #   2. Form → (…) → Get pre-filled link: type {match} into Match ID, pick
 #      "Good match" for Verdict, copy the generated URL.
 #   3. In that URL replace the encoded answer "Good%20match" (the Verdict value)
 #      with {verdict}, then paste it below as form_url_template.
 #   The app substitutes {match} and {verdict} (URL-encoded) at send time.
-#   {match} = "email|grant_number|run_date|confidence|match_type" — everything
-#   needed to join responses back to the diagnostics for calibration.
-#   Leave form_url_template empty to disable the links entirely.
+#   {match} = "email|grant_number|run_date|confidence|match_type|rater" where
+#   rater is "self" (the faculty member) or "admin" (a dept research admin
+#   answering on their behalf). Opt-outs arrive as
+#   "recipient_email|OPTOUT|run_date|-|-|rater" with Verdict "Opt out of
+#   emails" — process them by unenrolling the recipient in subscriptions.
+#   Leave form_url_template empty to disable the links entirely (opt-out then
+#   falls back to a mailto link so recipients always have a way out).
 feedback:
   enabled: true
   form_url_template: ""

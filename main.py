@@ -620,7 +620,8 @@ def _send_personalized_digests(config: dict, matched_results: list,
                 logger.warning("SendGrid daily cap reached — skipping remaining dept-admin digests.")
                 return stats
             subject, html = build_dept_admin_email(dept_label, dept_bucket, run_date,
-                                                   dashboard_url, digest_label=digest_label)
+                                                   dashboard_url, digest_label=digest_label,
+                                                   recipient_email=admin["email"])
             sent = send_personal_email(config, admin["email"], subject, html)
             if not sent:  # one retry, same rationale as the faculty loop
                 time.sleep(2)

@@ -189,32 +189,49 @@ def _feedback_url(match_id: str, verdict: str) -> str:
                 .replace("{verdict}", quote(verdict, safe="")))
 
 
-def _match_feedback_id(m, grant: dict, run_date: str) -> str:
+def _match_feedback_id(m, grant: dict, run_date: str, rater: str = "self") -> str:
+    """Label record: email|grant#|run_date|confidence|match_type|rater.
+    rater='self' = the faculty member themselves; 'admin' = a department
+    research administrator answering ON BEHALF of that faculty member."""
     email = getattr(m, "faculty_email", None) or (m.get("faculty_email", "") if isinstance(m, dict) else "")
     gid = grant.get("number") or grant.get("id") or grant.get("title", "")[:60]
-    return f"{email}|{gid}|{run_date}|{_get_conf(m)}|{_get_match_type(m)}"
+    return f"{email}|{gid}|{run_date}|{_get_conf(m)}|{_get_match_type(m)}|{rater}"
 
 
-def _feedback_links_html(m, grant: dict, run_date: str) -> str:
-    """Two compact 👍/👎 links for one match row. '' when feedback is not
-    configured OR run_date is empty (dept-admin emails pass no run_date —
-    admins shouldn't rate matches on faculty's behalf)."""
+def _feedback_links_html(m, grant: dict, run_date: str, rater: str = "self") -> str:
+    """Two compact 👍/👎 links for one match row; '' when feedback is not
+    configured or run_date is missing."""
     if not run_date:
         return ""
-    mid = _match_feedback_id(m, grant, run_date)
+    mid = _match_feedback_id(m, grant, run_date, rater)
     up = _feedback_url(mid, "Good match")
     down = _feedback_url(mid, "Not relevant")
     if not up:
         return ""
     return (
-        f"<div style='margin-top:4px;font-size:11px;'>"
+        f"<div style='margin-top:6px;font-size:11px;'>"
         f"<a href='{esc(up)}' target='_blank' style='color:#2e7d32;text-decoration:none;"
-        f"border:1px solid #a5d6a7;background:#e8f5e9;border-radius:10px;padding:2px 8px;margin-right:6px;'>"
-        f"&#128077; Good match</a>"
+        f"border:1px solid #a5d6a7;background:#e8f5e9;border-radius:10px;padding:2px 8px;margin-right:6px;"
+        f"font-weight:600;'>&#128077; Good match</a>"
         f"<a href='{esc(down)}' target='_blank' style='color:#c62828;text-decoration:none;"
-        f"border:1px solid #ef9a9a;background:#ffebee;border-radius:10px;padding:2px 8px;'>"
-        f"&#128078; Not relevant</a></div>"
+        f"border:1px solid #ef9a9a;background:#ffebee;border-radius:10px;padding:2px 8px;"
+        f"font-weight:600;'>&#128078; Not relevant</a></div>"
     )
+
+
+def _optout_link_html(recipient_email: str, run_date: str, rater: str = "self",
+                      color: str = "#94a3b8") -> str:
+    """Opt-out link recorded through the same Microsoft Form (Verdict choice
+    'Opt out of emails' — the Form must carry that third choice). Falls back to
+    a mailto link when no form template is configured, so recipients always
+    have a way out."""
+    mid = f"{recipient_email}|OPTOUT|{run_date}|-|-|{rater}"
+    url = _feedback_url(mid, "Opt out of emails")
+    if url:
+        return (f'<a href="{esc(url)}" target="_blank" style="color:{color};">'
+                f'Opt out of these emails</a>')
+    return (f'<a href="mailto:help@som.umaryland.edu?subject=Grant%20Matcher%20opt-out" '
+            f'style="color:{color};">Opt out of these emails</a>')
 
 
 # ── NOFO series clustering (2026-08-04) ────────────────────────────────────────
@@ -290,31 +307,14 @@ def merge_series_cluster(cluster: list) -> dict:
     return {"grant": primary["grant"], "matches": merged, "series": series}
 
 
-def build_html_email(matched_results: list, run_date: str, dashboard_url: str = "",
-                     digest_label: str = "Daily") -> str:
-    total_grants = len(matched_results)
-    total_faculty_matches = sum(len(r["matches"]) for r in matched_results)
-
-    # Collapse NOFO series (e.g. per-country CDC twins) into one card each,
-    # then sort by best confidence score descending, then by faculty count
-    def _best_conf(r):
-        return _get_conf(r["matches"][0]) if r["matches"] else 0
-    merged_results = [merge_series_cluster(c) for c in cluster_grant_series(matched_results)]
-    sorted_results = sorted(merged_results, key=lambda r: (_best_conf(r), len(r["matches"])), reverse=True)
-
-    # --- Stats bar: top agencies ---
-    agencies = {}
-    for r in matched_results:
-        ag = r["grant"].get("agency", "Unknown") or "Unknown"
-        agencies[ag] = agencies.get(ag, 0) + 1
-    top_agencies = sorted(agencies.items(), key=lambda x: x[1], reverse=True)[:4]
-    agency_pills = "".join(
-        f'<span style="background:#e8f4fd;color:#1a4b6e;padding:3px 10px;border-radius:12px;'        f'font-size:12px;margin:2px;display:inline-block;">{esc(ag)} ({n})</span>'
-        for ag, n in top_agencies
-    )
-
-    # ── Build one card per grant ────────────────────────────────────────────
-    grant_cards_html = ""
+def _grant_cards_html(sorted_results: list, run_date: str = "",
+                      fb_rater: str = "") -> str:
+    """The branded grant-card stack shared by the admin digest, the personal
+    faculty email, and the dept-admin email. Each card: navy grant header +
+    faculty match table + optional series strip. When fb_rater is set
+    ('self'/'admin'), every faculty row carries Good match / Not relevant
+    feedback links tagged with that rater."""
+    cards = ""
     for result in sorted_results:
         grant   = result["grant"]
         matches = result["matches"]
@@ -347,12 +347,10 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
         if agency_str: meta_parts.append(agency_str)
         if number_str: meta_parts.append(number_str)
         if award_str:  meta_parts.append(f"Up to {award_str}")
-        # esc() the scraped parts; the &middot; separator stays literal HTML
         meta_html = " &nbsp;&middot;&nbsp; ".join(esc(p) for p in meta_parts)
 
-        deadline_cell = deadline_html if deadline_html else esc(grant.get("close_date","") or "—")
+        deadline_cell = deadline_html if deadline_html else esc(grant.get("close_date", "") or "—")
 
-        # ── Faculty rows — one per matched faculty member ───────────────────
         faculty_rows_html = ""
         for m in matches:
             conf   = _get_conf(m)
@@ -361,11 +359,10 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
             mtype  = _get_match_type(m)
             kws    = _get_matched_keywords(m)
 
-            fname = getattr(m, "faculty_name", None) or (m.get("faculty_name","") if isinstance(m, dict) else "")
+            fname = getattr(m, "faculty_name", None) or (m.get("faculty_name", "") if isinstance(m, dict) else "")
             furl  = getattr(m, "faculty_url",  None) or (m.get("faculty_url", "") if isinstance(m, dict) else "")
-            fdept = getattr(m, "faculty_department", None) or (m.get("faculty_department","") if isinstance(m, dict) else "")
+            fdept = getattr(m, "faculty_department", None) or (m.get("faculty_department", "") if isinstance(m, dict) else "")
 
-            # Match type badge
             if mtype == "both":
                 type_badge = '<span style="background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;">keyword + AI</span>'
             elif mtype == "semantic":
@@ -373,7 +370,6 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
             else:
                 type_badge = '<span style="background:#f3e5f5;color:#6a1b9a;border:1px solid #ce93d8;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;">keyword</span>'
 
-            # Keyword pills
             if kws:
                 kw_html = "".join(
                     f'<span style="display:inline-block;background:#f0f4ff;color:#1a3a6b;border:1px solid #c5d0e8;'                    f'padding:2px 8px;border-radius:10px;font-size:11px;margin:2px 2px 2px 0;">{esc(kw)}</span>'
@@ -382,7 +378,8 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
             else:
                 kw_html = '<span style="color:#aaa;font-size:11px;font-style:italic;">semantic similarity match</span>'
 
-            # Faculty name — linked if URL available
+            fb_html = _feedback_links_html(m, grant, run_date, rater=fb_rater) if fb_rater else ""
+
             if furl:
                 name_html = f'<a href="{esc(furl)}" style="color:#1a3a6b;text-decoration:none;font-weight:600;font-size:13px;">{esc(fname)}</a>'
             else:
@@ -401,11 +398,11 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
                 <div style="margin-top:4px;">{type_badge}</div>
               </td>
               <td style="padding:8px 0 8px 8px;vertical-align:top;border-bottom:1px solid #f0f0f0;">
-                {kw_html}
+                {kw_html}{fb_html}
               </td>
             </tr>"""
 
-        grant_cards_html += f"""
+        cards += f"""
       <div style="background:#fff;border:1px solid #dde4ed;border-radius:8px;margin-bottom:20px;overflow:hidden;">
 
         <!-- Grant header -->
@@ -439,7 +436,13 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
         </div>
         {series_html}
       </div>"""
+    return cards
 
+
+def _branded_shell(title_gold_line: str, date_line: str, content_html: str,
+                   footer_extra_html: str = "") -> str:
+    """The navy/gold UMSOM chrome (logo bar, title band, footer) shared by all
+    notification emails."""
     return f"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -448,21 +451,73 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
 
     <!-- Header -->
     <div style="background:#1a2e45;border-radius:8px 8px 0 0;overflow:hidden;">
-      <!-- Logo bar -->
       <div style="background:#ffffff;padding:14px 24px;border-bottom:3px solid #c8a84b;">
         <img src="{LOGO_SRC}" alt="University of Maryland School of Medicine" width="200" height="50"
              style="display:block;" />
       </div>
-      <!-- Title bar -->
       <div style="padding:20px 24px 18px;">
         <h1 style="margin:0;font-size:18px;font-weight:700;color:#ffffff;letter-spacing:0.3px;line-height:1.3;">
           University of Maryland School of Medicine<br>
-          <span style="color:#c8a84b;">AI Grant Match Application Notification — {digest_label} Email</span>
+          <span style="color:#c8a84b;">{title_gold_line}</span>
         </h1>
-        <p style="margin:8px 0 0;color:#a8c4e0;font-size:13px;">{run_date}</p>
+        <p style="margin:8px 0 0;color:#a8c4e0;font-size:13px;">{date_line}</p>
       </div>
     </div>
 
+    {content_html}
+
+    <!-- Footer -->
+    <div style="background:#1a2e45;padding:20px 24px;border-radius:8px;margin-top:8px;">
+      <img src="{LOGO_SRC}" alt="University of Maryland School of Medicine" width="160" height="40"
+           style="display:block;margin-bottom:14px;opacity:0.9;" />
+      {_about_link_html()}
+      <p style="margin:0 0 10px;color:#a8c4e0;font-size:12px;line-height:1.6;">
+        Grant data sourced from over 30 funding organizations and matched to SOM Faculty Profiles.
+      </p>
+      <p style="margin:0 0 10px;color:#a8c4e0;font-size:12px;line-height:1.6;">
+        The information provided in this application is intended to notify SOM faculty of potential grant
+        opportunities that may align with their subject matter expertise. This tool should be used in
+        conjunction with other methods for identifying funding opportunities and should not serve as the
+        sole source for grant discovery.
+      </p>
+      <p style="margin:0;color:#c8a84b;font-size:12px;line-height:1.6;font-style:italic;">
+        To optimize AI-driven grant recommendations used in this app, please periodically review and
+        refine the keywords in your SOM Faculty Profile.
+      </p>
+      {footer_extra_html}
+    </div>
+
+  </div>
+</body>
+</html>"""
+
+
+def build_html_email(matched_results: list, run_date: str, dashboard_url: str = "",
+                     digest_label: str = "Daily") -> str:
+    total_grants = len(matched_results)
+    total_faculty_matches = sum(len(r["matches"]) for r in matched_results)
+
+    # Collapse NOFO series (e.g. per-country CDC twins) into one card each,
+    # then sort by best confidence score descending, then by faculty count
+    def _best_conf(r):
+        return _get_conf(r["matches"][0]) if r["matches"] else 0
+    merged_results = [merge_series_cluster(c) for c in cluster_grant_series(matched_results)]
+    sorted_results = sorted(merged_results, key=lambda r: (_best_conf(r), len(r["matches"])), reverse=True)
+
+    # --- Stats bar: top agencies ---
+    agencies = {}
+    for r in matched_results:
+        ag = r["grant"].get("agency", "Unknown") or "Unknown"
+        agencies[ag] = agencies.get(ag, 0) + 1
+    top_agencies = sorted(agencies.items(), key=lambda x: x[1], reverse=True)[:4]
+    agency_pills = "".join(
+        f'<span style="background:#e8f4fd;color:#1a4b6e;padding:3px 10px;border-radius:12px;'        f'font-size:12px;margin:2px;display:inline-block;">{esc(ag)} ({n})</span>'
+        for ag, n in top_agencies
+    )
+
+    grant_cards_html = _grant_cards_html(sorted_results)
+
+    stats_row = f"""
     <!-- Stats row -->
     <div style="background:#fff;padding:16px 24px;border-left:1px solid #dde4ed;border-right:1px solid #dde4ed;
                 border-bottom:2px solid #e8edf2;display:flex;gap:0;">
@@ -483,31 +538,11 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
     <!-- Grant cards -->
     <div style="margin-top:16px;">
       {grant_cards_html}
-    </div>
+    </div>"""
 
-    <!-- Footer -->
-    <div style="background:#1a2e45;padding:20px 24px;border-radius:8px;margin-top:8px;">
-      <img src="{LOGO_SRC}" alt="University of Maryland School of Medicine" width="160" height="40"
-           style="display:block;margin-bottom:14px;opacity:0.9;" />
-      {_about_link_html()}
-      <p style="margin:0 0 10px;color:#a8c4e0;font-size:12px;line-height:1.6;">
-        Grant data sourced from over 30 funding organizations and matched to SOM Faculty Profiles.
-      </p>
-      <p style="margin:0 0 10px;color:#a8c4e0;font-size:12px;line-height:1.6;">
-        The information provided in this application is intended to notify SOM faculty of potential grant
-        opportunities that may align with their subject matter expertise. This tool should be used in
-        conjunction with other methods for identifying funding opportunities and should not serve as the
-        sole source for grant discovery.
-      </p>
-      <p style="margin:0;color:#c8a84b;font-size:12px;line-height:1.6;font-style:italic;">
-        To optimize AI-driven grant recommendations used in this app, please periodically review and
-        refine the keywords in your SOM Faculty Profile.
-      </p>
-    </div>
-
-  </div>
-</body>
-</html>"""
+    return _branded_shell(
+        f"AI Grant Match Application Notification &mdash; {digest_label} Email",
+        run_date, stats_row)
 
 
 def build_text_body(matched_results: list, run_date: str, dashboard_url: str = "",
@@ -689,10 +724,8 @@ def send_email(config: dict, matched_results: list, recipients: list = None,
 # manual-unsubscribe footer). Senders log every send to subscriptions.email_log
 # for audit + the SendGrid free-tier daily-cap accounting.
 
-UNSUB_NOTICE = (
-    "To change frequency (daily/weekly) or unsubscribe, please contact the "
-    "SOM IS support team at help@som.umaryland.edu."
-)
+# (UNSUB_NOTICE retired 2026-08-05 — replaced by the form-recorded opt-out
+# link + help contact in _footer_optout_html.)
 
 import html as _html_mod
 
@@ -723,117 +756,48 @@ def _ledger(kind: str, recipients: list, subject: str):
         logger.warning(f"Email ledger record failed ({kind}): {e}")
 
 
-def _faculty_grants_table_html(matches_by_grant: list, dashboard_url: str = "",
-                               run_date: str = "") -> str:
-    """Render a compact HTML table of grants. `matches_by_grant` is a list of
-    {grant, matches} entries (same shape as the admin digest), but only one
-    match per grant (the recipient themselves for faculty emails, OR multiple
-    faculty for dept-admin emails)."""
-    rows_html = []
-    # Collapse NOFO series here too — a faculty member matched on 5 country
-    # variants of one CDC NOFO gets ONE row (their best confidence) plus a
-    # compact list of the sibling opportunities.
-    merged = [merge_series_cluster(c) for c in cluster_grant_series(matches_by_grant)]
-    for r in merged:
-        g = r["grant"]
-        ms = r["matches"]
-        series = r.get("series") or []
-        title  = g.get("title", "")
-        agency = g.get("agency", "")
-        number = g.get("number", "")
-        close  = g.get("close_date", "") or "—"
-        link   = g.get("link", "")
-        ceil   = format_currency(g.get("award_ceiling", "")) if g.get("award_ceiling") else ""
-
-        # Aggregate match details (handles both 1-match faculty emails and many-match dept emails)
-        match_lines = []
-        for m in ms:
-            name = getattr(m, "faculty_name", None) or (m.get("faculty_name", "") if isinstance(m, dict) else "")
-            dept = getattr(m, "faculty_department", None) or (m.get("faculty_department", "") if isinstance(m, dict) else "")
-            conf = _get_conf(m)
-            kws  = _get_matched_keywords(m)
-            kw_str = ", ".join(kws[:6]) if kws else "semantic match"
-            dept_str = f" <span style='color:#94a3b8;font-size:11px'>· {esc(dept)}</span>" if dept else ""
-            match_lines.append(
-                f"<div style='margin:2px 0;font-size:12px;color:#334155'>"
-                f"<strong>{esc(name)}</strong>{dept_str} "
-                f"<span style='background:#dbeafe;color:#1e3a8a;padding:1px 6px;border-radius:3px;font-size:11px;margin-left:4px'>{conf}%</span>"
-                f"<div style='font-size:11px;color:#64748b;margin-left:4px'>{esc(kw_str)}</div>"
-                f"{_feedback_links_html(m, g, run_date)}"
-                f"</div>"
-            )
-
-        title_html = f'<a href="{esc(link)}" target="_blank" style="color:#1e3a8a;text-decoration:none;font-weight:600">{esc(title)}</a>' if link else esc(title)
-        meta_parts = [esc(agency)] if agency else []
-        if number: meta_parts.append(esc(number))
-        if ceil:   meta_parts.append(f"Up to {ceil}")
-        meta_html = " &nbsp;&middot;&nbsp; ".join(meta_parts)
-
-        series_html = ""
-        if series:
-            items = "".join(
-                f"<div style='font-size:11px;color:#475569;margin:2px 0'>&#8226; "
-                f"<a href='{esc(s['link'] or '#')}' target='_blank' style='color:#1e3a8a;text-decoration:none'>"
-                f"{esc(s['title'][:95])}</a></div>"
-                for s in series
-            )
-            series_html = (
-                f"<div style='margin-top:8px;background:#f8fafc;border:1px solid #e5e7eb;"
-                f"border-radius:4px;padding:6px 10px'>"
-                f"<div style='font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;"
-                f"letter-spacing:.05em;margin-bottom:2px'>Series of {len(series)} similar opportunities</div>"
-                f"{items}</div>"
-            )
-
-        rows_html.append(
-            f"<tr><td style='padding:14px 18px;border-bottom:1px solid #e5e7eb;vertical-align:top'>"
-            f"<div style='font-size:14px;line-height:1.35'>{title_html}</div>"
-            f"<div style='font-size:11px;color:#64748b;margin-top:3px'>{meta_html}</div>"
-            f"<div style='font-size:11px;color:#dc2626;margin-top:4px'><strong>Deadline:</strong> {esc(close)}</div>"
-            f"<div style='margin-top:8px'>{''.join(match_lines)}</div>"
-            f"{series_html}"
-            f"</td></tr>"
-        )
-
-    dash_link = (f"<p style='text-align:center;margin:14px 0 0;font-size:12px'>"
-                 f"<a href='{esc(dashboard_url)}' style='color:#1e3a8a'>Open the SOM Grant Matcher dashboard</a> "
-                 f"for full match detail and history.</p>") if dashboard_url else ""
-
-    return (
-        f"<table cellpadding='0' cellspacing='0' style='width:100%;border-collapse:collapse;"
-        f"background:#fff;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden'>"
-        f"{''.join(rows_html)}"
-        f"</table>"
-        f"{dash_link}"
+def _intro_panel_html(paragraphs: list) -> str:
+    """White intro panel that sits between the navy header and the grant
+    cards (same visual language as the digest's stats row)."""
+    ps = "".join(
+        f'<p style="margin:0 0 10px;font-size:13.5px;color:#334155;line-height:1.6;">{p}</p>'
+        for p in paragraphs
     )
+    return (f'<div style="background:#fff;padding:18px 24px 10px;'
+            f'border-left:1px solid #dde4ed;border-right:1px solid #dde4ed;'
+            f'border-bottom:2px solid #e8edf2;">{ps}</div>')
+
+
+def _footer_optout_html(recipient_email: str, run_date: str, rater: str) -> str:
+    """Opt-out + contact line for the navy footer."""
+    return (f"<p style='margin:10px 0 0;color:#a8c4e0;font-size:12px;line-height:1.6;'>"
+            f"{_optout_link_html(recipient_email, run_date, rater, color='#a8c4e0')}"
+            f" &nbsp;&middot;&nbsp; Questions or help: "
+            f"<a href='mailto:help@som.umaryland.edu' style='color:#a8c4e0;'>help@som.umaryland.edu</a></p>")
 
 
 def build_faculty_email(faculty_name: str, matches_for_faculty: list,
                         run_date: str, dashboard_url: str = "",
                         digest_label: str = "Daily") -> tuple[str, str]:
-    """Build (subject, html_body) for ONE faculty member's personal digest.
+    """Build (subject, html_body) for ONE faculty member's personal digest, in
+    the same branded navy/gold card style as the admin digest. Every match row
+    carries Good match / Not relevant links (rater 'self'); the footer carries
+    a form-recorded opt-out link.
 
     `matches_for_faculty` is the same {grant, matches:[Match]} shape used by
     send_email, already filtered to grants that THIS faculty matched on, and
-    each grant's `matches` list contains exactly this faculty member (so the
-    table renders consistently with the dept-admin builder).
+    each grant's `matches` list contains exactly this faculty member.
 
     `digest_label` is "Daily" (today's run) or "Weekly" (7-day roundup).
     """
     n = len(matches_for_faculty)
     is_weekly = digest_label.lower() == "weekly"
-    period_phrase = "this week" if is_weekly else "this run"
+    period_phrase = "over the past week" if is_weekly else "in today's run"
     subject_suffix = " (Weekly roundup)" if is_weekly else ""
     subject = (f"[SOM Grant Matcher] {n} grant match{'' if n==1 else 'es'} "
                f"for you - {run_date}{subject_suffix}")
-    greeting = f"Hello {esc(faculty_name.split()[0]) if faculty_name else 'Doctor'},"
-    intro = (f"You have <strong>{n}</strong> grant match"
-             f"{'' if n==1 else 'es'} {period_phrase}. Each match below was selected by the "
-             f"SOM Grant Matcher's hybrid keyword + AI matching against your research keywords.")
-    body = _faculty_grants_table_html(matches_for_faculty, dashboard_url, run_date=run_date)
 
-    # Email-level escape hatch: one click to say the whole digest missed.
-    # Cheap, honest signal that would otherwise be lost to silence.
+    # Recipient email: needed for the feedback ids and opt-out link
     fb_email = ""
     for r in matches_for_faculty:
         for m in r["matches"]:
@@ -842,81 +806,84 @@ def build_faculty_email(faculty_name: str, matches_for_faculty: list,
                 break
         if fb_email:
             break
-    none_url = _feedback_url(f"{fb_email}|ALL|{run_date}|-|-", "Not relevant")
+
+    merged = [merge_series_cluster(c) for c in cluster_grant_series(matches_for_faculty)]
+    cards = _grant_cards_html(merged, run_date, fb_rater="self")
+
+    intro = _intro_panel_html([
+        f"Hello {esc(faculty_name.split()[0]) if faculty_name else 'Doctor'},",
+        (f"You have <strong>{n}</strong> new grant match{'' if n==1 else 'es'} "
+         f"{period_phrase}, selected by the SOM Grant Matcher's hybrid keyword + AI "
+         f"matching against your research profile."),
+        ("Please click <strong>&#128077; Good match</strong> or "
+         "<strong>&#128078; Not relevant</strong> on each match &mdash; one click, no "
+         "login &mdash; your feedback directly improves what you're sent next."),
+    ])
+
+    none_url = _feedback_url(f"{fb_email}|ALL|{run_date}|-|-|self", "Not relevant")
     none_link = (
-        f"<p style='text-align:center;margin:16px 0 0;font-size:12px'>"
-        f"<a href='{esc(none_url)}' target='_blank' style='color:#64748b'>"
-        f"None of these matches are relevant to my research &rarr;</a></p>"
-    ) if none_url else ""
-    fb_note = (
-        "<p style='font-size:11px;color:#64748b;margin-top:14px;line-height:1.5'>"
-        "Your <strong>Good match / Not relevant</strong> clicks teach the matcher &mdash; "
-        "feedback directly improves what you're sent next.</p>"
+        f'<p style="text-align:center;margin:4px 0 0;font-size:12px;">'
+        f'<a href="{esc(none_url)}" target="_blank" style="color:#5a6b80;">'
+        f'None of these matches are relevant to my research &rarr;</a></p>'
     ) if none_url else ""
 
-    footer = (f"{none_link}{fb_note}"
-              f"<div style='margin-top:14px'>{_about_link_html(color='#1e3a8a')}</div>"
-              f"<p style='font-size:11px;color:#64748b;margin-top:18px;line-height:1.5'>"
-              f"{esc(UNSUB_NOTICE)}</p>")
-    html = (
-        f"<!DOCTYPE html><html><body style='font-family:Arial,sans-serif;"
-        f"background:#f8fafc;margin:0;padding:24px;color:#0f172a'>"
-        f"<div style='max-width:720px;margin:0 auto;background:#fff;padding:24px 28px;"
-        f"border-radius:8px;border:1px solid #e5e7eb'>"
-        f"<div style='border-bottom:2px solid #1e3a8a;padding-bottom:12px;margin-bottom:18px'>"
-        f"<div style='font-size:11px;color:#64748b;letter-spacing:.1em;text-transform:uppercase'>"
-        f"University of Maryland School of Medicine</div>"
-        f"<div style='font-size:18px;color:#1e3a8a;font-weight:700;margin-top:2px'>"
-        f"AI Grant Match Application Notification</div>"
-        f"<div style='font-size:12px;color:#94a3b8;margin-top:2px'>{esc(digest_label)} Email · {esc(run_date)}</div></div>"
-        f"<p style='font-size:13px;color:#334155'>{greeting}</p>"
-        f"<p style='font-size:13px;color:#334155;margin-bottom:14px'>{intro}</p>"
-        f"{body}{footer}"
-        f"</div></body></html>"
-    )
+    content = (f"{intro}"
+               f'<div style="margin-top:16px;">{cards}</div>'
+               f"{none_link}")
+
+    html = _branded_shell(
+        f"AI Grant Match Application Notification &mdash; {digest_label} Email",
+        run_date, content,
+        footer_extra_html=_footer_optout_html(fb_email, run_date, "self"))
     return subject, html
 
 
 def build_dept_admin_email(department: str, dept_matches: list,
                            run_date: str, dashboard_url: str = "",
-                           digest_label: str = "Daily") -> tuple[str, str]:
-    """Build (subject, html_body) for a department admin's digest. `dept_matches`
-    is the same {grant, matches:[Match]} shape filtered to grants where at least
-    one matched faculty is in this department; each grant's `matches` is also
+                           digest_label: str = "Daily",
+                           recipient_email: str = "") -> tuple[str, str]:
+    """Build (subject, html_body) for a department research administrator, in
+    the same branded card style as the admin digest. `dept_matches` is the
+    {grant, matches:[Match]} shape filtered to grants where at least one
+    matched faculty is in this department; each grant's `matches` is also
     filtered to ONLY those dept-faculty (avoiding leaking other depts' info).
+
+    Every faculty row carries Good match / Not relevant links recorded ON
+    BEHALF of that faculty member (rater 'admin'), and the footer carries the
+    recipient's own opt-out link.
 
     `digest_label` is "Daily" or "Weekly"."""
     n = len(dept_matches)
     total_faculty = sum(len(r["matches"]) for r in dept_matches)
     is_weekly = digest_label.lower() == "weekly"
-    period_phrase = "this week" if is_weekly else "this run"
+    period_phrase = "over the past week" if is_weekly else "in today's run"
     subject_suffix = " (Weekly roundup)" if is_weekly else ""
-    subheader = "Department Weekly Roundup" if is_weekly else "Department Daily Digest"
     subject = (f"[SOM Grant Matcher] {n} grant match{'' if n==1 else 'es'} "
                f"across {department} faculty - {run_date}{subject_suffix}")
-    intro = (f"<strong>{n}</strong> grant{'' if n==1 else 's'} matched "
-             f"<strong>{total_faculty}</strong> faculty member"
-             f"{'' if total_faculty==1 else 's'} in <strong>{esc(department)}</strong> {period_phrase}. "
-             f"Below are the grants and the matching faculty in your department.")
-    body = _faculty_grants_table_html(dept_matches, dashboard_url)
-    footer = (f"<div style='margin-top:14px'>{_about_link_html(color='#1e3a8a')}</div>"
-              f"<p style='font-size:11px;color:#64748b;margin-top:18px;line-height:1.5'>"
-              f"{esc(UNSUB_NOTICE)}</p>")
-    html = (
-        f"<!DOCTYPE html><html><body style='font-family:Arial,sans-serif;"
-        f"background:#f8fafc;margin:0;padding:24px;color:#0f172a'>"
-        f"<div style='max-width:760px;margin:0 auto;background:#fff;padding:24px 28px;"
-        f"border-radius:8px;border:1px solid #e5e7eb'>"
-        f"<div style='border-bottom:2px solid #1e3a8a;padding-bottom:12px;margin-bottom:18px'>"
-        f"<div style='font-size:11px;color:#64748b;letter-spacing:.1em;text-transform:uppercase'>"
-        f"University of Maryland School of Medicine</div>"
-        f"<div style='font-size:18px;color:#1e3a8a;font-weight:700;margin-top:2px'>"
-        f"AI Grant Match Application Notification — {esc(department)}</div>"
-        f"<div style='font-size:12px;color:#94a3b8;margin-top:2px'>{esc(subheader)} · {esc(run_date)}</div></div>"
-        f"<p style='font-size:13px;color:#334155;margin-bottom:14px'>{intro}</p>"
-        f"{body}{footer}"
-        f"</div></body></html>"
-    )
+
+    merged = [merge_series_cluster(c) for c in cluster_grant_series(dept_matches)]
+    cards = _grant_cards_html(merged, run_date, fb_rater="admin")
+
+    intro = _intro_panel_html([
+        (f"You are receiving this <strong>research administrator</strong> email on "
+         f"behalf of faculty in your department. It shows every grant that matched "
+         f"faculty in <strong>{esc(department)}</strong> {period_phrase}: "
+         f"<strong>{n}</strong> grant{'' if n==1 else 's'} matching "
+         f"<strong>{total_faculty}</strong> faculty member{'' if total_faculty==1 else 's'}."),
+        ("If you know whether an opportunity fits a listed faculty member, please click "
+         "<strong>&#128077; Good match</strong> or <strong>&#128078; Not relevant</strong> "
+         "on their row &mdash; your answer is recorded on their behalf and helps tune "
+         "the matcher for the whole department."),
+    ])
+
+    content = (f"{intro}"
+               f'<div style="margin-top:16px;">{cards}</div>')
+
+    html = _branded_shell(
+        f"AI Grant Match Application Notification &mdash; {esc(department)}",
+        f"{'Department Weekly Roundup' if is_weekly else 'Department Daily Digest'} &middot; {run_date}",
+        content,
+        footer_extra_html=_footer_optout_html(recipient_email, run_date, "admin"))
     return subject, html
 
 
