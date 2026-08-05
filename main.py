@@ -87,8 +87,11 @@ def load_config(config_path: str = "config/config.yaml") -> dict:
     feedback_cfg = dict(config.get("feedback") or {})
     if os.environ.get("FEEDBACK_FORM_URL"):
         feedback_cfg["form_url_template"] = os.environ["FEEDBACK_FORM_URL"]
-    from emailer import set_feedback_config
+    from emailer import set_feedback_config, set_about_url
     set_feedback_config(feedback_cfg)
+
+    # "Learn more" page link for all email footers (ABOUT_URL overrides config)
+    set_about_url(os.environ.get("ABOUT_URL") or config.get("about_url", ""))
 
     return config
 

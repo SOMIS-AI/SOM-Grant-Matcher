@@ -52,6 +52,13 @@ feedback:
   enabled: true
   form_url_template: ""
 
+# Faculty-facing "learn more" page — linked at the bottom of every digest,
+# faculty, and dept-admin email once set. Host UMSOM_AI_Grant_Matcher_About.html
+# (self-contained, screenshots embedded) anywhere faculty can reach without
+# login — e.g. the SOM web CMS or an anonymous-access /about route. ABOUT_URL
+# in Azure App Settings overrides this without a redeploy. Empty = link omitted.
+about_url: ""
+
 # --- Faculty Profile Scraping ---
 faculty:
   profiles_url: "https://www.medschool.umaryland.edu/faculty/faculty-profiles/"

@@ -155,11 +155,28 @@ def _get_match_type(m) -> str:
 # (scheduler, --send-digest, manual) picks it up. Empty template = links off.
 
 _FEEDBACK_CFG: dict = {}
+_ABOUT_URL: str = ""
 
 
 def set_feedback_config(feedback_cfg: dict):
     global _FEEDBACK_CFG
     _FEEDBACK_CFG = feedback_cfg or {}
+
+
+def set_about_url(url: str):
+    """Faculty-facing 'learn more' page (goals, screenshots, how to train the
+    matcher). Registered from main.load_config via about_url / ABOUT_URL env;
+    empty = the footer link is simply omitted."""
+    global _ABOUT_URL
+    _ABOUT_URL = (url or "").strip()
+
+
+def _about_link_html(color: str = "#c8a84b") -> str:
+    if not _ABOUT_URL:
+        return ""
+    return (f'<p style="margin:0 0 10px;font-size:12px;">'
+            f'<a href="{esc(_ABOUT_URL)}" target="_blank" style="color:{color};font-weight:600;">'
+            f'Learn more about the UMSOM AI Grant Matcher &rarr;</a></p>')
 
 
 def _feedback_url(match_id: str, verdict: str) -> str:
@@ -472,6 +489,7 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
     <div style="background:#1a2e45;padding:20px 24px;border-radius:8px;margin-top:8px;">
       <img src="{LOGO_SRC}" alt="University of Maryland School of Medicine" width="160" height="40"
            style="display:block;margin-bottom:14px;opacity:0.9;" />
+      {_about_link_html()}
       <p style="margin:0 0 10px;color:#a8c4e0;font-size:12px;line-height:1.6;">
         Grant data sourced from over 30 funding organizations and matched to SOM Faculty Profiles.
       </p>
@@ -837,6 +855,7 @@ def build_faculty_email(faculty_name: str, matches_for_faculty: list,
     ) if none_url else ""
 
     footer = (f"{none_link}{fb_note}"
+              f"<div style='margin-top:14px'>{_about_link_html(color='#1e3a8a')}</div>"
               f"<p style='font-size:11px;color:#64748b;margin-top:18px;line-height:1.5'>"
               f"{esc(UNSUB_NOTICE)}</p>")
     html = (
@@ -880,7 +899,8 @@ def build_dept_admin_email(department: str, dept_matches: list,
              f"{'' if total_faculty==1 else 's'} in <strong>{esc(department)}</strong> {period_phrase}. "
              f"Below are the grants and the matching faculty in your department.")
     body = _faculty_grants_table_html(dept_matches, dashboard_url)
-    footer = (f"<p style='font-size:11px;color:#64748b;margin-top:18px;line-height:1.5'>"
+    footer = (f"<div style='margin-top:14px'>{_about_link_html(color='#1e3a8a')}</div>"
+              f"<p style='font-size:11px;color:#64748b;margin-top:18px;line-height:1.5'>"
               f"{esc(UNSUB_NOTICE)}</p>")
     html = (
         f"<!DOCTYPE html><html><body style='font-family:Arial,sans-serif;"
