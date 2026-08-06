@@ -1023,18 +1023,19 @@ LOGIN_HTML = """<!DOCTYPE html><html><head>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0a0c10;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh}
-.card{background:#0f1117;border:1px solid #1e2330;border-radius:14px;padding:44px;width:100%;max-width:390px}
-.logo{font-family:'IBM Plex Mono',monospace;font-size:11px;color:#3b82f6;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
-.dot{display:inline-block;width:6px;height:6px;background:#22c55e;border-radius:50%;margin-right:6px;animation:p 2s infinite}
+:root{color-scheme:light}
+body{background:#eef1f6;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.card{background:#fff;border:1px solid #d5dbe5;border-radius:14px;padding:44px;width:100%;max-width:390px;box-shadow:0 4px 18px rgba(15,23,42,.08)}
+.logo{font-family:'IBM Plex Mono',monospace;font-size:11px;color:#1d4ed8;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
+.dot{display:inline-block;width:6px;height:6px;background:#15803d;border-radius:50%;margin-right:6px;animation:p 2s infinite}
 @keyframes p{0%,100%{opacity:1}50%{opacity:.4}}
-h1{color:#f1f5f9;font-size:22px;font-weight:600;margin-bottom:30px}
-label{display:block;color:#64748b;font-size:12px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
-input{width:100%;padding:11px 14px;background:#141720;border:1px solid #252d3d;border-radius:8px;color:#f1f5f9;font-size:14px;margin-bottom:18px;outline:none;transition:border-color .2s}
-input:focus{border-color:#3b82f6}
-button{width:100%;padding:12px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:background .2s}
-button:hover{background:#2563eb}
-.err{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#f87171;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:18px}
+h1{color:#111827;font-size:22px;font-weight:600;margin-bottom:30px}
+label{display:block;color:#55627a;font-size:12px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+input{width:100%;padding:11px 14px;background:#fff;border:1px solid #c3cad6;border-radius:8px;color:#111827;font-size:14px;margin-bottom:18px;outline:none;transition:border-color .2s}
+input:focus{border-color:#1d4ed8;box-shadow:0 0 0 3px rgba(29,78,216,.15)}
+button{width:100%;padding:12px;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:background .2s}
+button:hover{background:#1e40af}
+.err{background:#fdecec;border:1px solid #f0b4b4;color:#b91c1c;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:18px}
 </style></head><body><div class="card">
 <div class="logo"><span class="dot"></span>UMSOM Grant Matcher</div>
 <h1>Sign in</h1>
@@ -1336,17 +1337,24 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
-/* ── Variables ── */
+/* ── Variables ──
+   Light theme. Accent hues keep their original meaning (blue=keyword/primary,
+   purple=semantic, green=good, yellow=warn, red=error) but are darkened to the
+   600-800 range so they stay legible as TEXT on a white surface — the bright
+   500-range originals only worked against the old near-black background.
+   The matching --*dim tokens stay built from the bright RGB so they read as
+   pale tints behind that darker text. */
 :root {
-  --bg:#090b0f; --surf:#0f1218; --surf2:#141820; --surf3:#1a1f2a;
-  --border:#1c2235; --border2:#232c40;
-  --blue:#3b82f6; --blue2:#60a5fa; --bluedim:rgba(59,130,246,.12);
-  --cyan:#06b6d4; --cyandim:rgba(6,182,212,.12);
-  --green:#22c55e; --greendim:rgba(34,197,94,.12);
-  --yellow:#f59e0b; --yellowdim:rgba(245,158,11,.12);
-  --red:#ef4444; --reddim:rgba(239,68,68,.12);
-  --purple:#a855f7; --purpledim:rgba(168,85,247,.12);
-  --text:#e2e8f0; --text2:#94a3b8; --text3:#4b5675; --text4:#2d3a52;
+  color-scheme:light;
+  --bg:#eef1f6; --surf:#ffffff; --surf2:#f2f5f9; --surf3:#e5e9f0;
+  --border:#dde2ea; --border2:#c3cad6;
+  --blue:#1d4ed8; --blue2:#1e40af; --bluedim:rgba(59,130,246,.12);
+  --cyan:#0e7490; --cyandim:rgba(6,182,212,.12);
+  --green:#15803d; --greendim:rgba(34,197,94,.14);
+  --yellow:#a16207; --yellowdim:rgba(245,158,11,.16);
+  --red:#b91c1c; --reddim:rgba(239,68,68,.12);
+  --purple:#7e22ce; --purpledim:rgba(168,85,247,.12);
+  --text:#111827; --text2:#3f4b5f; --text3:#5c6b83; --text4:#66738a;
   --mono:'IBM Plex Mono',monospace; --sans:'DM Sans',sans-serif;
   --radius:10px; --sidebar:228px;
 }
@@ -1367,7 +1375,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .nav-item{display:flex;align-items:center;gap:11px;padding:9px 20px;cursor:pointer;
   color:var(--text2);font-size:13px;font-weight:400;border-left:2px solid transparent;
   transition:all .15s;user-select:none;position:relative}
-.nav-item:hover{color:var(--text);background:rgba(255,255,255,.03)}
+.nav-item:hover{color:var(--text);background:rgba(15,23,42,.05)}
 .nav-item.active{color:var(--blue);border-left-color:var(--blue);background:var(--bluedim)}
 .nav-icon{font-size:14px;width:18px;text-align:center;flex-shrink:0}
 .nav-label{flex:1}
@@ -1379,7 +1387,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 /* ── Main layout ── */
 .main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
 .topbar{height:52px;border-bottom:1px solid var(--border);display:flex;align-items:center;
-  padding:0 28px;gap:12px;background:rgba(9,11,15,.96);backdrop-filter:blur(10px);
+  padding:0 28px;gap:12px;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);
   z-index:50;flex-shrink:0}
 .topbar-title{font-size:15px;font-weight:500}
 .topbar-crumb{font-size:12px;color:var(--text3);font-family:var(--mono)}
@@ -1446,7 +1454,7 @@ th:hover{color:var(--text2)}
 td{padding:10px 14px;border-bottom:1px solid var(--border);font-size:12px;
   vertical-align:top;color:var(--text2)}
 tr:last-child td{border-bottom:none}
-tr:hover td{background:rgba(255,255,255,.018)}
+tr:hover td{background:rgba(15,23,42,.03)}
 .td-name{color:var(--text);font-weight:500;font-size:13px}
 .td-email{color:var(--cyan);font-family:var(--mono);font-size:11px}
 .td-dept{color:var(--text3);font-size:11px}
@@ -1476,18 +1484,18 @@ tr:hover td{background:rgba(255,255,255,.018)}
 .kw.sem{background:var(--purpledim);border-color:rgba(168,85,247,.25);color:var(--purple)}
 .src-badge{font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;
   white-space:nowrap;display:inline-block}
-.src-umsom{background:rgba(59,130,246,.15);color:#7ab3e0;border:1px solid rgba(59,130,246,.2)}
-.src-pubmed{background:rgba(245,158,11,.12);color:#fbbf24;border:1px solid rgba(245,158,11,.2)}
-.src-nih{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.2)}
-.src-orcid{background:rgba(34,197,94,.1);color:#86efac;border:1px solid rgba(34,197,94,.2)}
-.src-s2{background:rgba(168,85,247,.12);color:#d8b4fe;border:1px solid rgba(168,85,247,.2)}
+.src-umsom{background:rgba(59,130,246,.13);color:#1d4ed8;border:1px solid rgba(59,130,246,.35)}
+.src-pubmed{background:rgba(245,158,11,.16);color:#92600a;border:1px solid rgba(245,158,11,.4)}
+.src-nih{background:rgba(239,68,68,.11);color:#b91c1c;border:1px solid rgba(239,68,68,.32)}
+.src-orcid{background:rgba(34,197,94,.14);color:#15803d;border:1px solid rgba(34,197,94,.35)}
+.src-s2{background:rgba(168,85,247,.13);color:#7e22ce;border:1px solid rgba(168,85,247,.32)}
 
 /* ── Match type badges ── */
 .mt-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;
   border-radius:10px;text-transform:uppercase;letter-spacing:.04em;font-family:var(--mono)}
-.mt-keyword{background:#1e3a5f;color:#7ab3e0}
-.mt-semantic{background:#1a4a2e;color:#5ecb8a}
-.mt-both{background:#4a2e00;color:#f0b840}
+.mt-keyword{background:#dbe8fa;color:#17439c}
+.mt-semantic{background:#d7f0de;color:#146333}
+.mt-both{background:#fbeacc;color:#7d4a06}
 
 /* ── Score badge ── */
 .score{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;
@@ -1514,7 +1522,7 @@ tr:hover td{background:rgba(255,255,255,.018)}
 
 /* Synopsis expand */
 .synopsis-row{padding:10px 18px;border-bottom:1px solid var(--border);
-  background:rgba(255,255,255,.01);cursor:pointer}
+  background:rgba(15,23,42,.02);cursor:pointer}
 .synopsis-text{font-size:12px;color:var(--text2);line-height:1.6;margin-top:8px;display:none}
 .synopsis-toggle{font-size:11px;font-family:var(--mono);color:var(--text3);
   display:flex;align-items:center;gap:5px}
@@ -1579,15 +1587,15 @@ tr:hover td{background:rgba(255,255,255,.018)}
 
 /* ── Log terminal ── */
 .log-wrap{background:var(--surf);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
-.log-body{background:#060810;max-height:55vh;overflow-y:auto;padding:12px;font-family:var(--mono);font-size:11.5px;line-height:1.75}
+.log-body{background:#f8fafc;max-height:55vh;overflow-y:auto;padding:12px;font-family:var(--mono);font-size:11.5px;line-height:1.75}
 .log-line{padding:1px 0;border-radius:2px}
 .log-line.error{color:var(--red)}
 .log-line.warning{color:var(--yellow)}
-.log-line.info{color:#6b8cac}
-.log-ts{color:var(--text4)}
-.log-lvl-err{color:var(--red)} .log-lvl-warn{color:var(--yellow)} .log-lvl-info{color:#3a5a7a}
-.log-module{color:#4a7a5a}
-.log-msg{color:#a0c0d0}
+.log-line.info{color:#425a75}
+.log-ts{color:#66738a}
+.log-lvl-err{color:var(--red)} .log-lvl-warn{color:var(--yellow)} .log-lvl-info{color:#4a6d92}
+.log-module{color:#2f6b46}
+.log-msg{color:#1f2937}
 
 /* ── Pagination ── */
 .pagination{display:flex;align-items:center;gap:5px;padding:12px 16px;
@@ -1616,11 +1624,11 @@ tr:hover td{background:rgba(255,255,255,.018)}
 
 
 /* ── Faculty detail modal ── */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;
+.modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:500;
   display:flex;align-items:center;justify-content:center;animation:fadeIn .15s ease}
 .modal{background:var(--surf);border:1px solid var(--border2);border-radius:14px;
   width:min(820px,95vw);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;
-  box-shadow:0 24px 60px rgba(0,0,0,.5)}
+  box-shadow:0 24px 60px rgba(15,23,42,.22)}
 .modal-hdr{padding:20px 24px 16px;border-bottom:1px solid var(--border);
   display:flex;align-items:flex-start;gap:14px;flex-shrink:0}
 .modal-avatar{width:44px;height:44px;border-radius:50%;background:var(--bluedim);
@@ -1689,9 +1697,9 @@ tr:hover td{background:rgba(255,255,255,.018)}
 /* ── Tooltip ── */
 .tip{position:relative;cursor:help}
 .tip:after{content:attr(data-tip);position:absolute;bottom:calc(100% + 5px);left:50%;
-  transform:translateX(-50%);background:#1e2a3a;color:var(--text);font-size:11px;
+  transform:translateX(-50%);background:#1f2937;color:#f8fafc;font-size:11px;
   font-family:var(--mono);padding:5px 10px;border-radius:5px;white-space:nowrap;
-  opacity:0;pointer-events:none;transition:opacity .15s;z-index:200;border:1px solid var(--border2)}
+  opacity:0;pointer-events:none;transition:opacity .15s;z-index:200;border:1px solid #374151}
 .tip:hover:after{opacity:1}
 
 /* ── Donut center label ── */
@@ -1708,7 +1716,7 @@ tr:hover td{background:rgba(255,255,255,.018)}
   display:flex;align-items:flex-start;gap:10px}
 .ge-title{font-size:13.5px;font-weight:500;color:var(--text);line-height:1.4;flex:1}
 .ge-pills{display:flex;flex-wrap:wrap;gap:5px 12px;padding:8px 18px;border-bottom:1px solid var(--border);
-  background:rgba(0,0,0,.15)}
+  background:rgba(15,23,42,.03)}
 .ge-pill{font-size:10.5px;font-family:var(--mono);color:var(--text3);display:flex;align-items:center;gap:4px}
 .ge-pill span{color:var(--text2)}
 .ge-pill.award span{color:var(--yellow)}
@@ -1723,9 +1731,9 @@ tr:hover td{background:rgba(255,255,255,.018)}
 .ge-fac-name{color:var(--text2);font-weight:500}
 .ge-fac-dept{color:var(--text3);font-size:10px}
 .ge-fac-mt{font-size:9px;font-family:var(--mono);padding:1px 5px;border-radius:8px;text-transform:uppercase}
-.ge-fac-mt.keyword{background:#1e3a5f;color:#7ab3e0}
-.ge-fac-mt.semantic{background:#1a4a2e;color:#5ecb8a}
-.ge-fac-mt.both{background:#4a2e00;color:#f0b840}
+.ge-fac-mt.keyword{background:#dbe8fa;color:#17439c}
+.ge-fac-mt.semantic{background:#d7f0de;color:#146333}
+.ge-fac-mt.both{background:#fbeacc;color:#7d4a06}
 .ge-conf-ring{width:44px;height:44px;flex-shrink:0}
 .ge-synopsis{font-size:11.5px;color:var(--text2);line-height:1.65;padding:0;max-height:0;
   overflow:hidden;transition:max-height .3s ease;margin-top:0}
@@ -1763,8 +1771,8 @@ tr:hover td{background:rgba(255,255,255,.018)}
 .dept-lb-rank{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;
   justify-content:center;font-size:11px;font-weight:700;font-family:var(--mono);flex-shrink:0}
 .rank-1{background:rgba(245,158,11,.2);color:var(--yellow);border:1px solid rgba(245,158,11,.3)}
-.rank-2{background:rgba(148,163,184,.15);color:#94a3b8;border:1px solid rgba(148,163,184,.2)}
-.rank-3{background:rgba(180,83,9,.15);color:#c2855a;border:1px solid rgba(180,83,9,.2)}
+.rank-2{background:rgba(148,163,184,.2);color:#475569;border:1px solid rgba(148,163,184,.4)}
+.rank-3{background:rgba(180,83,9,.14);color:#92400e;border:1px solid rgba(180,83,9,.3)}
 .rank-other{background:var(--surf2);color:var(--text3);border:1px solid var(--border)}
 .sem-pct-bar{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px}
 .sem-pct-fill{height:4px;background:var(--purple);border-radius:2px;display:inline-block}
@@ -2373,7 +2381,7 @@ tr:hover td{background:rgba(255,255,255,.018)}
           <input class="search-box" id="optout-email" placeholder="email to opt out"
                  style="width:280px" list="subs-optout-suggest">
           <datalist id="subs-optout-suggest"></datalist>
-          <button class="btn-sm" style="background:#ef444422;color:#ef4444"
+          <button class="btn-sm" style="background:#fdecec;color:#b91c1c"
                   onclick="optOutUser()">Opt out</button>
           <span id="optout-status" style="font-size:11px;color:var(--text3)"></span>
         </div>
@@ -2457,8 +2465,8 @@ let matchesPage = 1, facultyPage = 1;
 const charts = {};
 
 // ══ Chart.js defaults ══
-Chart.defaults.color = '#4b5675';
-Chart.defaults.borderColor = '#1c2235';
+Chart.defaults.color = '#5c6b83';
+Chart.defaults.borderColor = '#e3e7ee';
 Chart.defaults.font.family = "'IBM Plex Mono', monospace";
 Chart.defaults.font.size = 10;
 
@@ -2500,14 +2508,16 @@ function mkChart(id, cfg) {
   return charts[id];
 }
 
+// Chart series colors. Darkened from the original 500-range values so lines,
+// bar borders and legend swatches hold up against the white plot area.
 const COLORS = {
-  blue:'#3b82f6', cyan:'#06b6d4', green:'#22c55e',
-  yellow:'#f59e0b', purple:'#a855f7', red:'#ef4444',
-  orange:'#f97316', pink:'#ec4899', teal:'#14b8a6', indigo:'#6366f1'
+  blue:'#2563eb', cyan:'#0891b2', green:'#16a34a',
+  yellow:'#d97706', purple:'#9333ea', red:'#dc2626',
+  orange:'#ea580c', pink:'#db2777', teal:'#0d9488', indigo:'#4f46e5'
 };
 const PALETTE = Object.values(COLORS);
 
-function barDefaults(labels, data, color='#3b82f6', horizontal=false) {
+function barDefaults(labels, data, color='#2563eb', horizontal=false) {
   return {
     type: 'bar',
     data: {
@@ -2520,8 +2530,8 @@ function barDefaults(labels, data, color='#3b82f6', horizontal=false) {
       responsive:true, maintainAspectRatio:false,
       plugins:{legend:{display:false}},
       scales:{
-        x:{grid:{color:'#1c2235'},ticks:{color:'#4b5675'}},
-        y:{grid:{color:'#1c2235'},ticks:{color:'#4b5675',
+        x:{grid:{color:'#e3e7ee'},ticks:{color:'#5c6b83'}},
+        y:{grid:{color:'#e3e7ee'},ticks:{color:'#5c6b83',
           callback: horizontal ? (v,i,a) => {
             const lbl = a[i]?.label || '';
             return lbl.length > 22 ? lbl.slice(0,22)+'…' : lbl;
@@ -2580,8 +2590,8 @@ async function loadOverview() {
     },
     options:{responsive:true, maintainAspectRatio:false,
       plugins:{legend:{display:true, position:'top', labels:{padding:14, boxWidth:10}}},
-      scales:{x:{grid:{color:'#1c2235'},ticks:{color:'#4b5675'}},
-              y:{grid:{color:'#1c2235'},ticks:{color:'#4b5675'},beginAtZero:true}}}
+      scales:{x:{grid:{color:'#e3e7ee'},ticks:{color:'#5c6b83'}},
+              y:{grid:{color:'#e3e7ee'},ticks:{color:'#5c6b83'},beginAtZero:true}}}
   });
 
   // Donut
@@ -2591,11 +2601,11 @@ async function loadOverview() {
     type:'doughnut',
     data:{labels:['Keyword','Semantic','Both'],
           datasets:[{data:[kw,sem,both],
-            backgroundColor:['rgba(59,130,246,.7)','rgba(168,85,247,.7)','rgba(245,158,11,.7)'],
-            borderColor:['#3b82f6','#a855f7','#f59e0b'], borderWidth:2, hoverOffset:4}]},
+            backgroundColor:['rgba(37,99,235,.75)','rgba(147,51,234,.75)','rgba(217,119,6,.75)'],
+            borderColor:['#2563eb','#9333ea','#d97706'], borderWidth:2, hoverOffset:4}]},
     options:{responsive:true, maintainAspectRatio:false, cutout:'72%',
       plugins:{legend:{display:true, position:'right',
-        labels:{padding:14, boxWidth:10, color:'#94a3b8'}}}}
+        labels:{padding:14, boxWidth:10, color:'#3f4b5f'}}}}
   });
 
   // Agencies
@@ -2879,7 +2889,7 @@ async function loadAnalytics() {
     }]},
     options:{responsive:true, maintainAspectRatio:false, cutout:'60%',
       plugins:{legend:{display:true, position:'right',
-        labels:{padding:12, boxWidth:10, color:'#94a3b8'}}}}
+        labels:{padding:12, boxWidth:10, color:'#3f4b5f'}}}}
   });
 
   mkChart('chart-scores', barDefaults(
@@ -3214,9 +3224,9 @@ async function loadGrantExplorer() {
     // SVG confidence ring
     const circ = 2*Math.PI*16; // r=16
     const filled = circ * (g.confidence||0) / 100;
-    const ringColor = g.confidence >= 70 ? '#22c55e' : g.confidence >= 45 ? '#f59e0b' : '#3b82f6';
+    const ringColor = g.confidence >= 70 ? '#16a34a' : g.confidence >= 45 ? '#d97706' : '#2563eb';
     const confSvg = `<svg class="ge-conf-ring" viewBox="0 0 44 44">
-      <circle cx="22" cy="22" r="16" fill="none" stroke="#1c2235" stroke-width="4"/>
+      <circle cx="22" cy="22" r="16" fill="none" stroke="#e3e7ee" stroke-width="4"/>
       <circle cx="22" cy="22" r="16" fill="none" stroke="${ringColor}" stroke-width="4"
         stroke-linecap="round" stroke-dasharray="${circ}" stroke-dashoffset="${circ-filled}"
         transform="rotate(-90 22 22)"/>
@@ -3337,7 +3347,7 @@ function renderHealthScore(d) {
   const {score, items} = computeHealth(d);
   const circ = 2*Math.PI*28;
   const filled = circ * score / 100;
-  const color = score >= 75 ? '#22c55e' : score >= 45 ? '#f59e0b' : '#ef4444';
+  const color = score >= 75 ? '#16a34a' : score >= 45 ? '#d97706' : '#dc2626';
   const arc = document.getElementById('health-arc');
   if (arc) {
     arc.style.stroke = color;
@@ -3427,14 +3437,14 @@ async function loadKeywordAnalysis() {
     type:'bar',
     data:{labels:conf.map(c=>c.range), datasets:[{
       data:conf.map(c=>c.count),
-      backgroundColor:['rgba(239,68,68,.6)','rgba(245,158,11,.6)','rgba(59,130,246,.6)','rgba(34,197,94,.6)','rgba(34,197,94,.8)'],
-      borderColor:['#ef4444','#f59e0b','#3b82f6','#22c55e','#16a34a'],
+      backgroundColor:['rgba(220,38,38,.65)','rgba(217,119,6,.65)','rgba(37,99,235,.65)','rgba(22,163,74,.65)','rgba(21,128,61,.8)'],
+      borderColor:['#dc2626','#d97706','#2563eb','#16a34a','#15803d'],
       borderWidth:1
     }]},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:false}},
-      scales:{x:{grid:{color:'#1c2235'},ticks:{color:'#4b5675'}},
-              y:{grid:{color:'#1c2235'},ticks:{color:'#4b5675'},beginAtZero:true}}}
+      scales:{x:{grid:{color:'#e3e7ee'},ticks:{color:'#5c6b83'}},
+              y:{grid:{color:'#e3e7ee'},ticks:{color:'#5c6b83'},beginAtZero:true}}}
   });
 
   // Keyword count distribution
@@ -3479,17 +3489,19 @@ async function loadKeywordAnalysis() {
 // ══════════════════════════════════════════════════════════════════
 // Faculty Detail Modal
 // ══════════════════════════════════════════════════════════════════
+// Per-source pill colors: pale tint background + dark saturated text, so each
+// source stays distinguishable by hue while remaining readable on white.
 const SRC_COLORS = {
-  'UMSOM (Keywords)':  {bg:'rgba(59,130,246,.18)', fg:'#9bc4e6', bd:'rgba(59,130,246,.35)'},
-  'UMSOM (Interests)': {bg:'rgba(59,130,246,.10)', fg:'#7ab3e0', bd:'rgba(59,130,246,.25)'},
-  'PubMed':            {bg:'rgba(245,158,11,.15)', fg:'#fbbf24', bd:'rgba(245,158,11,.35)'},
-  'NIH RePORTER':      {bg:'rgba(168,85,247,.15)', fg:'#c4a3ff', bd:'rgba(168,85,247,.35)'},
-  'ClinicalTrials.gov':{bg:'rgba(34,197,94,.15)',  fg:'#86efac', bd:'rgba(34,197,94,.35)'},
-  'Europe PMC':        {bg:'rgba(236,72,153,.15)', fg:'#f9a8d4', bd:'rgba(236,72,153,.35)'},
-  'ORCID':             {bg:'rgba(132,204,22,.15)', fg:'#bef264', bd:'rgba(132,204,22,.35)'},
-  'Semantic Scholar':  {bg:'rgba(6,182,212,.15)',  fg:'#67e8f9', bd:'rgba(6,182,212,.35)'}
+  'UMSOM (Keywords)':  {bg:'rgba(59,130,246,.16)', fg:'#1d4ed8', bd:'rgba(59,130,246,.4)'},
+  'UMSOM (Interests)': {bg:'rgba(59,130,246,.09)', fg:'#2563eb', bd:'rgba(59,130,246,.3)'},
+  'PubMed':            {bg:'rgba(245,158,11,.18)', fg:'#92600a', bd:'rgba(245,158,11,.45)'},
+  'NIH RePORTER':      {bg:'rgba(168,85,247,.15)', fg:'#7e22ce', bd:'rgba(168,85,247,.4)'},
+  'ClinicalTrials.gov':{bg:'rgba(34,197,94,.16)',  fg:'#15803d', bd:'rgba(34,197,94,.4)'},
+  'Europe PMC':        {bg:'rgba(236,72,153,.14)', fg:'#be185d', bd:'rgba(236,72,153,.4)'},
+  'ORCID':             {bg:'rgba(132,204,22,.20)', fg:'#4d7c0f', bd:'rgba(132,204,22,.5)'},
+  'Semantic Scholar':  {bg:'rgba(6,182,212,.16)',  fg:'#0e7490', bd:'rgba(6,182,212,.42)'}
 };
-function srcPalette(s){ return SRC_COLORS[s] || {bg:'rgba(120,130,150,.15)', fg:'#94a3b8', bd:'rgba(120,130,150,.35)'}; }
+function srcPalette(s){ return SRC_COLORS[s] || {bg:'rgba(120,130,150,.15)', fg:'#475569', bd:'rgba(120,130,150,.4)'}; }
 function srcPill(s){ const c=srcPalette(s); return `<span style="background:${c.bg};color:${c.fg};border:1px solid ${c.bd};font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;display:inline-block;margin-right:4px;white-space:nowrap">${esc(s)}</span>`; }
 function initials(n){ const p=(n||'').split(/\s+/).filter(Boolean); return ((p[0]||'')[0]||'')+((p[p.length-1]||'')[0]||''); }
 
@@ -3582,7 +3594,7 @@ function renderModalKeywords(d){
   }
 
   const notice = hasAttr ? '' :
-    `<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);color:#fbbf24;border-radius:6px;padding:8px 10px;font-size:11px;margin-bottom:10px">
+    `<div style="background:rgba(245,158,11,.14);border:1px solid rgba(245,158,11,.4);color:#92600a;border-radius:6px;padding:8px 10px;font-size:11px;margin-bottom:10px">
       Per-keyword source attribution is populated on the next faculty re-scrape. The flat keyword list is shown until then.
     </div>`;
 
@@ -3627,8 +3639,8 @@ function renderModalSourcesChart(d){
       borderColor:labels.map(l=>srcPalette(l).bd), borderWidth:1}]},
     options:{indexAxis:'y', responsive:true, maintainAspectRatio:false,
       plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>c.parsed.x+' keyword'+(c.parsed.x===1?'':'s')}}},
-      scales:{x:{grid:{color:'#1c2235'},ticks:{color:'#94a3b8',precision:0},beginAtZero:true},
-              y:{grid:{display:false},ticks:{color:'#cbd5e1',font:{size:11}}}}}});
+      scales:{x:{grid:{color:'#e3e7ee'},ticks:{color:'#3f4b5f',precision:0},beginAtZero:true},
+              y:{grid:{display:false},ticks:{color:'#3f4b5f',font:{size:11}}}}}});
 }
 // Close modal on Escape
 document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeFacModal(); });
@@ -3641,9 +3653,9 @@ function shortDate(iso){
   try { return new Date(iso).toLocaleString(); } catch(e) { return iso; }
 }
 function cadenceBadge(c){
-  const colorMap = {daily:'#22c55e', weekly:'#3b82f6', off:'#64748b'};
-  const col = colorMap[c] || '#64748b';
-  return `<span style="background:${col}22;color:${col};padding:1px 8px;
+  const colorMap = {daily:'#15803d', weekly:'#1d4ed8', off:'#475569'};
+  const col = colorMap[c] || '#475569';
+  return `<span style="background:${col}1f;color:${col};padding:1px 8px;
           border-radius:3px;font-size:10px;text-transform:uppercase">${escHtml(c||'—')}</span>`;
 }
 
@@ -3680,7 +3692,7 @@ async function loadSubscriptions() {
         <td>${cadenceBadge(s.cadence)}</td>
         <td style="font-size:11px;color:var(--text3)">${shortDate(s.enrolled_at)}</td>
         <td style="font-size:11px;color:var(--text3)">${shortDate(s.updated_at)}</td>
-        <td><button class="btn-sm" style="background:#ef444422;color:#ef4444"
+        <td><button class="btn-sm" style="background:#fdecec;color:#b91c1c"
             onclick="deleteFacultySub('${escHtml(s.email)}')">×</button></td>
       </tr>`).join('');
     }
@@ -3724,7 +3736,7 @@ async function loadSubscriptions() {
         <td>${cadenceBadge(a.cadence)}</td>
         <td style="font-size:11px;color:var(--text3)">${shortDate(a.added_at)}</td>
         <td style="font-size:11px;color:var(--text3)">${shortDate(a.updated_at)}</td>
-        <td><button class="btn-sm" style="background:#ef444422;color:#ef4444"
+        <td><button class="btn-sm" style="background:#fdecec;color:#b91c1c"
             onclick="deleteDeptAdmin('${escHtml(a.department)}','${escHtml(a.email)}')">×</button></td>
       </tr>`).join('');
     }
