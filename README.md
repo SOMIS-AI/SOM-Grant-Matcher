@@ -2,6 +2,11 @@
 
 Automatically monitors [Grants.gov](https://www.grants.gov) for new funding opportunities and alerts you when a grant's keywords match a faculty member's research interests at the [University of Maryland School of Medicine](https://www.medschool.umaryland.edu/faculty/faculty-profiles/).
 
+> **Changing how matching behaves?** Record it in **[TUNING_LOG.md](TUNING_LOG.md)** —
+> thresholds, filters, scoring and vocabulary changes, with why they were tried and
+> whether they actually worked. It also lists approaches already known to fail, so
+> we stop re-trying them. Measure outcomes with `python tools/diag_trend.py <Diag Files folder>`.
+
 ---
 
 ## How It Works
