@@ -59,13 +59,20 @@ jobs:
       # Only `azure` (production, :latest) deploys. `dev` builds :dev for manual
       # promotion — give it its own Web App and copy this block if that changes.
       #
-      # Requires, per AZURE_SETUP_GUIDE.md PART 4 Step 2:
+      # CURRENT STATE (decided 2026-08-07): automatic deploy is intentionally
+      # OFF. The Web App has SCM Basic Auth Publishing Credentials disabled — the
+      # Azure default — so no publish profile can be issued, and we chose not to
+      # re-enable it or to store any Azure credential in GitHub. Deploying stays
+      # a deliberate manual act: restart the Web App to pick up a build.
+      #
+      # So these steps skip, loudly, rather than fail. The warning is the point:
+      # the old failure mode was a green check that silently meant nothing had
+      # shipped. To turn automatic deploys on later, either set up an OIDC
+      # federated credential (preferred — no stored secret, works with basic
+      # auth disabled) and swap in azure/login@v2, or re-enable basic auth and
+      # supply:
       #   secret   AZURE_WEBAPP_PUBLISH_PROFILE  — the Web App's publish profile
       #   variable AZURE_WEBAPP_NAME             — e.g. som-grant-matcher
-      # Neither was set when this step was added, so it SKIPS rather than fails
-      # when they're absent: an unconfigured repo keeps building as before
-      # instead of turning every push red. The skip is loud on purpose — a green
-      # run with the warning below still means "not deployed".
       - name: Check Azure deploy configuration
         id: azcfg
         if: github.ref_name == 'azure'
@@ -87,18 +94,21 @@ jobs:
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
           images: ghcr.io/${{ env.OWNER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
 
-      - name: Report deploy skipped
+      - name: Report image published, restart required
         if: github.ref_name == 'azure' && steps.azcfg.outputs.ready != 'true'
         run: |
-          echo "::warning title=Image published but NOT deployed::AZURE_WEBAPP_NAME and/or AZURE_WEBAPP_PUBLISH_PROFILE are not configured, so the Web App was not updated. Restart it manually in the Azure portal, or add both per AZURE_SETUP_GUIDE.md PART 4 Step 2."
+          echo "::warning title=Image published — restart the Web App to deploy it::Automatic deploy is intentionally off (no Azure credentials are stored). This build is NOT live until the Azure Web App is restarted."
           {
-            echo "### ⚠️ Image published but NOT deployed"
+            echo "### 📦 Image published — restart required to go live"
             echo ""
-            echo "The container image was built and pushed, but the Azure Web App was **not** updated."
+            echo "\`${IMAGE_REF}\` was built and pushed successfully."
             echo ""
-            echo "Set these to enable automatic deploys:"
-            echo "- repository **variable** \`AZURE_WEBAPP_NAME\`"
-            echo "- repository **secret** \`AZURE_WEBAPP_PUBLISH_PROFILE\`"
+            echo "**This build is not live yet.** Automatic deploy is intentionally"
+            echo "disabled: the Web App has basic auth publishing turned off and this"
+            echo "repo stores no Azure credentials, so publishing an image and"
+            echo "deploying it are separate acts."
             echo ""
-            echo "Until then, restart the Web App in the Azure portal to pick up this build."
+            echo "To ship it: **Azure Portal → the Web App → Restart.**"
           } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          IMAGE_REF: ghcr.io/${{ env.OWNER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}

@@ -71,30 +71,45 @@ In Azure, secrets are stored as **Application Settings** (equivalent to Railway 
 
 ---
 
-## PART 4 — Connect GitHub Actions for Automatic Deploys
+## PART 4 — GitHub Actions builds; you restart to deploy
 
-### Step 1: Download the publish profile
-1. In your Azure Web App, click **Overview**
-2. Click **Download publish profile** (button near the top)
-3. Open the downloaded `.PublishSettings` file in a text editor and copy all the contents
+> **How releases actually work here.** Pushing to `azure` builds the image and
+> pushes it to ghcr.io — it does **not** update the running app. Automatic
+> deploy is intentionally off: the Web App has *SCM Basic Auth Publishing
+> Credentials* disabled (the Azure default), so no publish profile can be
+> issued, and we deliberately store no Azure credential in GitHub.
+>
+> **A green workflow run means "image published", not "deployed."** The run's
+> summary says so explicitly.
 
-### Step 2: Add secrets to GitHub
-1. Go to your GitHub repo → **Settings** → **Secrets and variables** → **Actions**
-2. Click **New repository secret**:
-   - Name: `AZURE_WEBAPP_PUBLISH_PROFILE`
-   - Value: paste the entire contents of the publish profile file
-3. Click **New repository variable** (under the Variables tab):
-   - Name: `AZURE_WEBAPP_NAME`
-   - Value: the name you gave your Web App (e.g. `som-grant-matcher`)
+### Releasing a change
+1. Push to `azure` (or run the workflow manually). Wait for it to go green.
+2. **Azure Portal → your Web App → Restart.** The app pulls
+   `ghcr.io/somis-ai/som-grant-matcher:latest` on start, so this is what makes
+   the new build live.
+3. If `RESTART_RECIPIENTS` is set, those admins get a health email confirming it
+   came back up.
 
-### Step 3: Trigger the first deploy
-Push any change to the `main` or `master` branch, or go to:
-**GitHub repo → Actions → Build and Deploy to Azure Web App → Run workflow**
+### Optional: turning automatic deploys on later
+The workflow already has a deploy step; it skips itself while unconfigured.
+Two ways to activate it:
 
-GitHub Actions will:
-1. Build the Docker image
-2. Push it to GitHub Container Registry (ghcr.io)
-3. Deploy it to your Azure Web App
+**A. OIDC federated credential (preferred).** No stored secret, and basic auth
+stays disabled. Create an app registration (or managed identity) with a
+federated credential scoped to this repo, grant it Contributor on the Web App,
+then add `permissions: id-token: write` and an `azure/login@v2` step before the
+deploy step. Store `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and
+`AZURE_SUBSCRIPTION_ID` as repository variables, plus `AZURE_WEBAPP_NAME`.
+
+**B. Publish profile.** Re-enable *SCM Basic Auth Publishing Credentials* on the
+Web App (Configuration → General settings), then **Overview → Download publish
+profile** and add:
+- repository **secret** `AZURE_WEBAPP_PUBLISH_PROFILE` — the entire
+  `.PublishSettings` file
+- repository **variable** `AZURE_WEBAPP_NAME` — e.g. `som-grant-matcher`
+
+This re-enables the long-lived credential type Azure disables by default; prefer
+option A unless you have a reason not to.
 
 ---
 
@@ -214,7 +229,8 @@ The change takes effect on the next scheduled run. To shift the send time or wee
 | "Failed to send email via SendGrid" | Check `SENDGRID_API_KEY` in Application Settings; verify sender address is verified in SendGrid |
 | App keeps restarting | Check Log stream for Python errors |
 | No emails after first run | Normal if no new grants matched — check logs for "No keyword matches" |
-| GitHub Actions deploy fails | Check that `AZURE_WEBAPP_PUBLISH_PROFILE` secret is set correctly |
+| Workflow ran green but the app is unchanged | Expected — the run publishes the image only. Restart the Web App to deploy it (see PART 4) |
+| "Download publish profile" is greyed out / "Basic Authentication is Disabled" | Azure's default. Use OIDC instead, or re-enable SCM basic auth — see PART 4, options A and B |
 
 ---
 
