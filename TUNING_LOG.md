@@ -163,10 +163,16 @@ P30/P50, DoD IIRA etc.), later extended to require nih-tier for K12/KL2/T32/T35.
 a pediatric-cancer genome grant on "pediatric" + "childhood" alone.
 **Expected effect:** `context_filtered` and `track_record_gated` become non-zero;
 fewer implausible matches on flagship mechanisms.
-**Outcome:** both counters have read **0 on every run in the 08-05..08-07
-sample**. Either the conditions genuinely never fire at current volume, or the
-gates are not engaging. **Unverified — worth checking.**
-**Verdict:** not measured — see Open questions
+**Outcome:** verified 2026-08-07 across all 69 archived runs. `context_filtered`
+fired on 9 runs (peak 203 on 06-27, most recently 15 on 08-01);
+`track_record_gated` fired on 11 runs (peak 22 on 06-27, most recently 3 on
+08-05). Independently confirmed that the mechanism patterns match real grants:
+40 of 790 archived titles trip the major-mechanism gate, 3 trip the PI gate.
+**Verdict:** worked
+**Note:** a 3-day sample (08-05..08-07) showed 0 for both and briefly looked like
+the gates were inert. They fire only when a qualifying mechanism grant appears,
+which is uncommon at 7–24 grants/day. **Don't judge a sparse gate on a few days
+of low volume** — check the whole archive.
 
 ### 2026-06-17 — Relevance filter reordered; DoD sub-commands allow-listed
 **Status:** live
@@ -247,9 +253,15 @@ AI-WMD grant matched 16 faculty).
 Things we believe are true but have not verified. Each is a candidate for a
 measured experiment rather than another guess.
 
-- **Are the track-record gate and context filter firing at all?**
-  `context_filtered` and `track_record_gated` read 0 on every run in the recent
-  sample. Check against a run with real volume before assuming they work.
+- ~~**Are the track-record gate and context filter firing at all?**~~
+  **Resolved 2026-08-07: yes.** Both fire regularly across the 69-run archive —
+  see the 2026-06-23 entry. The recent zeros were low volume, not breakage.
+- **Has the clinical-vs-basic filter ever fired live?** It went from report-only
+  to live on 2026-08-04 and `clinical_basic_suppressed` has read 0 on all four
+  days since. Its one recorded firing (5 suppressions, 06-25) was while still in
+  report-only mode. Not yet evidence of a fault — those four days were quiet —
+  but it is the one gate with no confirmed live firing. Check again after a
+  normal-volume week.
 - **Is `min_confidence = 50` right?** Chosen because 65% of rows sat at 45–49.
   Never measured against faculty feedback. The 👍/👎 data is the natural
   evidence base and is not yet being used for this.
