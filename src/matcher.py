@@ -377,6 +377,12 @@ _AGENCY_ALLOW = {
     "ahrq", "agency for healthcare research",
     "cdc", "centers for disease control",
     "hrsa", "health resources and services",
+    # IHS was the one HHS operating division missing from this list (added
+    # 2026-08-07). Its grants fell through to the vocabulary check, where
+    # titles like "Urban Indian Health 4-in-1 Program" carry no recognised
+    # term and were dropped as non-biomedical. Procedural IHS postings are
+    # still caught by the separate admin-notice filter.
+    "ihs", "indian health service", "indian health",
     "fda", "food and drug administration",
     "samhsa", "substance abuse and mental health",
     "acl", "administration for community living",
@@ -460,45 +466,96 @@ _NONBIO_TITLE_TERMS = {
     "livestock",
     "agroforestry",
     "tribal students",
+    # Plant/animal disease is not human disease. Needed once "disease" became
+    # matchable vocabulary — otherwise APHIS "Plant Pest and Disease
+    # Management" reads as biomedical (2026-08-07).
+    "plant pest",
+    "plant disease",
+    "plant health",
+    "crop disease",
+    "animal disease",
+    "veterinary",
 }
 
 # Minimum vocabulary — at least one of these must appear in the grant text
-# for a non-allow-listed agency to pass the relevance filter
-_BIOMEDICAL_VOCAB = re.compile(
+# for a non-allow-listed agency to pass the relevance filter.
+#
+# Split into two tiers because the previous single `\b(...)\b` regex silently
+# broke every truncated stem in the list: the trailing \b meant `oncol` could
+# never match "oncology", `epidemiolog` never matched "epidemiology", `hepat`
+# never matched "hepatitis", and so on. Roughly a dozen terms — including most
+# of the specialty names — had been dead since they were written. Caught
+# 2026-08-07 when "Tribal Epidemiology Centers" was skipped as
+# "no biomedical agency or vocabulary found".
+#
+# _EXACT terms are whole words (with optional plural); _STEM terms match as
+# prefixes. Keep genuinely ambiguous short words in _EXACT — `gene` as a stem
+# would match "general", `lung` would match "lunge".
+_BIOMEDICAL_EXACT = re.compile(
     r"\b("
     # Diseases and conditions
-    r"cancer|tumor|carcinoma|oncol|leukemia|lymphoma|melanoma|"
-    r"alzheimer|dementia|parkinson|neurodegenerat|"
-    r"diabetes|diabetic|insulin|glucose|metabolic|obesity|"
+    r"cancer|tumor|carcinoma|leukemia|lymphoma|melanoma|"
+    r"alzheimer|dementia|parkinson|"
+    r"insulin|glucose|metabolic|obesity|"
     r"cardiovascular|cardiac|heart|coronary|hypertension|stroke|vascular|"
-    r"infection|infectious|pathogen|bacterial|viral|fungal|antimicrobial|antibiotic|"
+    r"pathogen|bacterial|viral|fungal|antimicrobial|antibiotic|"
     r"HIV|AIDS|tuberculosis|malaria|sepsis|pneumonia|influenza|COVID|"
-    r"autoimmune|immune|immunolog|allerg|asthma|"
-    r"mental health|psychiatric|depression|anxiety|schizophrenia|bipolar|"
-    r"opioid|substance use|addiction|overdose|"
-    r"kidney|renal|liver|hepat|pulmonary|lung|respiratory|"
-    r"neurolog|brain|spinal|cognitive|epilepsy|seizure|"
+    r"autoimmune|immune|asthma|"
+    r"mental health|behavioral health|psychiatric|depression|anxiety|"
+    r"schizophrenia|bipolar|suicide|suicidal|self-harm|"
+    r"opioid|substance use|substance abuse|addiction|overdose|"
+    r"kidney|renal|liver|pulmonary|lung|respiratory|"
+    r"brain|spinal|cognitive|epilepsy|seizure|"
     r"musculoskeletal|orthopedic|arthritis|bone|"
-    r"reproductive|maternal|neonatal|pediatric|geriatric|"
-    r"dermatolog|skin|wound|"
+    r"reproductive|maternal|neonatal|pediatric|geriatric|labor and delivery|"
+    r"skin|wound|"
     # Biomedical science
-    r"genomic|genome|gene|genetic|DNA|RNA|protein|molecular|cellular|"
-    r"stem cell|cell therap|regenerat|"
-    r"biomarker|diagnostic|imaging|MRI|CT scan|PET|ultrasound|"
-    r"pharmacol|drug|therapeut|treatment|clinical trial|randomized|"
+    r"genome|gene|genetic|DNA|RNA|protein|molecular|cellular|"
+    r"stem cell|"
+    r"biomarker|imaging|MRI|CT scan|PET|ultrasound|"
+    r"treatment|clinical trial|randomized|"
     r"surgery|surgical|transplant|"
-    r"microbiome|microbiota|"
-    r"epidemiolog|cohort|longitudinal|"
-    r"health disparit|health equit|"
-    # Medical specialties that are unambiguous
-    r"oncolog|cardiology|neurology|gastroenterol|dermatolog|"
-    r"patholog|radiology|psychiatry|pediatrics|geriatrics|"
-    r"nursing|pharmacy|dentistry|dental|"
+    r"cohort|longitudinal|"
+    # Health services / public health (added 2026-08-07 — their absence caused
+    # "Suicide Prevention, Intervention, and Postvention" and "Domestic Violence
+    # Prevention: Forensic Healthcare Services" to be skipped as non-biomedical)
+    r"health care|healthcare|public health|community health|health services|"
+    r"health promotion|health outcomes|health program|health center|"
+    r"primary care|patient care|palliative|hospice|rehabilitation|telehealth|"
+    r"nurse|nursing|physician|clinician|medicine|medical|"
+    # "screening" alone is too generic — it admitted "Export Controls and
+    # Investment Screening for Critical Minerals". Qualify it.
+    r"vaccine|vaccination|immunization|"
+    r"cancer screening|health screening|disease screening|newborn screening|"
+    r"morbidity|mortality|disease|illness|injury|trauma|"
+    # Medical specialties spelled out in full
+    r"cardiology|neurology|radiology|psychiatry|pediatrics|geriatrics|"
+    r"pharmacy|dentistry|dental|"
     # Institutions
-    r"hospital|clinic|patient care|medical center|health system"
-    r")\b",
+    r"hospital|clinic|medical center|health system"
+    r")s?\b",
     re.IGNORECASE,
 )
+
+# Prefix stems — deliberately NOT terminated by \b so they match inflected
+# forms: `oncol` → oncology/oncologic, `epidemiolog` → epidemiology/epidemiologic.
+_BIOMEDICAL_STEM = re.compile(
+    r"\b("
+    r"oncol|neurodegenerat|diabet|infect|immunolog|allerg|"
+    r"hepat|neurolog|dermatolog|epidemiolog|patholog|pharmacol|"
+    r"gastroenterol|regenerat|therapeut|diagnostic|drug|"
+    r"microbiom|microbiot|genomic|cell therap|"
+    r"health disparit|health equit|"
+    r"prenatal|postpartum|obstetric|gynecolog|urolog|ophthalmolog|"
+    r"anesthesiolog|rheumatolog|endocrinolog|nephrolog|hematolog"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _biomedical_vocab_hits(text: str) -> list[str]:
+    """All biomedical vocabulary hits in `text`, across both tiers."""
+    return _BIOMEDICAL_EXACT.findall(text) + _BIOMEDICAL_STEM.findall(text)
 
 
 # Pre-compile the block/allow/non-bio lists into word-boundary regexes at module
@@ -520,6 +577,20 @@ _NONBIO_TITLE_RX = [
     (term, re.compile(r"\b" + re.escape(term) + r"\b", re.IGNORECASE))
     for term in _NONBIO_TITLE_TERMS
 ]
+
+# Block terms that are ordinary English words. They identify an agency reliably
+# but are meaningless — and actively harmful — when matched against a TITLE:
+#   'education' rejected "Urban Indian Health Program - Education & Research"
+#   'labor'     would reject anything about labor and delivery
+#   'commerce', 'interior', 'arts', 'humanities' are the same class of word.
+# These are checked against the agency field only. Genuinely off-topic titles
+# are handled by _NONBIO_TITLE_TERMS above, which is what that list is for.
+# Caught 2026-08-07 via the skipped-grants audit: two IHS health research
+# programs were discarded purely for carrying "Education" in their titles,
+# on the same day other IHS grants matched normally.
+_AGENCY_ONLY_BLOCK = {
+    "education", "labor", "commerce", "interior", "arts", "humanities",
+}
 
 
 def _is_biomedically_relevant(grant: dict, min_vocab_hits: int = 1) -> tuple[bool, str]:
@@ -553,9 +624,13 @@ def _is_biomedically_relevant(grant: dict, min_vocab_hits: int = 1) -> tuple[boo
 
     # 3. Agency block-list — applies to NON-allow-listed agencies only.
     #    Word-boundary regex (see _AGENCY_BLOCK_RX comment).
+    #    Common-English block terms are matched against the agency only; see
+    #    _AGENCY_ONLY_BLOCK for why matching them in titles caused false drops.
     for blocked, pattern in _AGENCY_BLOCK_RX:
-        if pattern.search(agency) or pattern.search(title):
-            return False, f"blocked agency/title term: '{blocked}'"
+        if pattern.search(agency):
+            return False, f"blocked agency term: '{blocked}'"
+        if blocked not in _AGENCY_ONLY_BLOCK and pattern.search(title):
+            return False, f"blocked title term: '{blocked}'"
 
     # 4. CFDA prefix — HHS is 93.xxx, always biomedical
     cfda = grant.get("cfda_number") or grant.get("number") or ""
@@ -563,7 +638,7 @@ def _is_biomedically_relevant(grant: dict, min_vocab_hits: int = 1) -> tuple[boo
         return True, f"HHS CFDA prefix: {cfda}"
 
     # 5. Biomedical vocabulary scan on full grant text
-    hits = _BIOMEDICAL_VOCAB.findall(full)
+    hits = _biomedical_vocab_hits(full)
     if len(hits) >= min_vocab_hits:
         return True, f"biomedical vocab match ({len(hits)} terms: {list(set(h.lower() for h in hits))[:3]})"
 

@@ -14,6 +14,7 @@ API response structure for Grants.gov (typical):
 import html
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -44,12 +45,126 @@ except ImportError:
     logger.warning("foundation_scraper not available — external sources disabled")
 
 GRANTS_API_URL = "https://api.grants.gov/v1/api/search2"
+GRANTS_FETCH_API_URL = "https://api.grants.gov/v1/api/fetchOpportunity"
 GRANT_DETAIL_URL = "https://www.grants.gov/search-results-detail/{opp_id}"
+
+# search2 returns only: id, number, title, agency, agencyCode, openDate,
+# closeDate, oppStatus, docType, cfdaList. It carries NO synopsis and NO
+# awardCeiling, and its closeDate is frequently blank. That meant every
+# Grants.gov opportunity reached the matcher with an empty synopsis — so
+# keyword and semantic matching ran on the title alone — and reached faculty
+# with "Deadline: N/A". fetchOpportunity fills all three in.
+# (Diagnosed 2026-08-07 from the 08-07 workbook: 3 of 4 grants had no close
+# date and 4 of 4 had no award ceiling.)
+GRANTS_DETAIL_TIMEOUT = 20
+GRANTS_DETAIL_MAX_LOOKUPS = 200   # safety cap; typical run sees 7-40 new grants
 
 HEADERS = {
     "Content-Type": "application/json",
     "User-Agent": "UMSOMGrantMatcher/1.0"
 }
+
+
+_TAG_RX = re.compile(r"<[^>]+>")
+_WS_RX = re.compile(r"\s+")
+
+# "Nov 17, 2026 12:00:00 AM EST" (fetchOpportunity) and the plain forms that
+# already appear in the pipeline. Everything is normalised to %m/%d/%Y because
+# that is what emailer._days_until and the Excel report already parse.
+_DETAIL_DATE_FORMATS = ("%b %d, %Y", "%B %d, %Y", "%m/%d/%Y", "%Y-%m-%d")
+
+
+def _strip_html(value) -> str:
+    """Plain text from a possibly-HTML synopsis field."""
+    if not value:
+        return ""
+    return _WS_RX.sub(" ", html.unescape(_TAG_RX.sub(" ", str(value)))).strip()
+
+
+def _normalize_detail_date(value) -> str:
+    """Normalise a fetchOpportunity date to MM/DD/YYYY, or '' if unparseable."""
+    if not value:
+        return ""
+    text = str(value).strip()
+    # Drop a trailing time/zone component: "Nov 17, 2026 12:00:00 AM EST"
+    head = text.split(" 12:00:00")[0].split(" 00:00:00")[0].strip()
+    for candidate in (head, text):
+        for fmt in _DETAIL_DATE_FORMATS:
+            try:
+                return datetime.strptime(candidate, fmt).strftime("%m/%d/%Y")
+            except ValueError:
+                continue
+    logger.debug(f"Could not parse detail date {value!r}")
+    return ""
+
+
+def _clean_money(value) -> str:
+    """Award amounts arrive as None, '', or the literal string 'none'."""
+    if value is None:
+        return ""
+    text = str(value).strip()
+    return "" if text.lower() in ("", "none", "null", "n/a") else text
+
+
+def enrich_grants_with_details(grants, timeout=GRANTS_DETAIL_TIMEOUT,
+                               max_lookups=GRANTS_DETAIL_MAX_LOOKUPS):
+    """
+    Fill in synopsis / close_date / award_ceiling from Grants.gov
+    fetchOpportunity, which search2 does not return.
+
+    Best-effort and non-fatal: any grant whose lookup fails keeps its search2
+    values, so a Grants.gov hiccup degrades detail rather than losing grants.
+    Only called for NEW grants, so this is typically 7-40 requests per run.
+    """
+    enriched = failed = 0
+    for i, grant in enumerate(grants):
+        if i >= max_lookups:
+            logger.warning(
+                f"Detail lookup cap ({max_lookups}) reached — {len(grants) - i} "
+                f"grants keep search2-only fields (no synopsis/deadline)"
+            )
+            break
+        opp_id = grant.get("id")
+        if not opp_id:
+            continue
+        try:
+            resp = requests.post(
+                GRANTS_FETCH_API_URL, headers=HEADERS,
+                json={"opportunityId": int(opp_id)}, timeout=timeout,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            if body.get("errorcode", -1) != 0:
+                raise ValueError(f"errorcode={body.get('errorcode')}")
+            syn = (body.get("data") or {}).get("synopsis") or {}
+        except (requests.RequestException, json.JSONDecodeError, ValueError, TypeError) as e:
+            logger.debug(f"Detail lookup failed for {opp_id}: {e}")
+            failed += 1
+            continue
+
+        synopsis = _strip_html(syn.get("synopsisDesc"))
+        if synopsis:
+            grant["synopsis"] = synopsis[:4000]
+            grant["searchable_text"] = f"{grant.get('title','')} {grant['synopsis']}".lower()
+        close = _normalize_detail_date(syn.get("responseDate"))
+        if close:
+            grant["close_date"] = close
+        ceiling = _clean_money(syn.get("awardCeiling"))
+        if ceiling:
+            grant["award_ceiling"] = ceiling
+        floor = _clean_money(syn.get("awardFloor"))
+        if floor:
+            grant["award_floor"] = floor
+        eligibility = _strip_html(syn.get("applicantEligibilityDesc"))
+        if eligibility:
+            grant["eligibility_desc"] = eligibility[:2000]
+        enriched += 1
+
+    logger.info(
+        f"Detail enrichment: {enriched}/{len(grants)} grants enriched"
+        + (f", {failed} lookups failed" if failed else "")
+    )
+    return grants
 
 
 # How long a seen id is remembered. Grants.gov re-windows only the last 2 days
@@ -256,6 +371,12 @@ def fetch_new_grants(config: dict, seen_ids: set = None, save: bool = True) -> l
 
         new_grants.append(grant)
         newly_seen_ids.add(opp_id)
+
+    # Pull the fields search2 omits (synopsis, real deadline, award ceiling).
+    # Done before the seen-ids are persisted so a crash here doesn't mark
+    # grants as seen without ever having matched them.
+    if new_grants:
+        enrich_grants_with_details(new_grants)
 
     seen_ids |= newly_seen_ids   # mutate in place — shared with fetch_all_sources
     if save:
