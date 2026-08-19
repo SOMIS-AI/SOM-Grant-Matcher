@@ -64,6 +64,50 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-08-19 — Instrument the semantic floor instead of moving it
+**Status:** live
+**Change:** no tuning change. Added diagnostic fields only —
+`semantic_candidates`, `semantic_above_confidence`, `semantic_lost_to_floor`,
+`semantic_lost_45_49` and `min_semantic_confidence` in the run summary, plus
+per-grant `candidates` / `above_confidence` / `lost_to_floor` /
+`lost_confidence_bands` in `semantic_score_distributions`. Also
+`feedback_links.{enabled,configured,links_rendered_this_run}` at the top level.
+View with `python tools/diag_trend.py <dir> --semantic`.
+**Why:** the 08-17 review found the semantic channel has largely closed —
+semantic share of delivered matches fell from 88–96% (late July) to 6–30%
+(post-08-11), while keyword matches rose sharply. The obvious move was to lower
+`min_semantic_confidence` back below the keyword floor. But that floor was
+raised 42 → 50 deliberately on 08-04 for the faculty pilot, with a documented
+rationale and an explicit revisit condition: *"once 👍/👎 data lands."* The
+evidence to justify reversing it did not exist — the diagnostic recorded that
+semantic candidates cleared the similarity threshold (45+ across 6 grants on
+08-15) but never how many the floor then discarded.
+**Expected effect:** none on matching. The next review can answer "how many good
+semantic matches is the floor costing, and where do they sit?" from data
+instead of inference.
+**Outcome:** *pending — fields populate on the first run after deploy.*
+**Verdict:** too early
+**Note:** the semantic-share collapse is only partly attributable to the floor.
+The 08-07 synopsis enrichment gave keyword matching far more text to hit, so
+keyword volume rose independently — share would have shifted even with the floor
+unchanged. Separating the two needs the new counters.
+
+### 2026-08-17 — Review of the first 10 days under the 08-07 fixes
+**Status:** measured, no change made
+**Outcome — relevance filter (08-07):** working. Grants of the class previously
+discarded now come through: "Improving The Capacity of Tribal Communities…",
+Bureau of Global Health Security awards. The skip *rate* is not a clean
+indicator — 43–71% post-fix vs 36–75% before, driven mostly by what gets posted.
+**Outcome — detail enrichment (08-07):** working. Award ceiling was `N/A` on
+every grant in every pre-fix workbook and is now populated (5 of 10 grants on
+08-15); close dates likewise. The unpopulated remainder are NSF-scraper and
+foundation grants with no Grants.gov opportunity id, so `fetchOpportunity`
+cannot apply — a known limitation of non-Grants.gov sources, not a regression.
+**Outcome — keyword volume:** rose sharply, as intended. `keyword_only` went
+from 3–29/day pre-fix to 19–86/day. Semantic matching was expected to gain too;
+it did not, which is what prompted the entry above.
+**Verdict:** worked (both 08-07 fixes)
+
 ### 2026-08-07 — Relevance filter false negatives + Grants.gov detail fetch
 **Status:** live
 **Commit:** `43b051b`
@@ -83,8 +127,13 @@ synopsis at all, so every Grants.gov grant had been matched on its **title
 alone**.
 **Expected effect:** `skipped` falls. `raw` rises, possibly a lot, since semantic
 matching finally has real text. Deadlines populate in emails and Excel.
-**Outcome:** *pending — first run under this code is 2026-08-08.*
-**Verdict:** too early
+**Outcome:** measured over 08-08..08-15 — see the 2026-08-17 entry. Both halves
+work. Award ceiling went from never populated to routinely populated; previously
+skipped tribal-health and global-health grants now come through; keyword volume
+rose from 3–29/day to 19–86/day. The one surprise is that semantic matching did
+not gain from the new synopsis text, which is being instrumented rather than
+guessed at (2026-08-19).
+**Verdict:** worked
 **Validation done before merge:** replayed all 406 historically skipped-irrelevant
 grants with their recorded agencies; 19 now pass (Army rare-cancer research, HRSA
 nursing, IHS health programs) with no wrongly-admitted grants after qualifying
@@ -97,10 +146,15 @@ nursing, IHS health programs) with no wrongly-admitted grants after qualifying
 **Why:** 65% of delivered rows sat at 45–49 — the floor was admitting a large
 band of marginal matches right at the threshold, ahead of the faculty pilot.
 **Expected effect:** fewer delivered matches, higher average quality.
-**Outcome:** 08-04 (floor 45) kept 16.2% of candidates; 08-07 (floor 50) kept
-13.4%. Directionally right but **two data points either side of a weekend, on
-7–24 grants/day — not conclusive.**
-**Verdict:** not measured — revisit once a fortnight of post-08-08 data exists.
+**Outcome:** with two more weeks of data the keep rate under floor 50 settled at
+3–15% (08-08..08-15) against 16–44% under floor 45 (late July). The floor is
+doing what it was set to do. Its cost falls disproportionately on the semantic
+channel, because `min_semantic_confidence` was raised alongside it — semantic
+confidence is similarity × 100 and MiniLM's observed ceiling is ~0.57, so a
+floor of 50 admits only the top sliver. Whether that trade is right for the
+pilot is the open question the 2026-08-19 instrumentation exists to answer.
+**Verdict:** worked as designed — the open question is whether the design is
+right, not whether it took effect.
 
 ### 2026-08-04 — Pilot readiness bundle
 **Status:** live
@@ -256,12 +310,22 @@ measured experiment rather than another guess.
 - ~~**Are the track-record gate and context filter firing at all?**~~
   **Resolved 2026-08-07: yes.** Both fire regularly across the 69-run archive —
   see the 2026-06-23 entry. The recent zeros were low volume, not breakage.
-- **Has the clinical-vs-basic filter ever fired live?** It went from report-only
-  to live on 2026-08-04 and `clinical_basic_suppressed` has read 0 on all four
-  days since. Its one recorded firing (5 suppressions, 06-25) was while still in
-  report-only mode. Not yet evidence of a fault — those four days were quiet —
-  but it is the one gate with no confirmed live firing. Check again after a
-  normal-volume week.
+- ~~**Has the clinical-vs-basic filter ever fired live?**~~
+  **Resolved 2026-08-17: yes** — 8 suppressions on 08-12, its first live firing.
+  All gates are now confirmed working.
+- **Is anyone actually collecting 👍/👎 feedback?** `feedback.form_url_template`
+  is empty in `config/config.yaml`; the real value is supplied at runtime by the
+  `FEEDBACK_FORM_URL` app setting in Azure, which cannot be inspected from the
+  repo. If it is unset, no feedback links have ever been emailed — and the
+  08-04 decision to revisit the confidence floors *"once 👍/👎 data lands"* is
+  waiting on something that will never arrive. The 2026-08-19 diagnostic now
+  reports `feedback_links.configured` and `links_rendered_this_run`, so the next
+  run settles it. **Check this before spending more time on floor tuning.**
+- **Where do the verdicts go?** The 👍/👎 links point at an external form, so the
+  app never sees the responses. Any analysis of feedback-vs-match-type has to
+  join the form's export against the match id
+  (`email|grant#|run_date|confidence|match_type|rater`). Worth building once the
+  answer to the previous question is yes.
 - **Is `min_confidence = 50` right?** Chosen because 65% of rows sat at 45–49.
   Never measured against faculty feedback. The 👍/👎 data is the natural
   evidence base and is not yet being used for this.

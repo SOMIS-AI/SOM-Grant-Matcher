@@ -129,6 +129,8 @@ def main():
     ap.add_argument("directory", help="folder holding grant_matcher_diagnostic_*.json")
     ap.add_argument("--since", help="only runs on/after this YYYY-MM-DD")
     ap.add_argument("--params", action="store_true", help="show parameter changes only")
+    ap.add_argument("--semantic", action="store_true",
+                    help="what the semantic confidence floor is costing")
     ap.add_argument("--csv", action="store_true", help="emit CSV on stdout")
     args = ap.parse_args()
 
@@ -144,6 +146,26 @@ def main():
               f"({runs[0]['date']} to {runs[-1]['date']}):\n")
         for date, delta in sorted(changes.items()):
             print(f"  {date}  {fmt_params(delta)}")
+        return 0
+
+    if args.semantic:
+        head = (f"{'date':12}{'cands':>7}{'kept':>7}{'lost':>7}{'45-49':>7}"
+                f"{'floor':>7}   what a floor of 45 would recover")
+        print(head); print("-" * len(head))
+        seen_any = False
+        for run in runs:
+            s = run["summary"]
+            cands = s.get("semantic_candidates")
+            if cands is None:
+                continue
+            seen_any = True
+            lost, band = s.get("semantic_lost_to_floor", 0), s.get("semantic_lost_45_49", 0)
+            pct = f"+{100 * band / cands:.0f}% of candidates" if cands else "-"
+            print(f"{run['date']:12}{cands:>7}{s.get('semantic_above_confidence', 0):>7}"
+                  f"{lost:>7}{band:>7}{str(s.get('min_semantic_confidence', '-')):>7}   {pct}")
+        if not seen_any:
+            print("  (no run carries these fields yet — they were added 2026-08-19;\n"
+                  "   the first run after that deploy will populate them)")
         return 0
 
     if args.csv:

@@ -155,6 +155,9 @@ def _get_match_type(m) -> str:
 # (scheduler, --send-digest, manual) picks it up. Empty template = links off.
 
 _FEEDBACK_CFG: dict = {}
+# Count of 👍/👎 link pairs actually rendered this run. Reported in the diagnostic
+# so a run that silently emits no feedback links is visible (2026-08-19).
+_feedback_links_rendered = 0
 _ABOUT_URL: str = ""
 
 
@@ -208,6 +211,8 @@ def _feedback_links_html(m, grant: dict, run_date: str, rater: str = "self") -> 
     down = _feedback_url(mid, "Not relevant")
     if not up:
         return ""
+    global _feedback_links_rendered
+    _feedback_links_rendered += 1
     return (
         f"<div style='margin-top:6px;font-size:11px;'>"
         f"<a href='{esc(up)}' target='_blank' style='color:#2e7d32;text-decoration:none;"
@@ -1578,6 +1583,19 @@ def send_diagnostic_email(config: dict, matcher_diag: dict, scraper_health: dict
             "generated_at": datetime.utcnow().isoformat(),
             "matcher_diagnostic": matcher_diag,
             "scraper_health": scraper_health,
+            # Whether 👍/👎 links are actually going out. The verdicts themselves
+            # land in an external form, not in this app, so the diagnostic cannot
+            # report counts — but it CAN report whether the links were rendered
+            # at all. If configured=false, no feedback is being collected and any
+            # decision waiting on 👍/👎 data (e.g. the semantic confidence floor)
+            # is waiting for something that will never arrive. Added 2026-08-19
+            # after finding form_url_template empty in config; it is supplied at
+            # runtime via the FEEDBACK_FORM_URL app setting.
+            "feedback_links": {
+                "enabled": bool(_FEEDBACK_CFG.get("enabled", True)),
+                "configured": bool((_FEEDBACK_CFG.get("form_url_template") or "").strip()),
+                "links_rendered_this_run": _feedback_links_rendered,
+            },
         }, indent=2, default=str)
         message.attachment = Attachment(
             FileContent(base64.b64encode(payload.encode("utf-8")).decode()),

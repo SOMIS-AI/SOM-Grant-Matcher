@@ -1177,6 +1177,11 @@ def find_matches(grants, faculty, config=None):
     suppressed = 0
     context_filtered_total = 0      # Theme 3: matches dropped (all-generic keywords)
     track_record_gated_total = 0    # Theme 2: no-footprint faculty gated off major grants
+    # Cost of the semantic confidence floor, accumulated per grant (2026-08-18)
+    _sem_candidates_total = 0       # cleared the similarity threshold
+    _sem_above_conf_total = 0       # ...and also cleared min_semantic_confidence
+    _sem_lost_total = 0             # ...but were dropped by that floor
+    _sem_lost_45_49 = 0             # of those, the band a floor of 45 would recover
     clinical_basic_suppressed_total = 0   # Theme 1: basic-only faculty off clinical grants
 
     skipped_irrelevant = 0
@@ -1312,6 +1317,7 @@ def find_matches(grants, faculty, config=None):
             except ImportError:
                 sim_by_name = {}
 
+            sem_candidate_confidences = []
             if sim_by_name:
                 # (1) Semantic-only matches: above threshold and not keyword-matched
                 for name, sim in sim_by_name.items():
@@ -1337,6 +1343,13 @@ def find_matches(grants, faculty, config=None):
                         similarity_score   = sim,
                         confidence_score   = confidence,
                     )
+                    # Record the confidence of every semantic candidate that cleared
+                    # the similarity threshold, so the diagnostic can report how many
+                    # are then lost at min_semantic_confidence. Without this the
+                    # 08-17 review could see that candidates existed but not how
+                    # many the floor was costing — the number that decides whether
+                    # the pilot floor of 50 is set correctly.
+                    sem_candidate_confidences.append(confidence)
 
                 # ── Semantic diagnostic: score distribution ───────────────────
                 try:
@@ -1355,8 +1368,30 @@ def find_matches(grants, faculty, config=None):
                         "above_060": sum(1 for s in vals if s >= 0.60),
                         "above_065": sum(1 for s in vals if s >= 0.65),
                         "top_5": [(name, round(float(s), 4)) for name, s in items[:5]],
+                        # How the semantic-confidence floor lands on the candidates
+                        # that cleared the similarity threshold. `lost_to_floor` is
+                        # the cost of min_semantic_confidence for this grant.
+                        "candidates": len(sem_candidate_confidences),
+                        "above_confidence": sum(1 for c in sem_candidate_confidences
+                                                if c >= min_sem_conf),
+                        "lost_to_floor": sum(1 for c in sem_candidate_confidences
+                                             if c < min_sem_conf),
+                        "min_semantic_confidence": min_sem_conf,
+                        # Where the losers sit, so it is obvious whether they cluster
+                        # just under the floor (floor too high) or far below it.
+                        "lost_confidence_bands": {
+                            band: sum(1 for c in sem_candidate_confidences
+                                      if lo <= c < hi)
+                            for band, lo, hi in (("<35", 0, 35), ("35-39", 35, 40),
+                                                 ("40-44", 40, 45), ("45-49", 45, 50))
+                            if band
+                        },
                     }
                     _diag["semantic_score_distributions"].append(sem_score_info)
+                    _sem_candidates_total += sem_score_info["candidates"]
+                    _sem_above_conf_total += sem_score_info["above_confidence"]
+                    _sem_lost_total       += sem_score_info["lost_to_floor"]
+                    _sem_lost_45_49       += sem_score_info["lost_confidence_bands"].get("45-49", 0)
                     logger.info(
                         f"  Semantic scores: max={sem_score_info['max']:.3f} "
                         f"p95={sem_score_info['p95']:.3f} "
@@ -1625,6 +1660,16 @@ def find_matches(grants, faculty, config=None):
         "keyword_only": kw_only,
         "semantic_only": sem_only,
         "both": both,
+        # Run-level rollup of what min_semantic_confidence costs. Added 2026-08-18
+        # so the floor can be judged on evidence: semantic_candidates cleared the
+        # similarity threshold, semantic_lost_to_floor were then dropped by the
+        # confidence floor, and semantic_lost_45_49 is the band that a floor of
+        # 45 would recover. See TUNING_LOG 2026-08-18.
+        "semantic_candidates": _sem_candidates_total,
+        "semantic_above_confidence": _sem_above_conf_total,
+        "semantic_lost_to_floor": _sem_lost_total,
+        "semantic_lost_45_49": _sem_lost_45_49,
+        "min_semantic_confidence": min_sem_conf,
         "run_duration_s": round(time.time() - _run_start_time, 1),
     }
     _last_diagnostic = _diag
