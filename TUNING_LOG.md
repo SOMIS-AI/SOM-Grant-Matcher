@@ -64,6 +64,145 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-08-22 — Generic method terms can no longer anchor a keyword match
+**Status:** live
+**Commit:** *(pending)*
+**Change:** config only, no code and no thresholds moved.
+`matching.context_dependent_terms` 12 → 36 entries; the 24 additions are all
+method / measurement / domain-agnostic words, in four groups:
+
+| group | terms |
+|---|---|
+| computational & statistical method | `machine`, `machine learning`, `deep learning`, `artificial intelligence`, `simulation`, `simulations`, `modeling`, `monte carlo`, `molecular dynamics`, `statistical`, `statistics`, `prediction`, `computational` |
+| physical-science measurement / generic constructs | `temperature`, `chemistry`, `structure`, `evolution` |
+| environmental & agricultural | `ecology`, `spatial ecology`, `agriculture`, `agricultural` |
+| economic & administrative | `insurance`, `marketing`, `risk reduction` |
+
+Separately `special emphasis` was added to `matching.stop_words` (162 entries) —
+it is funding-announcement boilerplate, never a research topic, so it should not
+merely fail to anchor a match, it should never match at all.
+
+**Why:** the 08-11..08-22 diagnostic review. 322 of 402 delivered matches (80%)
+in that window were keyword-only, and the keyword channel was spending that
+volume on grants outside biomedicine entirely — at *higher* confidence than it
+gave the genuinely relevant ones. Three from the 08-22 workbook:
+
+- **Condensed Matter and Materials Theory** (NSF physics) — 156 keyword hits,
+  11 faculty delivered at 50–69%. Top match 69% on `machine, machine learning,
+  statistical`; others on `monte carlo`, `molecular dynamics`, `chemistry,
+  machine learning, temperature`.
+- **Spatial Ecology and Chronic Wasting Disease Dynamics of Wild Deer** — two
+  Psychiatry faculty, one at **90%** on `ecology, spatial ecology`.
+- **Agriculture Risk Management Education** (USDA) — two Surgery faculty at
+  **87%** on `insurance, risk reduction`, one at 66% on `special emphasis`, one
+  at 65% on `agriculture, marketing`.
+
+Meanwhile the same run gave 1 delivered match to SCORCH (opioid/HIV, 27
+candidates) and 1 to Translational Maternal & Pediatric Pharmacology (39
+candidates). The digest was rewarding topical distance.
+
+Two existing mechanisms could not catch these. `max_kw_prevalence_pct: 0.08`
+only suppresses terms held by >8% of the roster, and `monte carlo` is *rare*
+among faculty while being generic across domains — rarity and specificity have
+come apart. And the June phrase-scoring change actively **rewards** them:
+`machine learning` and `monte carlo` are multi-word phrases, so they collect the
+phrase bonus. That is why a physics grant outscored a muscular-dystrophy one.
+
+Every term added was observed anchoring a delivered match on an off-topic grant
+in that window. None were added speculatively.
+
+**Expected effect:** `context_filtered` in the diagnostic rises sharply (it was
+59 on 08-22). Delivered keyword-only volume falls a few percent. Grants whose
+entire faculty list rested on method words disappear from the digest — a grant
+with zero surviving matches is not emailed. `keep%` falls slightly. **No effect
+on the semantic channel** — the context filter runs on keyword matches only,
+and `min_semantic_confidence` was deliberately left at 50 pending 👍/👎 data.
+
+**Validated by replay before shipping.** The workbooks record every delivered
+match with its full matched-keyword list, so the filter was replayed against
+them using the shipped config. Across all Jun–Aug workbooks, **141 of 3,842
+delivered rows (3.7%) drop**, and 8 grants lose their entire faculty list:
+
+```
+2026-06-06..10  -6 each  Risk Assessment: Conducting Prison Security Audits
+2026-08-22      -2       Spatial Ecology / Chronic Wasting Disease (deer)
+2026-08-22      -4       Agriculture Risk Management Education
+2026-08-22     -11       Condensed Matter and Materials Theory (CMMT)
+```
+
+All eight are false positives, including one the review had not spotted — a
+prison-security-audit call delivered five days running in June on `risk` +
+`risk assessment`.
+
+**Accepted cost, and the thing to watch.** Two NSF calls that *are* about
+computational biology lose faculty whose only overlap was AI vocabulary:
+"Emerging Mathematics in Biology" (08-18) drops 16 of 27, "Bioinnovation and
+Infrastructure" (08-15) drops 12 of 24. Both grants survive with 11–12 faculty.
+This is the known failure mode of the rule: when the method *is* the topic, a
+method-only match can be legitimate. It is accepted for now because those
+dropped rows were a single cluster of faculty sharing one identical keyword pair
+at one identical confidence — low discriminative value — and because the
+diagnostic audits every drop under `context_filtered` with samples, so the cost
+is visible next run rather than silent. If AI-in-medicine grants start arriving
+empty, the fix is a per-grant exemption (method terms anchor when the grant
+title itself carries the method), not deleting the terms.
+
+**Outcome:** *pending — first run after the next Web App restart.* Check
+`context_filtered` and the per-grant samples in the 08-23+ diagnostic, and
+confirm CMMT-class grants no longer appear in the workbook.
+**Verdict:** too early
+
+---
+
+#### Considered and rejected in the same review: raising `min_vocab_hits`
+
+The 08-22 analysis also proposed tightening the grant-level relevance gate —
+`_is_biomedically_relevant()` in `src/matcher.py` admits a grant on a **single**
+biomedical vocabulary hit (`min_vocab_hits: int = 1`), which is how a
+condensed-matter-theory call gets into the pipeline at all. Raising it to 2–3
+was tested against the real grant text (Grants.gov `fetchOpportunity`) for 23
+grants from the 08-15..08-22 digests, split into ones that should survive and
+ones that should not. **It does not separate them:**
+
+```
+should DROP                                    distinct biomedical terms
+  MPS Chemistry (NSF)                          1   ('imaging')
+  MPS Physics (NSF)                            1   ('molecular')
+  BJS State Justice Statistics                 1   ('drug')
+  Logistical Support / counternarcotics        1   ('drug')
+  Emerging Mathematics in Biology              3
+  Chronic Wasting Disease (deer)               4   ('disease','pathogen','mortality','diagnostic')
+  BJA Public Safety and Mental Health          4
+
+should KEEP
+  DoW Breast Cancer Breakthrough               1   ('cancer')
+  Rural Communities Opioid Response - Eval     1   ('opioid')
+  Tribal Communities Emerging Drug Threats     1   ('drug')
+  SCORCH (opioid/HIV)                          2
+  Multimodal AI for Type 1 Diabetes            3
+```
+
+The distributions overlap completely. A threshold of 2 would drop the DoW Breast
+Cancer call and the Rural Opioid evaluation while **keeping** the deer grant and
+both BJA calls. A threshold of 3 is worse. The count of biomedical words is not
+the signal — *which* words is. The DROP set passes on domain-ambiguous
+vocabulary (`imaging`, `molecular`, `drug`, `disease`, `pathogen`, `cellular`);
+the KEEP set passes on disease and clinical anchors (`cancer`, `opioid`, `hiv`,
+`diabet`, `maternal`, `trauma`). Note also that `drug` admits narcotics-
+enforcement grants and `disease` admits veterinary ecology.
+
+If the grant gate is revisited, the shape to try is a **weak-vocabulary tier** —
+terms that cannot admit a grant on their own, structurally the same idea as
+`context_dependent_terms` but one layer up — not a higher count. Two further
+facts for whoever picks this up: `_biomedical_vocab_hits()` returns *occurrences*
+rather than distinct terms, so `len(hits)` already overstates; and the gate at
+`matcher.py:1199` runs **before** the 3,000-character truncation at
+`matcher.py:1265`, so it judges on more text than keyword matching ever sees.
+
+**Not done because it was not needed.** The context-term change above removes
+every observed false positive on its own — those grants keep entering the
+pipeline but deliver zero faculty, and a grant with zero matches is not emailed.
+
 ### 2026-08-19 — Instrument the semantic floor instead of moving it
 **Status:** live
 **Change:** no tuning change. Added diagnostic fields only —

@@ -249,6 +249,7 @@ matching:
   # CANCER genome grant; "risk"+"risk assessment" alone shouldn't match an
   # ecological-risk grant. Curatable — add generic offenders as they surface.
   context_dependent_terms:
+    # Population words (original 2026-06-23 set)
     - "pediatric"
     - "childhood"
     - "child"
@@ -261,6 +262,44 @@ matching:
     - "risk"
     - "risk assessment"
     - "risk factors"
+    # ── Method / domain-agnostic terms (added 2026-08-22) ───────────────────
+    # Every term below was observed anchoring a delivered match on an
+    # off-topic grant in the 08-11..08-22 digests. They describe a METHOD, a
+    # MEASUREMENT, or a generic construct used identically inside and outside
+    # biomedicine, so on their own they say nothing about topical fit. See
+    # TUNING_LOG.md 2026-08-22 for the evidence behind each group.
+    #
+    # Computational / statistical method — drove 11 faculty onto the NSF
+    # "Condensed Matter and Materials Theory" call at 50-69% confidence.
+    - "machine"
+    - "machine learning"
+    - "deep learning"
+    - "artificial intelligence"
+    - "simulation"
+    - "simulations"
+    - "modeling"
+    - "monte carlo"
+    - "molecular dynamics"
+    - "statistical"
+    - "statistics"
+    - "prediction"
+    - "computational"
+    # Physical-science measurement / generic scientific constructs — same grant.
+    - "temperature"
+    - "chemistry"
+    - "structure"
+    - "evolution"
+    # Environmental / agricultural — put two Psychiatry faculty on a wild-deer
+    # chronic-wasting-disease ecology call, one of them at 90%.
+    - "ecology"
+    - "spatial ecology"
+    - "agriculture"
+    - "agricultural"
+    # Economic / administrative — put two Surgery faculty on a USDA
+    # "Agriculture Risk Management Education" call at 87%.
+    - "insurance"
+    - "marketing"
+    - "risk reduction"
 
   # ── Research track-record signal (Theme 2, 2026-06-23) ────────────────────
   # Weight a match by the faculty member's external publication/grant footprint,
@@ -657,6 +696,13 @@ matching:
     - "white"            # proper-noun leak: "Ryan White HIV/AIDS Program" matched
                          # faculty on the bare token 'white' (48-62% conf, 08-01).
                          # Phrase-safe: "white matter" survives the phrase-level check.
+    # -- 2026-08-22 addition (08-11..08-22 diag review) --
+    - "special emphasis" # pure funding-announcement boilerplate ("areas of special
+                         # emphasis"), never a research topic. Delivered a Medicine
+                         # faculty onto the USDA "Agriculture Risk Management
+                         # Education" call at 66% on this term alone. Stop-worded
+                         # rather than context-dependent: it should never anchor a
+                         # match, and it adds nothing when it co-occurs either.
 
 # --- Logging ---
 logging:
