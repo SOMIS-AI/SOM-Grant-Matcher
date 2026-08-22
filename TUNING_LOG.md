@@ -66,7 +66,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-08-22 — Generic method terms can no longer anchor a keyword match
 **Status:** live
-**Commit:** *(pending)*
+**Commit:** `a48a6b4`
 **Change:** config only, no code and no thresholds moved.
 `matching.context_dependent_terms` 12 → 36 entries; the 24 additions are all
 method / measurement / domain-agnostic words, in four groups:
