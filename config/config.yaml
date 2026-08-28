@@ -300,6 +300,28 @@ matching:
     - "insurance"
     - "marketing"
     - "risk reduction"
+    # ── Academic / institutional vocabulary (added 2026-08-28) ──────────────
+    # Second family of the same bug, found in the 08-25/08-27 review. Every
+    # person at a medical school is "faculty", has "students", and works with
+    # "technology" — these words describe the setting, not the science, so they
+    # cannot indicate topical fit. They put 9 faculty on a USDA "Tribal Colleges
+    # Education Equity" call at 52-98% (top match: engineering, faculty,
+    # students, teaching). "technology" and "educational" are the singular forms
+    # of "technologies" and "education", already stop-worded below since June.
+    - "faculty"
+    - "faculty development"
+    - "students"
+    - "student"
+    - "teaching"
+    - "curricula"
+    - "curriculum"
+    - "educational"
+    - "technology"
+    - "engineering"
+    - "instrumentation"
+    - "strategic partnerships"
+    - "food"
+    - "online"
 
   # ── Research track-record signal (Theme 2, 2026-06-23) ────────────────────
   # Weight a match by the faculty member's external publication/grant footprint,
@@ -453,6 +475,24 @@ matching:
       reason:  'institutional: BRE-SPAD (research-admin development at emerging orgs)'
     - pattern: '\bMSI\b|minority[- ]?serving institution|\bHBCU\b'
       reason:  'institutional: MSI / HBCU only'
+    # Land-grant / tribal-college family (added 2026-08-28). Same category as
+    # MSI/HBCU above, which is why the gap was easy to miss: these are USDA-NIFA
+    # capacity and equity programs restricted by institution TYPE. UMB is not a
+    # land-grant institution, a tribal college, or a college of agriculture, so
+    # faculty cannot apply to any of them. Three reached digests before this was
+    # caught: "Scholarships for Students at 1890 Institutions" (08-11), "Tribal
+    # Colleges Education Equity Grants Program" (9 faculty at 52-98%, 08-25) and
+    # "Capacity Building Grants for Non-Land-Grant Colleges of Agriculture"
+    # (08-27). Scanned against all 1,276 distinct grant titles in the diagnostic
+    # archive: 4 hits, all correct, no false positives.
+    - pattern: '\bland[- ]?grant\b'
+      reason:  'institutional: land-grant (and non-land-grant college of agriculture) programs - UMB is neither'
+    - pattern: '\btribal college|\btribally[- ]controlled\b'
+      reason:  'institutional: tribal colleges / 1994 land-grant institutions only'
+    - pattern: '\b1890\b|\b1994\s+(?:institution|land[- ]?grant)'
+      reason:  'institutional: 1890 / 1994 land-grant institutions only'
+    - pattern: '\bNLGCA\b'
+      reason:  'institutional: Non-Land-Grant Colleges of Agriculture - acronym form of the above'
     - pattern: '\bR15\b|research enhancement award'
       reason:  'institutional: R15 / REAP — for health-prof / undergrad institutions without substantial NIH funding (UMSOM gets major NIH funding)'
     - pattern: '\bCOBRE\b|centers? of biomedical research excellence'
@@ -696,6 +736,11 @@ matching:
     - "white"            # proper-noun leak: "Ryan White HIV/AIDS Program" matched
                          # faculty on the bare token 'white' (48-62% conf, 08-01).
                          # Phrase-safe: "white matter" survives the phrase-level check.
+    # -- 2026-08-28 addition (08-25..08-27 diag review) --
+    - "other"            # not a research topic at all - a profile-form artefact.
+                         # Delivered a Medicine faculty onto the USDA "Capacity
+                         # Building Grants for Non-Land-Grant Colleges of
+                         # Agriculture" call at 56% on "educational, other".
     # -- 2026-08-22 addition (08-11..08-22 diag review) --
     - "special emphasis" # pure funding-announcement boilerplate ("areas of special
                          # emphasis"), never a research topic. Delivered a Medicine

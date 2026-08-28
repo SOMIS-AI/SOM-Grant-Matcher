@@ -64,6 +64,79 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-08-28 — Institution-restricted grants, and academic vocabulary as an anchor
+**Status:** live
+**Commit:** *(pending)*
+**Change:** config only. Two independent fixes for the same 08-25/08-27 review.
+
+*1. `matching.ineligible_grant_patterns` 23 → 27.* Four patterns covering the
+land-grant / tribal-college family — `land-grant` (which also catches
+"non-land-grant college of agriculture"), `tribal college` / `tribally
+controlled`, `1890` / `1994 institution`, and the `NLGCA` acronym.
+
+*2. `matching.context_dependent_terms` 36 → 50.* Fourteen academic /
+institutional words: `faculty`, `faculty development`, `students`, `student`,
+`teaching`, `curricula`, `curriculum`, `educational`, `technology`,
+`engineering`, `instrumentation`, `strategic partnerships`, `food`, `online`.
+Plus `other` to `stop_words` (163) — a profile-form artefact, not a topic.
+
+**Why:** three USDA-NIFA capacity/equity programs reached digests that UMB
+faculty **cannot apply to at all** — they are restricted by institution *type*:
+
+- "Scholarships for Students at 1890 Institutions" (08-11, 1 match)
+- "Tribal Colleges Education Equity Grants Program" (08-25, **9 faculty at
+  52–98%**, top match on `engineering, faculty, students, teaching`)
+- "Capacity Building Grants for Non-Land-Grant Colleges of Agriculture"
+  (08-27, 1 match on `educational, other`)
+
+`ineligible_grant_patterns` already screened the same category — it carries
+`\bMSI\b|minority-serving institution|\bHBCU\b` — which is exactly why the gap
+was easy to miss. Land-grant and tribal colleges are the USDA half of that
+category and were simply never added.
+
+The second fix addresses what put faculty on those grants in the first place.
+It is the same structural bug as the 08-22 method-term change, in a different
+vocabulary family: every person at a medical school is "faculty", has
+"students", and works with "technology", so those words describe the setting,
+not the science. Two of them, `technology` and `educational`, are the singular
+forms of `technologies` and `education` — both stop-worded since June, so the
+plural/singular split was already an inconsistency. The 08-27 run showed the
+family surviving after the method terms were neutralised: on "Annual Program
+Statement", `artificial intelligence` was correctly dropped and `technology`
+became the anchor instead.
+
+**Expected effect:** four grants stop entering the pipeline entirely (they will
+appear under `skipped_grants.ineligible` with the reason, not in the digest).
+A small further fall in keyword-only volume. No effect on the semantic channel;
+`min_semantic_confidence` still 50.
+
+**Validated before shipping.**
+*Eligibility* — the four patterns were run against all **1,276 distinct grant
+titles** in the diagnostic archive. Four hits, all correct, none already caught
+by an existing pattern, zero false positives. (It also picks up "Tribal Colleges
+Extension Program – Capacity Applications", which had not yet reached a digest.)
+*Keyword terms* — replayed against every delivered match still live under the
+current config: **17 additional rows drop**. Three grants lose their whole list
+(Tribal Colleges 9/9, Non-Land-Grant Colleges 1/1, and the 08-20 CMMT remnant
+1/1); the rest is 2/7 off the USDA CYFAR call, 2/4 off "Annual Program
+Statement", and 1 row off each of two DoW Epilepsy runs of 22.
+
+**A measurement trap worth recording.** Replaying the *current* config against
+*old* workbooks overstates the damage badly — the May/June workbooks are full of
+matches that later config changes already removed, so they show up as "would
+drop" when they are long gone. It read as 407 rows (9.9%) until the replay was
+re-based to count only rows still live under the config as it stands. Always
+measure the increment, not the total.
+
+**Outcome:** *pending — first run after the next Web App restart.*
+**Verdict:** too early
+
+**Observed but not changed.** Generic research-*process* terms are the same bug
+again: on 08-27 the spina bifida call delivered its top match at 88% on
+`data collection, long term`. Adding `data collection` / `long term` would drop
+only 2 rows across the whole archive — too thin to justify on its own. Revisit
+if it recurs.
+
 ### 2026-08-22 — Generic method terms can no longer anchor a keyword match
 **Status:** live
 **Commit:** `a48a6b4`
@@ -147,10 +220,25 @@ is visible next run rather than silent. If AI-in-medicine grants start arriving
 empty, the fix is a per-grant exemption (method terms anchor when the grant
 title itself carries the method), not deleting the terms.
 
-**Outcome:** *pending — first run after the next Web App restart.* Check
-`context_filtered` and the per-grant samples in the 08-23+ diagnostic, and
-confirm CMMT-class grants no longer appear in the workbook.
-**Verdict:** too early
+**Outcome:** live and firing, confirmed 08-27. The Web App was restarted after
+the 08-25 run. 08-25 and 08-26 were silent on it — `nsf_funding` returned no new
+grants, so nothing with method-word matches entered the pipeline, and the only
+`context_filtered` drops were on `children` from the original June set. 08-27
+gave the first real test and both new families fired:
+
+```
+Annual Program Statement                       48 dropped  ['artificial intelligence']
+Capacity Building Grants for Non-Land-Grant     5 dropped  ['agriculture']
+```
+
+`context_filtered` was 85 of 176 raw matches on that run. No CMMT-class grant
+has appeared since 08-22 to test directly, so the "grant disappears entirely"
+half is still unconfirmed.
+**Verdict:** worked (partial evidence — one run, no CMMT-class grant yet)
+**Follow-on:** the accepted cost flagged below showed up as predicted but
+smaller than feared. On 08-27 `artificial intelligence` was correctly dropped
+from "Annual Program Statement" and `technology` simply became the anchor
+instead — which is what prompted the academic-vocabulary entry above.
 
 ---
 
