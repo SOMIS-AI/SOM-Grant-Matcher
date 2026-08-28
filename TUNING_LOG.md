@@ -66,7 +66,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-08-28 — Institution-restricted grants, and academic vocabulary as an anchor
 **Status:** live
-**Commit:** *(pending)*
+**Commit:** `a61c7d7`
 **Change:** config only. Two independent fixes for the same 08-25/08-27 review.
 
 *1. `matching.ineligible_grant_patterns` 23 → 27.* Four patterns covering the
