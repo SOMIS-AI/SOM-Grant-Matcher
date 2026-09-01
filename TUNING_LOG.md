@@ -66,7 +66,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-09-01 — Disable the AHA scraper: the site now blocks us at the edge
 **Status:** live
-**Commit:** *(pending)*
+**Commit:** `6254f3d`
 **Change:** config only. `external_sources.disabled_sources` 24 → 25 entries;
 `aha` added, with the diagnosis and the do-not-do list inline.
 
