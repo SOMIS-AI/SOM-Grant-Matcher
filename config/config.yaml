@@ -827,6 +827,39 @@ external_sources:
     - "alexs_lemonade"
     - "alzheimers_assoc"
     - "proposal_central"
+    # aha: American Heart Association put Cloudflare bot management in front of
+    # the WHOLE heart.org domain around 2026-08-19. This is not a broken
+    # selector — every host and path 403s identically, robots.txt included:
+    #
+    #   professional.heart.org/en/research-programs   403  server=cloudflare
+    #   www.heart.org/                                403  server=cloudflare
+    #   professional.heart.org/robots.txt             403  server=cloudflare
+    #   <title>Attention Required! | Cloudflare</title> / "you have been blocked"
+    #
+    # It is a deliberate client-level access control by the site owner, and our
+    # self-identifying UA (UMSOMGrantMatcher/1.0) is what it is configured to
+    # stop. Do NOT "fix" this by spoofing a browser User-Agent, driving a
+    # headless browser through the JS challenge, or proxying — all three are
+    # evasion of that control, not a scraper fix. The UA swap in particular is a
+    # two-line change that looks like a fix and is not; it is called out here so
+    # it does not get done later by accident.
+    #
+    # No legitimate substitute exists. AHA runs its applications through
+    # ProposalCentral, but proposalcentral.com/GrantOpportunities.asp is a
+    # JS-rendered marketing shell (0 tables, 0 opportunity rows, 0 AHA links) and
+    # proposal_central is already disabled above for that same reason. The AHA
+    # newsroom RSS fetches fine but carries no funding content.
+    #
+    # Low-cost disable: AHA produced 8 grants total across the archive and its
+    # last new one was 2026-06-18 — two months BEFORE the block began — so this
+    # source had already gone quiet. Clears a standing likely_broken alert (12
+    # consecutive zero-reach runs as of 08-31) and one dead fetch per cycle.
+    #
+    # The only route that restores coverage is asking AHA to allowlist the
+    # matcher by UA string or by the Azure app's egress IP. If that is ever
+    # granted, re-enable this key — the existing scraper needs no code change,
+    # since the 403 is the only failure. (2026-09-01.)
+    - "aha"
   #
   # Available source keys:
   #   Tier 3 — Major Biomedical Research Funders:

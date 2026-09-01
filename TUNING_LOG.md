@@ -64,6 +64,66 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-09-01 — Disable the AHA scraper: the site now blocks us at the edge
+**Status:** live
+**Commit:** *(pending)*
+**Change:** config only. `external_sources.disabled_sources` 24 → 25 entries;
+`aha` added, with the diagnosis and the do-not-do list inline.
+
+**Why:** the American Heart Association put Cloudflare bot management in front
+of the entire `heart.org` domain around 2026-08-19. Every host and path returns
+the same 403 — `robots.txt` included, which is what rules out a page-level or
+path-level cause:
+
+```
+professional.heart.org/en/research-programs   403  server=cloudflare
+www.heart.org/                                403  server=cloudflare
+professional.heart.org/robots.txt             403  server=cloudflare
+<title>Attention Required! | Cloudflare</title>  "Sorry, you have been blocked"
+```
+
+This is a deliberate access control by the site owner, not a broken selector,
+and the scraper needs no code change: the 403 is the only failure.
+
+**The health tracker worked correctly throughout** and is worth crediting,
+because it is the reason this was caught at all. `_fetch_page` raises on 403 →
+`seen_links` stays empty → the source is never marked reached → `consecutive_zeros`
+climbs. It crossed `likely_broken_runs: 7` on 08-28 and stood at 12 by 08-31.
+The instrumentation did its job; there was simply nothing on the far end to fix.
+
+**Explicitly rejected: every workaround.** Spoofing a browser User-Agent,
+driving a headless browser through the JS challenge, and proxying are all
+evasion of a control the site owner deliberately deployed, not scraper fixes.
+The UA swap is called out by name in the config comment because it is a two-line
+change that *looks* like a fix — the point of writing it down is that it does
+not get done later by accident.
+
+**No legitimate substitute exists.** AHA runs its applications through
+ProposalCentral, but `proposalcentral.com/GrantOpportunities.asp` is a
+JS-rendered marketing shell — 0 tables, 0 opportunity rows, 0 AHA links — and
+`proposal_central` is already in `disabled_sources` for that same reason since
+08-04. The AHA newsroom RSS fetches fine but carries no funding content.
+
+**Expected effect:** the standing `likely_broken` alert clears, and one dead
+fetch per cycle goes away. Verified in code rather than assumed: `fetch_all_sources`
+skips disabled keys before `sources_tried` increments, and both the alert loop
+and `per_source_health` iterate `per_source_results`, so a disabled source
+leaves no stale entry behind. No effect on matching.
+
+**Coverage cost: effectively nil.** AHA produced 8 grants across the life of the
+archive and its last new one was 2026-06-18 — two months *before* the block
+began. It was already a quiet source.
+
+**Outcome:** *pending — confirm `aha` is absent from `scraper_health.health_alerts`
+in the first diagnostic after the next Web App restart.*
+**Verdict:** too early
+
+**The one route that restores coverage** is asking AHA to allowlist the matcher,
+by UA string or by the Azure app's egress IP. That needs a human to ask, and it
+is a reasonable request for a university research-support tool making one
+low-rate daily fetch. If it is ever granted, re-enable the key — no code change
+required.
+
 ### 2026-08-28 — Institution-restricted grants, and academic vocabulary as an anchor
 **Status:** live
 **Commit:** `a61c7d7`
