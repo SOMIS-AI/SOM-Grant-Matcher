@@ -164,6 +164,17 @@ _ABOUT_URL: str = ""
 def set_feedback_config(feedback_cfg: dict):
     global _FEEDBACK_CFG
     _FEEDBACK_CFG = feedback_cfg or {}
+    # Surface a broken template at startup rather than leaving it to be inferred
+    # from a digest nobody can submit. Only complain when one was actually
+    # supplied — an unset URL is a normal "feature off" state, not a fault.
+    if (_FEEDBACK_CFG.get("form_url_template") or "").strip():
+        usable, problem = _feedback_template_status()
+        if not usable:
+            logger.warning(f"Feedback form URL unusable: {problem}")
+        else:
+            quote_warning = _feedback_verdict_quote_warning()
+            if quote_warning:
+                logger.warning(f"Feedback form URL suspicious: {quote_warning}")
 
 
 def set_about_url(url: str):
@@ -182,10 +193,102 @@ def _about_link_html(color: str = "#c8a84b") -> str:
             f'Learn more about the UMSOM AI Grant Matcher &rarr;</a></p>')
 
 
-def _feedback_url(match_id: str, verdict: str) -> str:
+# A template can be present, non-empty and completely useless. On 2026-09-02
+# FEEDBACK_FORM_URL was set to the Form's ordinary *share* link, which carries no
+# answer parameters at all: every 👍 and 👎 then resolved to the same blank form,
+# and because the diagnostic only asked "is the string non-empty?" it reported
+# configured=true over a dead pipeline. Worse, questions 1 and 2 are Required, so
+# faculty landing there could not submit at all — the first thing they would have
+# seen of the feedback loop was a dead end.
+#
+# The fix is to check for the substitution placeholders rather than for mere
+# presence. The pre-filled template must come from the Form's "Get Pre-filled
+# URL" (⋯ menu on the design toolbar, behind an "Enable pre-filled answers"
+# toggle) — not from "Copy link" in the Collect responses panel.
+_FEEDBACK_PLACEHOLDERS = (
+    ("{match}",   "%7Bmatch%7D"),      # either raw or pre-encoded braces is fine
+    ("{verdict}", "%7Bverdict%7D"),
+)
+
+
+def _feedback_template_status() -> tuple[bool, str]:
+    """Return (usable, problem). `problem` is '' when the template is usable."""
     tmpl = (_FEEDBACK_CFG.get("form_url_template") or "").strip()
-    if not tmpl or not _FEEDBACK_CFG.get("enabled", True):
+    if not tmpl:
+        return False, "FEEDBACK_FORM_URL is not set"
+    missing = [variants[0] for variants in _FEEDBACK_PLACEHOLDERS
+               if not any(v in tmpl for v in variants)]
+    if missing:
+        return False, (
+            "template is missing the " + " and ".join(missing) + " placeholder"
+            + (" s" if len(missing) > 1 else "").strip()
+            + " — every feedback link would resolve to the same blank form. Use the"
+              " Form's 'Get Pre-filled URL' (⋯ menu, 'Enable pre-filled answers'"
+              " toggle), then replace the two answer VALUES with {match} and"
+              " {verdict}, keeping any %22 quotes the Form put around a choice."
+        )
+    return True, ""
+
+
+# Advisory, not a hard failure. Microsoft Forms wraps CHOICE answers in double
+# quotes in its pre-filled URLs (…=%22Good%20match%22) while leaving text answers
+# bare. Stripping those quotes while swapping in {verdict} is the easy mistake,
+# and it fails in the nastiest possible way: the match record still fills, so the
+# link looks like it works, but the verdict silently fails to select and every
+# response arrives with no verdict at all. We only warn — the quoting is specific
+# to Forms choice questions, so a template without it is suspicious rather than
+# provably wrong.
+def _feedback_verdict_quote_warning() -> str:
+    tmpl = (_FEEDBACK_CFG.get("form_url_template") or "").strip()
+    for raw in ("{verdict}", "%7Bverdict%7D"):
+        i = tmpl.find(raw)
+        if i == -1:
+            continue
+        before, after = tmpl[:i], tmpl[i + len(raw):]
+        if before.endswith("%22") and after.startswith("%22"):
+            return ""                      # correctly quoted
+        if before.endswith('"') and after.startswith('"'):
+            return ""                      # literal quotes, also fine
+        return ("{verdict} is not wrapped in %22 quotes. Microsoft Forms quotes "
+                "choice answers in pre-filled URLs — if the Form's own link had "
+                "%22 around the verdict, keep them: ...=%22{verdict}%22. Without "
+                "them the match record still fills but no option is selected, so "
+                "responses arrive with an empty verdict.")
+    return ""
+
+
+def _feedback_links_diagnostic() -> dict:
+    """The feedback_links block of the daily diagnostic. `configured` means the
+    template can actually carry a match record and a verdict — NOT merely that
+    some string was supplied. When it is false, `problem` says what to fix;
+    `warning` flags a template that is structurally valid but probably wrong."""
+    usable, problem = _feedback_template_status()
+    block = {
+        "enabled": bool(_FEEDBACK_CFG.get("enabled", True)),
+        "configured": usable,
+        "links_rendered_this_run": _feedback_links_rendered,
+    }
+    if not usable:
+        block["problem"] = problem
+    else:
+        warning = _feedback_verdict_quote_warning()
+        if warning:
+            block["warning"] = warning
+    return block
+
+
+def _feedback_url(match_id: str, verdict: str) -> str:
+    """Build one 👍/👎 link. Returns '' — no link rendered — when feedback is
+    disabled or the template cannot actually carry the answers. Failing closed
+    is deliberate: a link that lands every rater on the same blank Required form
+    is worse than no link, and it keeps links_rendered_this_run at 0 so the
+    diagnostic shows the fault twice over."""
+    if not _FEEDBACK_CFG.get("enabled", True):
         return ""
+    usable, _ = _feedback_template_status()
+    if not usable:
+        return ""
+    tmpl = (_FEEDBACK_CFG.get("form_url_template") or "").strip()
     return (tmpl.replace("%7Bmatch%7D", quote(match_id, safe=""))   # tolerate pre-encoded template
                 .replace("%7Bverdict%7D", quote(verdict, safe=""))
                 .replace("{match}", quote(match_id, safe=""))
@@ -1591,11 +1694,7 @@ def send_diagnostic_email(config: dict, matcher_diag: dict, scraper_health: dict
             # is waiting for something that will never arrive. Added 2026-08-19
             # after finding form_url_template empty in config; it is supplied at
             # runtime via the FEEDBACK_FORM_URL app setting.
-            "feedback_links": {
-                "enabled": bool(_FEEDBACK_CFG.get("enabled", True)),
-                "configured": bool((_FEEDBACK_CFG.get("form_url_template") or "").strip()),
-                "links_rendered_this_run": _feedback_links_rendered,
-            },
+            "feedback_links": _feedback_links_diagnostic(),
         }, indent=2, default=str)
         message.attachment = Attachment(
             FileContent(base64.b64encode(payload.encode("utf-8")).decode()),
