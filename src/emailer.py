@@ -297,8 +297,15 @@ def _feedback_url(match_id: str, verdict: str) -> str:
 
 def _match_feedback_id(m, grant: dict, run_date: str, rater: str = "self") -> str:
     """Label record: email|grant#|run_date|confidence|match_type|rater.
-    rater='self' = the faculty member themselves; 'admin' = a department
-    research administrator answering ON BEHALF of that faculty member."""
+
+    rater values, in descending order of how much the verdict should be trusted:
+      'self'   — the faculty member themselves, from their personalized digest.
+      'admin'  — a department research administrator answering ON BEHALF of that
+                 faculty member, from the per-department digest.
+      'digest' — someone on the shared DAILY_RECIPIENTS/WEEKLY_RECIPIENTS list
+                 rating a match that is not theirs (added 2026-09-03). Useful
+                 signal, but a third party's read of someone else's fit — filter
+                 or down-weight these before drawing threshold conclusions."""
     email = getattr(m, "faculty_email", None) or (m.get("faculty_email", "") if isinstance(m, dict) else "")
     gid = grant.get("number") or grant.get("id") or grant.get("title", "")[:60]
     return f"{email}|{gid}|{run_date}|{_get_conf(m)}|{_get_match_type(m)}|{rater}"
@@ -623,7 +630,16 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
         for ag, n in top_agencies
     )
 
-    grant_cards_html = _grant_cards_html(sorted_results)
+    # Feedback links on the MAIN digest too (2026-09-03). Until now 👍/👎 links
+    # existed only in the opt-in personalized per-faculty and per-dept digests,
+    # so with nobody enrolled the diagnostic reported configured=true with
+    # links_rendered_this_run=0 — a correctly configured form collecting nothing.
+    # rater='digest' (not 'self'/'admin') because this digest goes to a shared
+    # distribution list, so the rater is neither the faculty member nor their
+    # department's administrator. Keeping it a distinct value means feedback from
+    # the central list can be weighted differently — or excluded — when the
+    # verdicts are used to tune thresholds.
+    grant_cards_html = _grant_cards_html(sorted_results, run_date, fb_rater="digest")
 
     stats_row = f"""
     <!-- Stats row -->
