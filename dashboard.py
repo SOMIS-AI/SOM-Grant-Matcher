@@ -3851,6 +3851,13 @@ async function loadSubscriptions() {
   try {
     const r = await fetch('/api/subscriptions/staff').then(r=>r.json());
     const staff = r.ok ? (r.staff||[]) : [];
+    // Hold the records in JS rather than serialising them into HTML attributes.
+    // The previous version inlined JSON.stringify(p) inside a single-quoted
+    // onclick, so one apostrophe anywhere in the record — "Alzheimer's disease",
+    // "children's health" — closed the attribute early and left the edit button
+    // inert, with no error shown anywhere (hit on a real profile 2026-09-04).
+    // An index cannot be broken by any character in the data.
+    window.__staffRecs = staff;
     const nActive = r.active_count || 0;
     document.getElementById('subs-staff-count').textContent =
       nActive + ' active' + (staff.length>nActive ? ' / '+staff.length+' total' : '');
@@ -3858,7 +3865,7 @@ async function loadSubscriptions() {
     if (!staff.length) {
       tb.innerHTML = '<tr><td colspan="7" style="color:var(--text3)">No staff yet. Click "+ Add staff" to add one.</td></tr>';
     } else {
-      tb.innerHTML = staff.map(p=>{
+      tb.innerHTML = staff.map((p,i)=>{
         const kws = (p.keywords||[]);
         const shown = kws.slice(0,4).join(', ') + (kws.length>4 ? ' +'+(kws.length-4)+' more' : '');
         const off = (p.cadence||'')==='off';
@@ -3870,9 +3877,9 @@ async function loadSubscriptions() {
           <td>${cadenceBadge(p.cadence)}</td>
           <td style="font-size:11px;color:var(--text3)">${shortDate(p.updated_at)}</td>
           <td>
-            <button class="btn-sm" onclick='editStaff(${JSON.stringify(p)})'>edit</button>
+            <button class="btn-sm" onclick="editStaff(${i})">edit</button>
             <button class="btn-sm" style="background:#fdecec;color:#b91c1c"
-              onclick="deleteStaff('${escHtml(p.email)}')">x</button>
+              onclick="deleteStaff(${i})">x</button>
           </td>
         </tr>`;
       }).join('');
@@ -4048,7 +4055,9 @@ function openStaffForm(){
 function closeStaffForm(){
   document.getElementById('subs-staff-form').style.display='none';
 }
-function editStaff(p){
+function editStaff(i){
+  const p = (window.__staffRecs||[])[i];
+  if(!p){ alert('Could not load that staff record — refresh the page and try again.'); return; }
   openStaffForm();
   document.getElementById('st-name').value     = p.name||'';
   document.getElementById('st-email').value    = p.email||'';
@@ -4083,7 +4092,10 @@ async function saveStaff(){
     closeStaffForm(); loadSubscriptions();
   } catch(e){ st.textContent = e.message||String(e); st.style.color='var(--red)'; }
 }
-async function deleteStaff(email){
+async function deleteStaff(i){
+  const p = (window.__staffRecs||[])[i];
+  if(!p){ alert('Could not load that staff record — refresh the page and try again.'); return; }
+  const email = p.email;
   if(!confirm('Turn off grant emails for '+email+'?\n\nTheir keywords and profile text are kept, so you can switch them back on later without retyping.')) return;
   await fetch('/api/subscriptions/staff', {
     method:'DELETE', headers:{'Content-Type':'application/json'},
