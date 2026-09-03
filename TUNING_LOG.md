@@ -66,7 +66,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-09-04 — Rarity is not specificity: geographic filler, and a single-keyword penalty
 **Status:** live
-**Commit:** *(pending)*
+**Commit:** `8027664`
 **Change:** two things, one vocabulary and one structural.
 
 *1. Vocabulary.* `stop_words` 163 → 168: `united states`, `among`, `free`,
