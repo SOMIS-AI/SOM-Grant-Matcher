@@ -112,7 +112,13 @@ topically-matched grant, a staff profile WITH text scored cosine 0.427 (above th
 writes these profiles: always fill in the profile text, and prefer specific
 keywords over administrative ones.** The dashboard field placeholder says so.
 
-**Outcome:** *pending — no staff enrolled yet.*
+**Follow-up 2026-09-04:** staff shipped weekly-only; they can now choose daily or
+weekly per person, so the fan-out runs from both scheduler branches filtered by
+cadence. Cadence governs EMAILS ONLY — every active staff member is matched on
+every run either way, and a weekly subscriber's matches accumulate until their
+digest goes out. The buckets are disjoint, so nobody is emailed twice.
+
+**Outcome:** *pending — two staff enrolled 2026-09-03, no digest sent yet.*
 **Verdict:** too early
 
 ### 2026-09-01 — Disable the AHA scraper: the site now blocks us at the edge

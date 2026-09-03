@@ -524,13 +524,18 @@ def _build_id() -> str:
     return "unknown"
 
 
-def _send_staff_digests(config: dict, matched_results: list,
-                        run_date: str, digest_label: str = "Weekly") -> dict:
+def _send_staff_digests(config: dict, matched_results: list, run_date: str,
+                        cadence: str = "weekly", digest_label: str = "") -> dict:
     """Send each active UMSOM staff member their own digest of the grants THEY
     matched (2026-09-03).
 
-    Staff are a weekly audience by design, so this is called from the weekly
-    branch of the scheduler only. Deliberately reuses build_faculty_email():
+    Called from BOTH scheduler branches: the daily branch passes cadence="daily"
+    with today's matches, the weekly branch cadence="weekly" with the 7-day
+    roundup. Each staff member is in exactly one bucket, so nobody is emailed
+    twice. Note that cadence governs EMAILS ONLY — every active staff member is
+    matched on every run either way, and a weekly subscriber's matches simply
+    accumulate until their digest goes out. Deliberately reuses
+    build_faculty_email():
     a staff member's personal digest is structurally identical to a faculty
     member's — their own matches, 👍/👎 on every row at rater 'self', and the
     opt-out footer — so duplicating the template would just create two things to
@@ -551,9 +556,12 @@ def _send_staff_digests(config: dict, matched_results: list,
     if not matched_results:
         return stats
 
+    cadence = (cadence or "weekly").strip().lower()
+    if not digest_label:
+        digest_label = "Daily" if cadence == "daily" else "Weekly"
     try:
         import staff as _staff
-        active = _staff.active_staff()
+        active = _staff.active_staff(cadence)
     except Exception as e:
         logger.error(f"Loading staff for digest fan-out failed: {e}", exc_info=True)
         return stats
@@ -828,6 +836,20 @@ def _run_sends(config, fire_time, matched_results, matcher_diag,
         except Exception as e:
             logger.error(f"Personalized digest fan-out failed: {e}", exc_info=True)
 
+        # Daily-cadence staff (2026-09-04), over today's matches.
+        try:
+            stats_sd = _send_staff_digests(config, matched_results,
+                                           run_date, cadence="daily")
+            if stats_sd["staff_sent"] or stats_sd["staff_failed"]:
+                logger.info(
+                    f"  ✓ Staff daily digests — sent: {stats_sd['staff_sent']}"
+                    + (f"  ⚠ {stats_sd['staff_failed']} FAILED"
+                       if stats_sd["staff_failed"] else "")
+                    + ("  ⚠ budget exhausted" if stats_sd["budget_exhausted"] else "")
+                )
+        except Exception as e:
+            logger.error(f"Staff daily fan-out failed: {e}", exc_info=True)
+
     # ── Weekly 7-day roundup (only on the configured weekday) ────────────
     weekly_roundup_cache = None  # share the 7-day fetch with the personalized fan-out below
     if fire_time.weekday() == weekly_weekday:
@@ -869,10 +891,10 @@ def _run_sends(config, fire_time, matched_results, matcher_diag,
                 )
                 _alert_partial_send_failures(config, stats_w, "weekly")
 
-                # Staff digests ride the same weekly cadence and the same 7-day
-                # match window (2026-09-03).
+                # Weekly-cadence staff, over the same 7-day match window.
                 try:
-                    stats_s = _send_staff_digests(config, weekly_roundup_cache, run_date_w)
+                    stats_s = _send_staff_digests(config, weekly_roundup_cache,
+                                                  run_date_w, cadence="weekly")
                     if stats_s["staff_sent"] or stats_s["staff_failed"]:
                         logger.info(
                             f"  ✓ Staff weekly digests — sent: {stats_s['staff_sent']}"

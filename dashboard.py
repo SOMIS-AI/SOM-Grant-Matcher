@@ -2492,9 +2492,11 @@ tr:hover td{background:rgba(15,23,42,.03)}
       <div class="panel-body">
         <p style="font-size:12px;color:var(--text3);margin:0 0 12px">
           Staff are matched against grants using the keywords and profile text you enter
-          here — they have no scraped profile. They receive a <strong>weekly</strong>
-          digest of their own matches with 👍/👎 on every row, and also appear in the
-          main digest tagged &ldquo;Staff&rdquo;. Staff carry no publication record, so
+          here — they have no scraped profile. They receive a <strong>daily or
+          weekly</strong> digest of their own matches (their choice) with 👍/👎 on
+          every row, and also appear in the main digest tagged &ldquo;Staff&rdquo;.
+          Cadence controls emails only — staff are matched on every run either way.
+          Staff carry no publication record, so
           they are filtered off major mechanisms (R01/U01/P01…) exactly as
           footprint-less faculty are.
         </p>
@@ -2515,6 +2517,7 @@ tr:hover td{background:rgba(15,23,42,.03)}
           <div style="display:flex;gap:8px;align-items:center">
             <select class="filter-sel" id="st-cadence">
               <option value="weekly">Weekly</option>
+              <option value="daily">Daily</option>
               <option value="off">Off</option>
             </select>
             <button class="btn-sm" onclick="saveStaff()">Save</button>

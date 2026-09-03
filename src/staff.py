@@ -13,9 +13,9 @@ by hand, and their entire match profile is whatever is typed into the dashboard.
     [ { name, email, department, title, keywords: [...], profile_text,
         cadence, status, added_by, added_at, updated_at } ]
 
-`cadence` is "weekly" | "off" (staff are a weekly-digest audience by design —
-they are not the daily operational audience). "off" is kept as a tombstone so
-re-enabling someone preserves their profile and history.
+`cadence` is "daily" | "weekly" | "off", chosen per person (2026-09-04 — staff
+were weekly-only when first shipped). "off" is kept as a tombstone so re-enabling
+someone preserves their profile and history rather than needing it retyped.
 
 How a staff record reaches the matcher
 --------------------------------------
@@ -57,7 +57,10 @@ logger = logging.getLogger(__name__)
 DATA_DIR = Path(os.environ.get("DATA_DIR", "data"))
 STAFF_FILE = DATA_DIR / "staff_profiles.json"
 
-VALID_CADENCES = {"weekly", "off"}
+# Matches subscriptions.VALID_CADENCES. Staff shipped weekly-only on 2026-09-03
+# and gained the daily option on 2026-09-04; existing "weekly" records stay valid,
+# so no migration is needed.
+VALID_CADENCES = {"daily", "weekly", "off"}
 
 # Same guard the faculty pipeline applies: a person with no keywords cannot
 # match anything, so admitting them just inflates the pool and the IDF table.
@@ -216,10 +219,20 @@ def delete_staff(email: str) -> bool:
     return True
 
 
-def active_staff() -> list:
-    """Staff who should be matched and emailed."""
-    return [r for r in load_staff()
-            if (r.get("cadence") or "").lower() not in ("", "off")]
+def active_staff(cadence: Optional[str] = None) -> list:
+    """Staff who should be matched and emailed.
+
+    `cadence` filters to one bucket ("daily" / "weekly") for the digest fan-out.
+    Left as None it returns everyone still enrolled, which is what the matching
+    pipeline wants — a staff member is matched on every run regardless of how
+    often they are emailed about it.
+    """
+    out = [r for r in load_staff()
+           if (r.get("cadence") or "").lower() not in ("", "off")]
+    if cadence:
+        want = cadence.strip().lower()
+        out = [r for r in out if (r.get("cadence") or "").lower() == want]
+    return out
 
 
 def staff_emails() -> set:
