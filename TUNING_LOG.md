@@ -66,7 +66,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-09-03 — UMSOM staff join the match pool
 **Status:** live
-**Commit:** *(pending)*
+**Commit:** `cf52657`
 **Change:** a new population, not a threshold move. Manually-entered staff
 profiles (`src/staff.py`, `data/staff_profiles.json`, managed from the dashboard
 Subscriptions tab) are reshaped by `as_match_profiles()` into the same dict shape
