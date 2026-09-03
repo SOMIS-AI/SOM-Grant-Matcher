@@ -154,6 +154,10 @@ class Match(NamedTuple):
     match_type:         str        # "keyword" | "semantic" | "both"
     similarity_score:   float      # cosine similarity (0.0 if keyword-only)
     confidence_score:   int        # NEW: 0-100 calibrated confidence
+    # UMSOM staff (src/staff.py) rather than scraped faculty (2026-09-03).
+    # Defaulted and placed last so every existing construction site and any
+    # pickled/JSON round-trip of a Match keeps working untouched.
+    is_staff:           bool = False
 
 
 # -- Text normalisation -------------------------------------------------------
@@ -953,6 +957,7 @@ def _keyword_matches_for_grant(grant, faculty, stop_words, min_kw_len,
                 # key into faculty_by_name for downstream guards. Only the
                 # department (display-only) gets entity-decoded here.
                 faculty_name       = person["name"],
+                is_staff           = bool(person.get("is_staff")),
                 faculty_url        = person.get("url", ""),
                 # unescape: cached rosters scraped before 2026-08-04 store
                 # entities ("Epidemiology &amp; Public Health"); decode here so
@@ -1333,6 +1338,7 @@ def find_matches(grants, faculty, config=None):
                     )
                     semantic_matches[name] = Match(
                         faculty_name       = name,   # exact key — see keyword-path note
+                        is_staff           = bool(fac.get("is_staff")),
                         faculty_url        = fac.get("url", ""),
                         # unescape: see keyword-path note — covers pre-08/04 cache
                         faculty_department = _html.unescape(fac.get("department", "")),

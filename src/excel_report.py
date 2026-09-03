@@ -186,8 +186,11 @@ def build_workbook_bytes(matched_results: list, run_date: str, label: str = "Dai
         rownum += 2
 
         # Faculty table
-        cols = ["Faculty", "Department", "Email", "Confidence", "Match Type",
-                "Matched Keywords", "Profile"]
+        # "Staff?" added 2026-09-03: staff share the workbook with faculty, and a
+        # dedicated column makes the sheet filterable rather than forcing the
+        # reader to recognise names.
+        cols = ["Faculty", "Staff?", "Department", "Email", "Confidence",
+                "Match Type", "Matched Keywords", "Profile"]
         for c, h in enumerate(cols, 1):
             cell = ws.cell(row=rownum, column=c, value=h)
             cell.fill = header_fill
@@ -196,19 +199,20 @@ def build_workbook_bytes(matched_results: list, run_date: str, label: str = "Dai
 
         for m in matches:
             _text_cell(ws, rownum, 1, _attr(m, "faculty_name", ""))
-            _text_cell(ws, rownum, 2, _attr(m, "faculty_department", ""))
-            _text_cell(ws, rownum, 3, _attr(m, "faculty_email", ""))
-            ws.cell(row=rownum, column=4, value=f"{_conf(m)}%")
-            ws.cell(row=rownum, column=5, value=_attr(m, "match_type", "keyword"))
-            _text_cell(ws, rownum, 6, _keywords(m))
+            _text_cell(ws, rownum, 2, "Staff" if _attr(m, "is_staff", False) else "")
+            _text_cell(ws, rownum, 3, _attr(m, "faculty_department", ""))
+            _text_cell(ws, rownum, 4, _attr(m, "faculty_email", ""))
+            ws.cell(row=rownum, column=5, value=f"{_conf(m)}%")
+            ws.cell(row=rownum, column=6, value=_attr(m, "match_type", "keyword"))
+            _text_cell(ws, rownum, 7, _keywords(m))
             furl = _attr(m, "faculty_url", "")
-            pcell = ws.cell(row=rownum, column=7, value="View Profile" if furl else "")
+            pcell = ws.cell(row=rownum, column=8, value="View Profile" if furl else "")
             if furl:
                 pcell.hyperlink = furl
                 pcell.font = link_font
             rownum += 1
 
-        for col, width in zip("ABCDEFG", (26, 30, 30, 12, 14, 50, 14)):
+        for col, width in zip("ABCDEFGH", (26, 8, 30, 30, 12, 14, 50, 14)):
             ws.column_dimensions[col].width = width
 
     buf = BytesIO()

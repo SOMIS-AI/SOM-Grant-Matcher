@@ -474,6 +474,15 @@ def _grant_cards_html(sorted_results: list, run_date: str = "",
             mtype  = _get_match_type(m)
             kws    = _get_matched_keywords(m)
 
+            # UMSOM staff (2026-09-03) are matched in the same pool as faculty and
+            # appear in the same cards, so the reader needs to tell them apart at a
+            # glance — a staff member is not a candidate PI.
+            is_staff = bool(getattr(m, "is_staff", None)
+                            or (m.get("is_staff") if isinstance(m, dict) else False))
+            staff_badge = ('<span style="background:#fff3e0;color:#8a5200;border:1px solid #ffcc80;'
+                           'padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;'
+                           'margin-left:6px;">Staff</span>') if is_staff else ""
+
             fname = getattr(m, "faculty_name", None) or (m.get("faculty_name", "") if isinstance(m, dict) else "")
             furl  = getattr(m, "faculty_url",  None) or (m.get("faculty_url", "") if isinstance(m, dict) else "")
             fdept = getattr(m, "faculty_department", None) or (m.get("faculty_department", "") if isinstance(m, dict) else "")
@@ -496,9 +505,9 @@ def _grant_cards_html(sorted_results: list, run_date: str = "",
             fb_html = _feedback_links_html(m, grant, run_date, rater=fb_rater) if fb_rater else ""
 
             if furl:
-                name_html = f'<a href="{esc(furl)}" style="color:#1a3a6b;text-decoration:none;font-weight:600;font-size:13px;">{esc(fname)}</a>'
+                name_html = f'<a href="{esc(furl)}" style="color:#1a3a6b;text-decoration:none;font-weight:600;font-size:13px;">{esc(fname)}</a>{staff_badge}'
             else:
-                name_html = f'<span style="font-weight:600;font-size:13px;color:#1a3a6b;">{esc(fname)}</span>'
+                name_html = f'<span style="font-weight:600;font-size:13px;color:#1a3a6b;">{esc(fname)}</span>{staff_badge}'
 
             dept_html = f'<div style="color:#777;font-size:11px;margin-top:1px;">{esc(fdept)}</div>' if fdept else ""
 

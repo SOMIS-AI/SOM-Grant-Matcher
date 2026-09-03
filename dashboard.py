@@ -1128,6 +1128,7 @@ def health():
 # Three resources, all admin-managed (no self-service enrollment):
 #   /api/subscriptions/faculty       — GET (list), POST (upsert), DELETE (tombstone)
 #   /api/subscriptions/dept-admins   — GET (list), POST (add/update), DELETE (remove)
+#   /api/subscriptions/staff         — GET (list), POST (upsert profile), DELETE (tombstone)
 #   /api/subscriptions/log           — GET recent send-audit log + today's count
 # Implementation lives in src/subscriptions.py; this layer just translates
 # HTTP <→ those functions and renders consistent JSON.
@@ -1137,6 +1138,7 @@ def health():
 import sys as _sys
 _sys.path.insert(0, str(Path(__file__).parent / "src"))
 import subscriptions as _subs
+import staff as _staff
 
 
 def _json_err(msg, status=400):
@@ -1283,6 +1285,51 @@ def api_subs_dept_admins():
             department=dept, email=email,
             name=(data.get("name") or "").strip(),
             cadence=(data.get("cadence") or "daily").strip().lower(),
+            added_by=session.get("user", "admin"),
+        )
+    except ValueError as e:
+        return _json_err(e)
+    return jsonify({"ok": True, "record": rec})
+
+
+@app.route("/api/subscriptions/staff", methods=["GET", "POST", "DELETE"])
+@login_required
+def api_subs_staff():
+    """UMSOM staff match profiles (2026-09-03).
+
+    Unlike faculty (scraped) and dept admins (a routing rule), a staff record
+    carries the person's MATCH PROFILE — keywords and free text — so POST both
+    creates the subscription and defines what they will match on.
+
+    DELETE tombstones (cadence='off') by default so the typed profile survives;
+    pass purge=1 to hard-delete.
+    """
+    if request.method == "GET":
+        records = sorted(_staff.load_staff(),
+                         key=lambda r: (r.get("name", "").lower(), r.get("email", "")))
+        active = [r for r in records if (r.get("cadence") or "") not in ("", "off")]
+        return jsonify({"ok": True, "staff": records,
+                        "count": len(records), "active_count": len(active)})
+
+    data = request.get_json(silent=True) or request.form
+    email = (data.get("email") or "").strip()
+    if not email:
+        return _json_err("email is required")
+
+    if request.method == "DELETE":
+        if str(data.get("purge") or request.args.get("purge") or "") in ("1", "true", "yes"):
+            return jsonify({"ok": _staff.delete_staff(email)})
+        return jsonify({"ok": _staff.remove_staff(email)})
+
+    try:
+        rec = _staff.upsert_staff(
+            email=email,
+            name=(data.get("name") or "").strip(),
+            department=(data.get("department") or "").strip(),
+            title=(data.get("title") or "").strip(),
+            keywords=data.get("keywords") or "",
+            profile_text=(data.get("profile_text") or "").strip(),
+            cadence=(data.get("cadence") or "weekly").strip().lower(),
             added_by=session.get("user", "admin"),
         )
     except ValueError as e:
@@ -2430,6 +2477,58 @@ tr:hover td{background:rgba(15,23,42,.03)}
               <th>Added</th><th>Updated</th><th></th>
             </tr></thead>
             <tbody id="subs-admin-tbody"><tr><td colspan="7" style="color:var(--text3)">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- UMSOM staff match profiles -->
+    <div class="panel" style="margin-top:14px">
+      <div class="panel-hdr">
+        <span class="panel-title">UMSOM Staff</span>
+        <span class="sec-count" id="subs-staff-count" style="margin-left:auto"></span>
+        <button class="btn-sm" style="margin-left:10px" onclick="openStaffForm()">+ Add staff</button>
+      </div>
+      <div class="panel-body">
+        <p style="font-size:12px;color:var(--text3);margin:0 0 12px">
+          Staff are matched against grants using the keywords and profile text you enter
+          here — they have no scraped profile. They receive a <strong>weekly</strong>
+          digest of their own matches with 👍/👎 on every row, and also appear in the
+          main digest tagged &ldquo;Staff&rdquo;. Staff carry no publication record, so
+          they are filtered off major mechanisms (R01/U01/P01…) exactly as
+          footprint-less faculty are.
+        </p>
+        <div id="subs-staff-form" style="display:none;margin-bottom:14px;padding:12px;
+             background:var(--surf2);border:1px solid var(--border);border-radius:4px">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
+            <input class="search-box" id="st-name"  placeholder="full name *">
+            <input class="search-box" id="st-email" placeholder="email *">
+            <input class="search-box" id="st-dept"  placeholder="department / office">
+            <input class="search-box" id="st-title" placeholder="job title">
+          </div>
+          <textarea class="search-box" id="st-keywords" rows="3"
+            style="width:100%;margin-bottom:8px;font-family:inherit"
+            placeholder="keywords — one per line, or comma separated (e.g. clinical trials, regulatory affairs, IRB submissions)"></textarea>
+          <textarea class="search-box" id="st-text" rows="3"
+            style="width:100%;margin-bottom:8px;font-family:inherit"
+            placeholder="profile text — a sentence or two describing their work. Used for semantic matching, so write it the way a grant abstract would read."></textarea>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select class="filter-sel" id="st-cadence">
+              <option value="weekly">Weekly</option>
+              <option value="off">Off</option>
+            </select>
+            <button class="btn-sm" onclick="saveStaff()">Save</button>
+            <button class="btn-sm" onclick="closeStaffForm()" style="background:var(--surf2)">Cancel</button>
+            <span id="st-status" style="margin-left:10px;font-size:11px;color:var(--text3)"></span>
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr>
+              <th>Name</th><th>Email</th><th>Department</th><th>Keywords</th>
+              <th>Cadence</th><th>Updated</th><th></th>
+            </tr></thead>
+            <tbody id="subs-staff-tbody"><tr><td colspan="7" style="color:var(--text3)">Loading…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -3745,6 +3844,41 @@ async function loadSubscriptions() {
       '<tr><td colspan="7" style="color:var(--red)">Failed to load: '+escHtml(e.message||e)+'</td></tr>';
   }
 
+  // UMSOM staff
+  try {
+    const r = await fetch('/api/subscriptions/staff').then(r=>r.json());
+    const staff = r.ok ? (r.staff||[]) : [];
+    const nActive = r.active_count || 0;
+    document.getElementById('subs-staff-count').textContent =
+      nActive + ' active' + (staff.length>nActive ? ' / '+staff.length+' total' : '');
+    const tb = document.getElementById('subs-staff-tbody');
+    if (!staff.length) {
+      tb.innerHTML = '<tr><td colspan="7" style="color:var(--text3)">No staff yet. Click "+ Add staff" to add one.</td></tr>';
+    } else {
+      tb.innerHTML = staff.map(p=>{
+        const kws = (p.keywords||[]);
+        const shown = kws.slice(0,4).join(', ') + (kws.length>4 ? ' +'+(kws.length-4)+' more' : '');
+        const off = (p.cadence||'')==='off';
+        return `<tr style="${off?'opacity:.5':''}">
+          <td><strong>${escHtml(p.name||'')}</strong>${p.title?'<div style="font-size:11px;color:var(--text3)">'+escHtml(p.title)+'</div>':''}</td>
+          <td>${escHtml(p.email||'')}</td>
+          <td>${escHtml(p.department||'')}</td>
+          <td style="font-size:11px" title="${escHtml(kws.join(', '))}">${escHtml(shown)||'<span style="color:var(--text3)">text only</span>'}</td>
+          <td>${cadenceBadge(p.cadence)}</td>
+          <td style="font-size:11px;color:var(--text3)">${shortDate(p.updated_at)}</td>
+          <td>
+            <button class="btn-sm" onclick='editStaff(${JSON.stringify(p)})'>edit</button>
+            <button class="btn-sm" style="background:#fdecec;color:#b91c1c"
+              onclick="deleteStaff('${escHtml(p.email)}')">x</button>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+  } catch(e) {
+    document.getElementById('subs-staff-tbody').innerHTML =
+      '<tr><td colspan="7" style="color:var(--red)">Failed to load: '+escHtml(e.message||e)+'</td></tr>';
+  }
+
   // Audit log + budget strip
   try {
     const r = await fetch('/api/subscriptions/log').then(r=>r.json());
@@ -3900,6 +4034,61 @@ function openSubAdminForm() {
 function closeSubAdminForm() {
   document.getElementById('subs-admin-form').style.display = 'none';
 }
+function openStaffForm(){
+  document.getElementById('subs-staff-form').style.display='block';
+  ['st-name','st-email','st-dept','st-title','st-keywords','st-text']
+    .forEach(id=>document.getElementById(id).value='');
+  document.getElementById('st-email').readOnly=false;
+  document.getElementById('st-cadence').value='weekly';
+  document.getElementById('st-status').textContent='';
+}
+function closeStaffForm(){
+  document.getElementById('subs-staff-form').style.display='none';
+}
+function editStaff(p){
+  openStaffForm();
+  document.getElementById('st-name').value     = p.name||'';
+  document.getElementById('st-email').value    = p.email||'';
+  // Email is the identity key — changing it here would silently create a second
+  // record rather than rename this one, so it is locked while editing.
+  document.getElementById('st-email').readOnly = true;
+  document.getElementById('st-dept').value     = p.department||'';
+  document.getElementById('st-title').value    = p.title||'';
+  document.getElementById('st-keywords').value = (p.keywords||[]).join('\n');
+  document.getElementById('st-text').value     = p.profile_text||'';
+  document.getElementById('st-cadence').value  = p.cadence||'weekly';
+}
+async function saveStaff(){
+  const st = document.getElementById('st-status');
+  const body = {
+    name:        document.getElementById('st-name').value.trim(),
+    email:       document.getElementById('st-email').value.trim(),
+    department:  document.getElementById('st-dept').value.trim(),
+    title:       document.getElementById('st-title').value.trim(),
+    keywords:    document.getElementById('st-keywords').value,
+    profile_text:document.getElementById('st-text').value.trim(),
+    cadence:     document.getElementById('st-cadence').value
+  };
+  if(!body.email){ st.textContent='email is required'; st.style.color='var(--red)'; return; }
+  st.textContent='Saving...'; st.style.color='var(--text3)';
+  try {
+    const r = await fetch('/api/subscriptions/staff', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    }).then(r=>r.json());
+    if(!r.ok){ st.textContent = r.error||'Save failed'; st.style.color='var(--red)'; return; }
+    closeStaffForm(); loadSubscriptions();
+  } catch(e){ st.textContent = e.message||String(e); st.style.color='var(--red)'; }
+}
+async function deleteStaff(email){
+  if(!confirm('Turn off grant emails for '+email+'?\n\nTheir keywords and profile text are kept, so you can switch them back on later without retyping.')) return;
+  await fetch('/api/subscriptions/staff', {
+    method:'DELETE', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({email:email})
+  });
+  loadSubscriptions();
+}
+
 async function saveDeptAdmin() {
   const body = {
     department: document.getElementById('sa-dept').value.trim(),

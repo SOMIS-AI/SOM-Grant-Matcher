@@ -64,6 +64,57 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-09-03 — UMSOM staff join the match pool
+**Status:** live
+**Commit:** *(pending)*
+**Change:** a new population, not a threshold move. Manually-entered staff
+profiles (`src/staff.py`, `data/staff_profiles.json`, managed from the dashboard
+Subscriptions tab) are reshaped by `as_match_profiles()` into the same dict shape
+`get_faculty_profiles()` returns and appended to the match pool. Their keywords
+drive the keyword channel; their free-text profile becomes `evidence_titles`,
+which `embedder.faculty_to_text()` folds into the embedded sentence.
+
+**The matching decision — staff are NOT exempt from the track-record gates.**
+Staff have no publication or RePORTER footprint, so `_research_tier()` puts them
+in `none`: confidence ×0.8 and hard-gated off the 12 major mechanisms (R01, U01,
+P01, UM1…) plus the PI-track-record mechanisms (K12, T32…). Chosen deliberately
+over exempting them: a staff member is not going to PI an R01, and the gates
+already encode exactly that judgement for footprint-less faculty. Verified live —
+a staff member matched a "Cancer Clinical Trials Network (U01…)" call and was
+correctly gated out, while a faculty member with a PubMed + RePORTER footprint
+came through at 67%.
+
+**A trap worth recording.** `_research_tier()` returns `'unknown'` for a *falsy*
+`keywords_by_source`, and `'unknown'` is explicitly "never penalize" — multiplier
+1.0, and the major-mechanism gate fires only on `tier == 'none'`. The obvious
+`"keywords_by_source": {}` for a person with no publications would therefore have
+exempted staff from both the penalty and the gate — silently doing the exact
+opposite of the decision above. Staff records carry
+`{"Staff profile": [...]}` instead: non-empty, but with no evidence-bearing label
+from `_EVIDENCE_SOURCE_LABELS`, which is what actually lands on `'none'`.
+
+**Expected effect:** few matches per staff member — on the order of 0–1 a week.
+That is the intended consequence of keeping the gates, not a fault. `keep%` and
+the faculty-facing numbers are unaffected; staff are additive.
+
+**The real constraint on staff matching is stop-wording, not the gates.**
+`_phrase_is_all_stops()` drops any phrase whose every token is a stop word, which
+is correct for faculty but takes out exactly the vocabulary staff describe their
+work in: `clinical trials`, `data management` and `grant writing` are all
+discarded (`clinical`, `trials`, `data`, `management`, `grant`, `writing` are all
+individually stop-worded). `regulatory affairs`, `IRB submissions`,
+`biostatistics`, `protocol development` and `career development` survive.
+
+This is why the profile-text field matters more for staff than the keyword list:
+the semantic channel does not consult the stop-word list at all. Measured on a
+topically-matched grant, a staff profile WITH text scored cosine 0.427 (above the
+0.4 threshold) while one with keywords only scored 0.160. **Guidance for whoever
+writes these profiles: always fill in the profile text, and prefer specific
+keywords over administrative ones.** The dashboard field placeholder says so.
+
+**Outcome:** *pending — no staff enrolled yet.*
+**Verdict:** too early
+
 ### 2026-09-01 — Disable the AHA scraper: the site now blocks us at the edge
 **Status:** live
 **Commit:** `6254f3d`

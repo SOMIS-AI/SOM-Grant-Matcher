@@ -278,6 +278,34 @@ def run_pipeline(config: dict, force_scrape: bool = False):
     logger.info(f"  ✓ {len(new_grants)} new grants retrieved from all sources")
 
     # Step 3: Match grants to faculty keywords
+    # ── UMSOM staff (2026-09-03) ─────────────────────────────────────────
+    # Manually-entered staff profiles join the match pool here — AFTER the
+    # faculty embedding/cache write-back above, deliberately. Staff must never
+    # reach faculty_cache.json: that file is the scraped roster, and the
+    # roster-drop guard and inactive-marking diff both compare against it, so a
+    # handful of synthetic records in it would corrupt both.
+    #
+    # They are embedded separately, using the same embed_faculty_batch(), so
+    # their profile_text produces a real semantic vector rather than a zero one.
+    try:
+        import staff as _staff
+        staff_profiles = _staff.as_match_profiles()
+        if staff_profiles:
+            try:
+                from embedder import embed_faculty_batch, is_available
+                if is_available():
+                    embed_faculty_batch(staff_profiles)
+            except Exception as e:
+                # Non-fatal: staff still match on the keyword channel.
+                logger.warning(f"  Staff embedding failed (keyword matching unaffected): {e}")
+            faculty = faculty + staff_profiles
+            logger.info(f"  ✓ {len(staff_profiles)} staff profile(s) added to the match pool "
+                        f"({len(faculty)} people total)")
+    except Exception as e:
+        # A broken staff file must never take down the faculty run.
+        logger.error(f"Loading staff profiles failed — continuing with faculty only: {e}",
+                     exc_info=True)
+
     logger.info("Step 3/3 — Matching grants to faculty keywords...")
     matched_results = find_matches(new_grants, faculty, config=config)
     logger.info(f"  ✓ {len(matched_results)} grants with faculty matches")
@@ -494,6 +522,97 @@ def _build_id() -> str:
         if v:
             return v[:12]
     return "unknown"
+
+
+def _send_staff_digests(config: dict, matched_results: list,
+                        run_date: str, digest_label: str = "Weekly") -> dict:
+    """Send each active UMSOM staff member their own digest of the grants THEY
+    matched (2026-09-03).
+
+    Staff are a weekly audience by design, so this is called from the weekly
+    branch of the scheduler only. Deliberately reuses build_faculty_email():
+    a staff member's personal digest is structurally identical to a faculty
+    member's — their own matches, 👍/👎 on every row at rater 'self', and the
+    opt-out footer — so duplicating the template would just create two things to
+    keep in sync.
+
+    Staff also appear in the main digest alongside faculty (decided 2026-09-03),
+    so this is an ADDITIONAL email to the person themselves, not the only place
+    their matches surface.
+
+    Shares the SendGrid daily budget with the faculty/dept fan-out via
+    subscriptions.remaining_budget_today(), and writes to the same audit log
+    with kind='staff' so sends are visible in the dashboard log alongside the
+    rest.
+    """
+    logger = logging.getLogger("main")
+    stats = {"staff_sent": 0, "staff_skipped_no_match": 0,
+             "staff_failed": 0, "failed_recipients": [], "budget_exhausted": False}
+    if not matched_results:
+        return stats
+
+    try:
+        import staff as _staff
+        active = _staff.active_staff()
+    except Exception as e:
+        logger.error(f"Loading staff for digest fan-out failed: {e}", exc_info=True)
+        return stats
+    if not active:
+        return stats
+
+    dashboard_url = os.environ.get("DASHBOARD_URL", "")
+
+    # Index this period's matches by staff email. Only rows flagged is_staff are
+    # considered, so a faculty member who happens to share an address with a
+    # staff record cannot pull faculty matches into a staff digest.
+    by_staff: dict[str, list] = {}
+    for r in matched_results:
+        grant = r.get("grant", r) if isinstance(r, dict) else r
+        ms = r.get("matches", []) if isinstance(r, dict) else []
+        mine: dict[str, list] = {}
+        for m in ms:
+            if not getattr(m, "is_staff", False):
+                continue
+            em = (getattr(m, "faculty_email", "") or "").strip().lower()
+            if em:
+                mine.setdefault(em, []).append(m)
+        for em, ms_for in mine.items():
+            by_staff.setdefault(em, []).append({"grant": grant, "matches": ms_for})
+
+    for rec in active:
+        email = (rec.get("email") or "").strip().lower()
+        bucket = by_staff.get(email)
+        if not bucket:
+            stats["staff_skipped_no_match"] += 1
+            continue
+        if subscriptions.remaining_budget_today() <= 0:
+            stats["budget_exhausted"] = True
+            logger.warning("SendGrid daily cap reached — skipping remaining staff digests.")
+            break
+        name = rec.get("name", "") or email
+        subject, html = build_faculty_email(name, bucket, run_date, dashboard_url,
+                                            digest_label=digest_label)
+        sent = send_personal_email(config, email, subject, html)
+        if not sent:
+            time.sleep(2)
+            sent = send_personal_email(config, email, subject, html)
+        if sent:
+            subscriptions.log_email(
+                kind="staff", to=email, subject=subject,
+                matches_count=len(bucket), faculty_name=name,
+                department=rec.get("department", ""),
+            )
+            stats["staff_sent"] += 1
+        else:
+            stats["staff_failed"] += 1
+            stats["failed_recipients"].append(email)
+            logger.error(f"Staff digest send FAILED after retry: {email}")
+            subscriptions.log_email(
+                kind="staff_failed", to=email, subject=subject,
+                matches_count=len(bucket), faculty_name=name,
+                department=rec.get("department", ""),
+            )
+    return stats
 
 
 def _send_personalized_digests(config: dict, matched_results: list,
@@ -749,6 +868,22 @@ def _run_sends(config, fire_time, matched_results, matcher_diag,
                     + ("  ⚠ budget exhausted" if stats_w["budget_exhausted"] else "")
                 )
                 _alert_partial_send_failures(config, stats_w, "weekly")
+
+                # Staff digests ride the same weekly cadence and the same 7-day
+                # match window (2026-09-03).
+                try:
+                    stats_s = _send_staff_digests(config, weekly_roundup_cache, run_date_w)
+                    if stats_s["staff_sent"] or stats_s["staff_failed"]:
+                        logger.info(
+                            f"  ✓ Staff weekly digests — sent: {stats_s['staff_sent']}"
+                            + (f"  ⚠ {stats_s['staff_failed']} FAILED"
+                               if stats_s["staff_failed"] else "")
+                            + ("  ⚠ budget exhausted" if stats_s["budget_exhausted"] else "")
+                        )
+                    else:
+                        logger.info("  Staff weekly digests: no staff matches this week — none sent.")
+                except Exception as e:
+                    logger.error(f"Staff weekly fan-out failed: {e}", exc_info=True)
             else:
                 logger.info("  Personalized weekly digests: no matches in the last 7 days — none sent.")
         except Exception as e:
