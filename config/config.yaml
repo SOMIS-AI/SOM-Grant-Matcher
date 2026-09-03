@@ -213,6 +213,15 @@ matching:
   # otherwise the semantic channel would keep flooding the 42-49 band the pilot
   # floor is meant to cut. sim>=0.50 is genuinely strong for MiniLM (its ceiling
   # over 10 days of diags was 0.573). Revisit both floors once 👍/👎 data lands.
+  # Multiplier applied when a keyword match rests on exactly ONE keyword and has
+  # no semantic corroboration (2026-09-04). One term is weak evidence however
+  # rare it is, but the archive showed single-keyword matches scoring HIGHER on
+  # average (median 62%) than matches supported by two or more (59%) — because a
+  # lone rare keyword earns maximum IDF. This corrects that inversion. Set to 1.0
+  # to disable. Measured at 0.85: 185 of 492 single-keyword matches fall below
+  # the confidence floor (4.8% of all delivered matches).
+  single_keyword_multiplier: 0.85
+
   min_semantic_confidence: 50
 
   # ── Semantic distinctive-concept guard (2026-06-26) ───────────────────────
@@ -262,6 +271,14 @@ matching:
     - "risk"
     - "risk assessment"
     - "risk factors"
+    # 2026-09-04: plain gaps in the population family above — "adult"/"adults"
+    # and "adolescent" were listed since June but their commonest siblings were
+    # not. Between them these were the sole basis of 119 delivered matches.
+    - "older"
+    - "older adults"
+    - "young"
+    - "young adults"
+    - "youth"
     # ── Method / domain-agnostic terms (added 2026-08-22) ───────────────────
     # Every term below was observed anchoring a delivered match on an
     # off-topic grant in the 08-11..08-22 digests. They describe a METHOD, a
@@ -736,6 +753,20 @@ matching:
     - "white"            # proper-noun leak: "Ryan White HIV/AIDS Program" matched
                          # faculty on the bare token 'white' (48-62% conf, 08-01).
                          # Phrase-safe: "white matter" survives the phrase-level check.
+    # -- 2026-09-04 addition (Wiseman / "united states" review) --
+    # Rarity-weighting (IDF) assumes a keyword is rare BECAUSE it is specialised.
+    # These are rare for the opposite reason — they are odd things to put on a
+    # profile, so one or two people happened to type them, which the scorer then
+    # read as "maximally distinctive". "united states" alone anchored 9 delivered
+    # matches, including a Surgery faculty member on an Emergency Citrus Disease
+    # grant at 67% — outscoring what "pancreatic cancer" would have earned.
+    # "national" and "federal" were already stop-worded; the country name simply
+    # was never added.
+    - "united states"
+    - "among"
+    - "free"
+    - "network"
+    - "biology"
     # -- 2026-08-28 addition (08-25..08-27 diag review) --
     - "other"            # not a research topic at all - a profile-form artefact.
                          # Delivered a Medicine faculty onto the USDA "Capacity

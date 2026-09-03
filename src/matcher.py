@@ -266,6 +266,9 @@ def _compute_confidence(
     stops      = ctx.get("stops", set())
     min_kw_len = ctx.get("min_kw_len", 4)
 
+    # Read off the same matching config as the rest of scoring; 1.0 = disabled.
+    single_kw_mult = float(ctx.get("single_kw_mult", 1.0))
+
     token_bonus  = cfg.get("token_bonus", DEFAULT_PHRASE_TOKEN_BONUS)
     base_cap     = cfg.get("idf_cap", DEFAULT_PHRASE_IDF_CAP)
     phrase_cap   = cfg.get("multiword_cap", DEFAULT_PHRASE_MULTIWORD_CAP)
@@ -329,6 +332,19 @@ def _compute_confidence(
         )
         if component_only:
             kw_conf *= demote_mult
+
+    # ── Factor 3c: single-keyword demotion (2026-09-04) ───────────────────────
+    # A match resting on ONE keyword is weak evidence, however rare that keyword
+    # is. Without this, IDF actively rewards the thinnest matches: a term held by
+    # 1 of 1,293 faculty earns the maximum rarity weight, so "united states"
+    # (df=1) scored 67% while "pancreatic cancer" (df=3) would score 64% on the
+    # same grant. Measured across the archive, single-keyword matches had a
+    # HIGHER median confidence (62%) than matches backed by two or more (59%) —
+    # exactly backwards. Applied before the match-type multiplier so a
+    # "both"-type match, which has independent semantic corroboration, is
+    # unaffected: this penalises lone keywords, not lone evidence.
+    if single_kw_mult != 1.0 and match_type == "keyword" and len(matched_keywords) == 1:
+        kw_conf *= single_kw_mult
 
     # ── Factor 4: Apply match type multiplier ─────────────────────────────────
     sem_conf = float(similarity_score or 0.0)
@@ -1060,6 +1076,8 @@ def find_matches(grants, faculty, config=None):
     # Separate floor for semantic-only matches so a paraphrase match that clears
     # semantic_threshold isn't immediately killed by the keyword-oriented
     # min_confidence_score. Falls back to min_confidence when unset (no change).
+    # Single-keyword demotion (2026-09-04). 1.0 = disabled.
+    single_kw_mult   = float(matching_cfg.get("single_keyword_multiplier", 1.0))
     min_sem_conf     = matching_cfg.get("min_semantic_confidence",
                                         DEFAULT_MIN_SEMANTIC_CONFIDENCE)
     if min_sem_conf is None:
@@ -1116,6 +1134,7 @@ def find_matches(grants, faculty, config=None):
             "max_matches_per_grant": max_per_grant,
             "min_idf_for_match": min_idf_match,
             "semantic_enabled": sem_enabled,
+            "single_keyword_multiplier": single_kw_mult,
         },
         "stop_words_suppressed": [],
         "per_grant": [],                   # per-grant detail for the diagnostic email
@@ -1280,10 +1299,11 @@ def find_matches(grants, faculty, config=None):
         title_tokens  = {t for t in grant_title.split()
                          if len(t) >= min_kw_len and t not in all_stops_ctx}
         scoring_ctx = {
-            "stops":        all_stops_ctx,
-            "min_kw_len":   min_kw_len,
-            "title_tokens": title_tokens,
-            "cfg":          phrase_cfg,
+            "stops":          all_stops_ctx,
+            "min_kw_len":     min_kw_len,
+            "title_tokens":   title_tokens,
+            "cfg":            phrase_cfg,
+            "single_kw_mult": single_kw_mult,
         }
 
         context_dropped = []

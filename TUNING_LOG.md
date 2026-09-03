@@ -64,6 +64,79 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-09-04 — Rarity is not specificity: geographic filler, and a single-keyword penalty
+**Status:** live
+**Commit:** *(pending)*
+**Change:** two things, one vocabulary and one structural.
+
+*1. Vocabulary.* `stop_words` 163 → 168: `united states`, `among`, `free`,
+`network`, `biology`. `context_dependent_terms` 50 → 55: `older`,
+`older adults`, `young`, `young adults`, `youth` — plain gaps in the population
+family that has held `adult`/`adults`/`adolescent` since June.
+
+*2. Structural.* New `matching.single_keyword_multiplier: 0.85`, applied in
+`_compute_confidence` when a match has exactly one matched keyword AND
+`match_type == "keyword"`. Deliberately excludes `both`-type matches: those have
+independent semantic corroboration, so the penalty targets lone *keywords*, not
+lone *evidence*. Recorded in the diagnostic `params` block. 1.0 disables it.
+
+**Why:** a reviewer flagged James E. Wiseman (Surgery) matching "Emergency
+Citrus Disease Research and Extension Pre-Applications" at **67%** on the single
+keyword `united states`. Two separate faults sat behind that one row.
+
+The first is an ordinary vocabulary gap — `national` and `federal` were already
+stop-worded; the country name never was. `united states` was the sole basis of
+**9 delivered matches** across the archive, including the same faculty member on
+"OJP FY 2026 Special Attorneys Program Round 8" at 61%.
+
+The second is the interesting one, and it is the same failure this log has now
+recorded three times (`monte carlo` 08-22, the academic terms 08-28, this).
+**IDF measures how well a keyword narrows down *which* faculty to notify — it
+assumes rarity is caused by specialisation.** Usually true: `glioblastoma` is
+rare because few people study it. But rarity can have another cause entirely —
+being an odd thing to put on a profile, which one person happened to do. The
+scorer cannot distinguish the two, so `df=1` reads as "maximally distinctive":
+
+```
+"united states"     df=1 of 1293  IDF 7.16  ->  67%
+"pancreatic cancer" df=3          IDF 6.07  ->  64%
+```
+
+A meaningless phrase outscoring a precise clinical one is the clearest statement
+of the problem available.
+
+**The systematic version.** Across the archive, matches resting on ONE keyword
+had a **higher** median confidence (62%, n=590) than matches backed by two or
+more (59%, n=3270) — exactly backwards, because a lone rare keyword earns
+maximum IDF with nothing to average it down. The most frequent lone anchors mix
+the legitimate (`cancer` 109, `kidney`, `spinal cord injury`) with the
+meaningless (`among`, `free`, `older`, `young adults`, `network`).
+
+**Expected effect:** the vocabulary change removes ~140 delivered matches; the
+penalty removes a further 186 (4.4% of the archive's 4,267 delivered keyword
+matches). 19 grants lose their entire faculty list, all of them previously
+identified false positives plus "Food and Agricultural Sciences National Needs
+Graduate" and "MPS Physics". Multi-keyword and `both`-type matches are
+untouched — verified.
+
+**Why 0.85 and not 0.8.** Measured: ×0.9 drops 108 of 492 singles, ×0.85 drops
+185, ×0.8 drops 278. ×0.8 was tempting but takes a lone `cancer` match at 62%
+below the floor while leaving `united states` at 53% — still delivered. That
+asymmetry is the tell that **the penalty cannot fix this on its own**; the
+vocabulary change does the real work and the penalty corrects the
+over-confidence behind it. Going harder would cost good matches to catch bad
+words that should not be in the vocabulary at all.
+
+**Outcome:** *pending.*
+**Verdict:** too early
+
+**The general lesson, since this is the third instance.** Every one of these has
+the same shape: a word rare enough to earn a high score while saying nothing
+about topical fit. The scorer is not broken — the vocabulary has holes, and each
+hole surfaces as a confidently wrong match. The durable fix is not a smarter
+score but a cleaner word list, and the diagnostic's `context_filtered` samples
+are where the next hole will show up first.
+
 ### 2026-09-03 — UMSOM staff join the match pool
 **Status:** live
 **Commit:** `cf52657`
