@@ -344,7 +344,7 @@ def import_spreadsheet(xlsx_path: Path, store: dict) -> dict:
     wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
     ws = wb.worksheets[0]  # "Export" sheet
     stats = {"rows_total": 0, "with_keywords": 0, "optout": 0,
-             "added": 0, "updated": 0, "unchanged": 0}
+             "added": 0, "updated": 0, "unchanged": 0, "skipped_malformed": 0}
 
     by_email = store.setdefault("by_email", {})
 
@@ -364,7 +364,26 @@ def import_spreadsheet(xlsx_path: Path, store: dict) -> dict:
         )
     col_idx = {h: i for i, h in enumerate(header)}
 
-    for row in rows[1:]:
+    # openpyxl in read_only mode yields RAGGED rows: trailing empty cells are
+    # omitted, so a row can be shorter than the header. The Faculty Eval App
+    # export ends with a blank row and a one-cell "Applied filters: …" footer,
+    # which arrive as 0- and 1-length tuples. Indexing those raised IndexError
+    # partway through the loop — and because the CLI caught the exception and
+    # saved anyway, the 04Sept2026 import wrote 846 merged records with NO entry
+    # in `sources`: the data was there but its provenance was not (2026-09-04).
+    # Pad short rows to the header width and count what gets skipped, so a
+    # genuinely malformed export is visible rather than silently truncating the
+    # import at the first bad row.
+    width = len(header)
+    for raw_row in rows[1:]:
+        row = tuple(raw_row) + (None,) * (width - len(raw_row))
+        # A row with no email at all is footer/blank, not data.
+        if not any(str(c or "").strip() for c in row):
+            stats["skipped_malformed"] += 1
+            continue
+        if len(raw_row) < width:
+            stats["skipped_malformed"] += 1
+            continue
         stats["rows_total"] += 1
         dept  = str(row[col_idx["department"]] or "").strip()
         name  = str(row[col_idx["user name"]] or "").strip()
@@ -444,11 +463,20 @@ def _cli(argv: list[str]) -> int:
         try:
             s = import_spreadsheet(p, store)
         except Exception as e:
-            print(f"  ✗ {p.name}: {e}")
-            continue
+            # import_spreadsheet merges INTO `store` as it goes, so a mid-loop
+            # exception leaves it partially updated with no `sources` entry.
+            # Saving that would persist records whose provenance is unrecorded —
+            # which is exactly what happened on 2026-09-04. Abort instead and
+            # leave the on-disk store untouched.
+            print(f"  ✗ {p.name}: {type(e).__name__}: {e}")
+            print("  ABORTED — the store on disk was NOT modified. "
+                  "Fix the spreadsheet or the importer and re-run.")
+            return 1
         print(f"    rows={s['rows_total']} usable={s['with_keywords']} "
               f"optout={s['optout']} added={s['added']} updated={s['updated']} "
-              f"unchanged={s['unchanged']}")
+              f"unchanged={s['unchanged']}"
+              + (f" skipped_malformed={s['skipped_malformed']}"
+                 if s.get("skipped_malformed") else ""))
 
     save_store(store)
     total = len(store.get("by_email", {}))
