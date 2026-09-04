@@ -753,6 +753,18 @@ matching:
     - "white"            # proper-noun leak: "Ryan White HIV/AIDS Program" matched
                          # faculty on the bare token 'white' (48-62% conf, 08-01).
                          # Phrase-safe: "white matter" survives the phrase-level check.
+    # -- 2026-09-04, second pass (first run under the new scoring) --
+    # Found in the very next run: a Neurology faculty member matched a BJA
+    # immigration grant at 80% on "joint task force" alone — the highest-scoring
+    # single-keyword match of the day, almost certainly scraped from committee
+    # service on their profile. Same class as "united states" below, but worse
+    # in one respect: at three tokens it earns a phrase factor of 2.2 against a
+    # cap of 13.0, so "rare AND multi-word" is the maximum-score combination the
+    # model can assign — and neither property says anything about topical fit.
+    # The 0.85 single-keyword penalty took it from ~94% to 80%: it helped, it
+    # did not save us. Only the vocabulary fixes the underlying wrongness.
+    - "joint task force"
+    - "task force"
     # -- 2026-09-04 addition (Wiseman / "united states" review) --
     # Rarity-weighting (IDF) assumes a keyword is rare BECAUSE it is specialised.
     # These are rare for the opposite reason — they are odd things to put on a

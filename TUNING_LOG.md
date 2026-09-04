@@ -127,10 +127,34 @@ vocabulary change does the real work and the penalty corrects the
 over-confidence behind it. Going harder would cost good matches to catch bad
 words that should not be in the vocabulary at all.
 
-**Outcome:** *pending.*
-**Verdict:** too early
+**Outcome — measured on the very next run (09-04), and it worked.**
+Single-keyword matches fell from ~15% of delivered to **2 of 42**, and both
+survivors are real terms (`children's mental health` 57%, `joint task force` 80%)
+rather than filler. `params` confirms the multiplier was in force. Multi-keyword
+and `both`-type matches were unaffected, as designed. The land-grant patterns
+also caught "1890 Institution Teaching, Research, and Extension Capacity
+Building" unprompted, and `insurance` (added 08-22) fired in `context_filtered`.
 
-**The general lesson, since this is the third instance.** Every one of these has
+**And the fourth instance appeared in that same run.** `joint task force` — 80%,
+the highest-confidence single-keyword match of the day, a Neurology faculty
+member on a BJA immigration grant, almost certainly scraped from committee
+service on their profile. Worse than `united states` in one respect: at three
+tokens it earns a phrase factor of 2.2 against a cap of 13.0, so **rare AND
+multi-word is the maximum-score combination the model can assign** — and neither
+property says anything about topical fit. The 0.85 penalty took it from ~94% to
+80%: it helped, it did not save it, which is exactly the predicted split of
+labour. Added `joint task force` and `task force` to `stop_words` (170).
+
+The single tokens `joint` and `force` were deliberately NOT stop-worded —
+`joint replacement`, `joint pain`, `temporomandibular joint`, `joint
+arthroplasty`, `muscle force`, `force plate` and `ground reaction force` are all
+real clinical vocabulary and were verified to survive. Exactly one match in the
+whole archive is affected: the one reported.
+
+**Verdict:** worked — penalty and vocabulary both, with the vocabulary doing the
+decisive work exactly as predicted.
+
+**The general lesson, since this is now the fourth instance.** Every one of these has
 the same shape: a word rare enough to earn a high score while saying nothing
 about topical fit. The scorer is not broken — the vocabulary has holes, and each
 hole surfaces as a confidently wrong match. The durable fix is not a smarter
