@@ -1411,7 +1411,10 @@ def get_faculty_profiles(config: dict, force: bool = False) -> list[dict]:
                 if not kws:
                     continue
                 before = len(fac.get("keywords") or [])
-                _merge_keywords(fac, kws, "faculty_self_reported")
+                # prepend: these are the most recent first-party statement of
+                # what this person researches, and must survive the keywords[:40]
+                # truncation in the embedder — see _merge_keywords.
+                _merge_keywords(fac, kws, "faculty_self_reported", prepend=True)
                 after = len(fac.get("keywords") or [])
                 merged_count += 1
                 new_kw_count += (after - before)
@@ -1511,7 +1514,8 @@ def _base_source_label(raw: str) -> str:
     return _SOURCE_BASE_LABEL.get(base, s)
 
 
-def _merge_keywords(faculty: dict, new_keywords: list[str], source: str) -> None:
+def _merge_keywords(faculty: dict, new_keywords: list[str], source: str,
+                    prepend: bool = False) -> None:
     """
     Merge new_keywords into faculty["keywords"], deduplicating case-insensitively.
     Tracks both:
@@ -1523,6 +1527,20 @@ def _merge_keywords(faculty: dict, new_keywords: list[str], source: str) -> None
         and PubMed surfacing "epilepsy") — each gets its own entry, so the
         dashboard can derive sources-per-keyword by inversion.
     UMSOM profile keywords always stay first (highest trust), external sources appended.
+
+    `prepend=True` puts this source's NEW keywords at the FRONT of the flat list
+    instead of the end. Position is not cosmetic: `embedder.faculty_to_text()`
+    embeds only `keywords[:40]`, so anything past that cutoff never reaches the
+    semantic vector at all. Faculty enriched from PubMed / Semantic Scholar /
+    ClinicalTrials.gov / Europe PMC routinely carry far more than 40 keywords, and
+    Pass 8b (faculty self-reported, from the Eval App campaign) runs LAST — so
+    appending meant a faculty member's own explicit, dated statement of what they
+    research was the first thing truncated out of their embedding, while
+    machine-derived MeSH terms kept their place. Prepending inverts that to match
+    the actual trust ordering (2026-09-04).
+
+    Keywords already present keep their existing position — only genuinely new
+    ones move to the front — so this never reshuffles an established list.
     """
     # Filter boilerplate up-front so per-source records stay clean.
     contributed = [k for k in (new_keywords or []) if not _is_boilerplate_kw(k)]
@@ -1531,7 +1549,7 @@ def _merge_keywords(faculty: dict, new_keywords: list[str], source: str) -> None
     existing = faculty.get("keywords") or []
     existing_lower = {k.lower() for k in existing}
     added = [k for k in contributed if k.lower() not in existing_lower]
-    faculty["keywords"] = existing + added
+    faculty["keywords"] = (added + existing) if prepend else (existing + added)
 
     # Per-keyword source attribution. We dedupe WITHIN a source but keep
     # the keyword in every source that legitimately surfaced it.

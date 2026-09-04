@@ -64,6 +64,76 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-09-04 — Self-reported keywords were being truncated out of the embedding
+**Status:** live
+**Commit:** *(pending)*
+**Change:** `_merge_keywords()` gains `prepend`, and Pass 8b (faculty
+self-reported, from the Eval App campaign) now uses it. Their keywords go to the
+FRONT of `faculty["keywords"]` instead of the end. No thresholds moved, no new
+config knob.
+
+**Why — this started as a different question.** The ask was whether
+self-reported keywords and 👍/👎 feedback should get a confidence boost, on the
+grounds that both come straight from the faculty member and are recent. Measuring
+it first said no, and then said something better.
+
+*The boost would not be worth it.* Across 6,365 delivered matches in the archive
+(4,728 with an email recorded), 2,479 — **52%** — involve a faculty member who now
+has self-reported keywords. But of those, only **5% rest wholly** on a
+self-reported term and 12% partly; **84% do not touch one at all**. Scaling the
+412 matches sitting in the 45–49 band by that 5% share, a ~1.10 multiplier would
+move roughly **19 matches** across the entire archive. Not worth a permanent piece
+of scoring complexity.
+
+*Why reliance is so low, and what that exposed.* Self-reported keywords are high
+quality but low volume — median 5 per person — against the much larger pools that
+PubMed / Semantic Scholar / ClinicalTrials.gov / Europe PMC attach. Chasing that
+dilution surfaced the actual fault:
+
+- Pass 8b runs **last**, after every enrichment pass
+- `_merge_keywords` **appended**: `faculty["keywords"] = existing + added`
+- `embedder.faculty_to_text()` embeds only **`keywords[:40]`**
+
+So for any faculty member already carrying 40+ enrichment keywords, their own
+explicit, dated statement of what they research **never reached the semantic
+vector at all** — truncated out, while machine-derived MeSH terms kept their
+place. The most authoritative input was last in line and first to be dropped.
+
+**Measured effect.** On a simulated profile with 2 UMSOM profile keywords, 55
+enrichment keywords and 3 self-reported ones, against a grant squarely in the
+self-reported area:
+
+```
+                self-reported inside embedded top-40    cosine vs matched grant
+BEFORE (append)              0 of 3                            0.1852
+AFTER  (prepend)             3 of 3                            0.3991   (+0.2138)
+```
+
+A grant that was nowhere near the 0.40 semantic threshold lands essentially on
+it. Compare that with the ~19 matches the multiplier would have produced.
+
+**Expected effect:** stronger, more current semantic vectors for the 846 faculty
+with self-reported keywords (up from 349 before today's import). Keyword-channel
+behaviour is unchanged — this only alters list order, and existing keywords keep
+their positions, so no established list is reshuffled. Attribution in
+`keywords_by_source` and dedup are unaffected, both verified.
+
+**Takes effect on the next scrape** — the next weekly auto-rescrape, or
+immediately with `FORCE_SCRAPE=true`. Embeddings regenerate when the profile text
+changes, so this needs a rescrape to show up, not just a restart.
+
+**Outcome:** *pending.*
+**Verdict:** too early
+
+**Feedback deliberately left out of scoring.** Auto-boosting a faculty member's
+future confidence because they clicked 👍 is a trap while the verdict set is
+n≈0 and unvalidated: it would mean tuning on a signal nobody has inspected. The
+`rater=digest` verdicts in particular are third parties rating someone else's
+fit and must never be fed back automatically. The comments field is the valuable
+part, and its value is diagnostic rather than arithmetic — "this needs a patient
+registry, I am a bench scientist" tells you to build a filter, not to nudge a
+multiplier. Revisit once the floor decision has been made on real data.
+
 ### 2026-09-04 — Rarity is not specificity: geographic filler, and a single-keyword penalty
 **Status:** live
 **Commit:** `8027664`
