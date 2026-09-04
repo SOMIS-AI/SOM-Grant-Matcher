@@ -66,7 +66,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-09-04 — Backfill missing faculty emails from the Eval App store
 **Status:** live
-**Commit:** *(pending)*
+**Commit:** `c1965db`
 **Change:** `eval_app_keywords.resolve_emails_by_name()` builds a
 {normalised name → email} index from the Eval App store, including only names
 that resolve to exactly ONE address. Pass 8b uses it to fill `email` on any
