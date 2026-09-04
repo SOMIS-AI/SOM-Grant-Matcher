@@ -1398,7 +1398,39 @@ def get_faculty_profiles(config: dict, force: bool = False) -> list[dict]:
     # email. Runs before Pass 9 so the new keywords are included in the text
     # used for embedding generation.
     try:
-        from eval_app_keywords import get_keywords_by_email
+        from eval_app_keywords import get_keywords_by_email, resolve_emails_by_name, normalize_person_name
+
+        # ── Email backfill (2026-09-04) ──────────────────────────────────────
+        # Some UMSOM profile pages publish no email at all — confirmed by
+        # fetching them: no mailto, no obfuscation, no alternate domain, so the
+        # Pass 2 regex has nothing to find. A blank email means the person can
+        # never receive a personalised digest (that fan-out indexes by email)
+        # and their 👍/👎 verdicts cannot be attributed. The Eval App export DOES
+        # carry an address, so fill it in from there — by unique normalised-name
+        # match only. Ambiguous names are logged and skipped rather than guessed:
+        # attaching a verdict to the wrong person is worse than a blank.
+        try:
+            name_to_email = resolve_emails_by_name()
+        except Exception as e:
+            name_to_email = {}
+            logger.warning(f"Pass 8b: email backfill index unavailable: {e}")
+        if name_to_email:
+            filled = 0
+            for fac in active_faculty:
+                if (fac.get("email") or "").strip():
+                    continue
+                key = normalize_person_name(fac.get("name", ""))
+                em = name_to_email.get(key)
+                if em:
+                    fac["email"] = em
+                    fac["email_source"] = "eval_app_backfill"
+                    filled += 1
+            still_missing = sum(1 for f in active_faculty if not (f.get("email") or "").strip())
+            logger.info(
+                f"Pass 8b: backfilled {filled} email(s) from the Eval App store "
+                f"({still_missing} active faculty still have none)"
+            )
+
         self_reported = get_keywords_by_email()
         if self_reported:
             merged_count = 0

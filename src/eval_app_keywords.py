@@ -439,6 +439,48 @@ def get_keywords_by_email(path: Path = DEFAULT_STORE_PATH) -> dict[str, list[str
     }
 
 
+# ── Email backfill ───────────────────────────────────────────────────────────
+# Not every UMSOM profile page publishes an email. Verified 2026-09-04 by
+# fetching the pages directly: for the affected faculty there is no address in
+# any form — no mailto, no obfuscation, no alternate domain — so the scraper's
+# regex has nothing to find and no pattern change would help. Across the match
+# archive that left 356 faculty and 1,637 delivered matches with a blank email,
+# which makes their feedback unattributable AND excludes them from personalised
+# digests entirely (that fan-out indexes by email).
+#
+# The Eval App export does carry an Email column, so a third of the gap can be
+# closed from data already in the repo. Matching is on a normalised name and
+# ONLY when it resolves to exactly one address — two real cases
+# ("Sarah E. Woodson Smith", "Brian W. Jackson") map to two addresses each, and
+# guessing between them would attach a verdict to the wrong person.
+
+def normalize_person_name(name: str) -> str:
+    """First + last, lowercased, credentials and middle initials stripped.
+    Deliberately loose enough to match "Kristyn N. Donohue" against
+    "Kristyn Donohue", and strict enough that collisions stay rare — when one
+    does occur, resolve_emails_by_name() refuses to guess."""
+    n = (name or "").lower()
+    n = re.sub(r"\b(m\.?d\.?|ph\.?d\.?|d\.?o\.?|m\.?p\.?h\.?|r\.?n\.?|m\.?s\.?|"
+               r"m\.?b\.?a\.?|d\.?d\.?s\.?|pharm\.?d\.?)\b", " ", n)
+    n = re.sub(r"[^a-z ]", " ", n)
+    parts = [p for p in n.split() if len(p) > 1]   # drops middle initials
+    if len(parts) < 2:
+        return " ".join(parts)
+    return f"{parts[0]} {parts[-1]}"
+
+
+def resolve_emails_by_name(path: Path = DEFAULT_STORE_PATH) -> dict[str, str]:
+    """{normalised name: email} for names that map to exactly ONE address.
+    Ambiguous names are omitted rather than arbitrarily resolved."""
+    store = load_store(path)
+    by_name: dict[str, set] = {}
+    for email, rec in store.get("by_email", {}).items():
+        key = normalize_person_name(rec.get("name", ""))
+        if key and email:
+            by_name.setdefault(key, set()).add(email)
+    return {k: next(iter(v)) for k, v in by_name.items() if len(v) == 1}
+
+
 # ── CLI entry point ──────────────────────────────────────────────────────────
 
 def _cli(argv: list[str]) -> int:

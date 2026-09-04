@@ -64,6 +64,64 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-09-04 — Backfill missing faculty emails from the Eval App store
+**Status:** live
+**Commit:** *(pending)*
+**Change:** `eval_app_keywords.resolve_emails_by_name()` builds a
+{normalised name → email} index from the Eval App store, including only names
+that resolve to exactly ONE address. Pass 8b uses it to fill `email` on any
+active faculty member whose profile supplied none, tagging the record
+`email_source: "eval_app_backfill"`. Nothing else changes; an existing email is
+never overwritten.
+
+**Why:** the 👍/👎 links for two faculty carried no email through to the form, so
+their verdicts would have arrived attached to nobody. The immediate fix was a
+`name:` fallback in the match record (same day), but the root cause was worth
+chasing: **356 faculty and 1,637 of 6,365 delivered matches (25.7%) had a blank
+email.**
+
+**This is not a scraper defect — verified rather than assumed.** Fetching the
+affected profile pages directly showed no address in any form:
+
+```
+Melissa J. Lavoie / Cassidy W. Claassen / Deborah G. Badawi /
+Heather J. Ezelle / Amanda J. Driscoll
+   current regex: NONE   any email: NONE   mailto: none   obfuscated: False
+```
+
+Control on faculty who DO have one confirms the Pass 2 regex works
+(`Chixiang Chen → chixiang.chen@som.umaryland.edu`). Some UMSOM profiles simply
+do not publish an address. No regex change would help.
+
+**The cost was larger than the feedback problem that surfaced it.** A blank email
+also excludes someone from personalised digests entirely — that fan-out indexes
+by email and skips empties silently — so these 356 people could never receive
+their own digest regardless of how well they matched.
+
+**Measured recovery:** 95 of the 356 resolve uniquely from the Eval App store,
+covering **537 of the 1,637 affected matches (33%)**, including the worst
+offenders — Aaron David Greenblatt (44 matches), Cassidy W. Claassen (43, on the
+`@ihv.umaryland.edu` institute domain), Daniel G. Maluf (29).
+
+**Two names are deliberately NOT resolved.** "Sarah E. Woodson Smith" and
+"Brian W. Jackson" each map to two addresses in the store. Attaching a verdict —
+or a digest — to the wrong person is worse than leaving it blank, so ambiguous
+names are excluded from the index by construction rather than resolved by a
+tie-break. Verified they stay blank.
+
+**Still unresolved: 259 faculty**, led by Melissa J. Lavoie at 72 matches, who is
+the single worst case and is not in the Eval App store either. Closing that
+needs a directory export with emails; until then they fall back to the `name:`
+record shipped earlier today.
+
+**Expected effect:** ~95 faculty gain an email at the next scrape, becoming
+eligible for personalised digests and producing attributable feedback.
+`feedback_links.links_without_email` in the diagnostic should fall.
+**Takes effect on the next scrape**, not the next restart.
+
+**Outcome:** *pending.*
+**Verdict:** too early
+
 ### 2026-09-04 — Self-reported keywords were being truncated out of the embedding
 **Status:** live
 **Commit:** `2064323`
