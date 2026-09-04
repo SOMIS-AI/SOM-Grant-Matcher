@@ -109,10 +109,22 @@ or a digest — to the wrong person is worse than leaving it blank, so ambiguous
 names are excluded from the index by construction rather than resolved by a
 tie-break. Verified they stay blank.
 
-**Still unresolved: 259 faculty**, led by Melissa J. Lavoie at 72 matches, who is
-the single worst case and is not in the Eval App store either. Closing that
-needs a directory export with emails; until then they fall back to the `name:`
-record shipped earlier today.
+**Update, same day — a directory export closed most of the remainder.**
+`src/faculty_emails.py` + `seed_data/faculty_emails.json` import a UMSOM
+name/email export (1,488 rows, 1,475 unique names, 6 skipped ambiguous), and
+Pass 8b now consults it alongside the eval-app index, directory winning on
+conflict. Of the 258 that were still blank, **64 now resolve, covering 388
+affected matches** — including Melissa J. Lavoie (72 matches), the worst single
+case. The 15 department-mismatch rows were reviewed and accepted: they are the
+normal UMSOM dual-affiliation pattern (Medicine vs Program in Oncology,
+Emergency Medicine vs Program in Trauma), not different people.
+
+**194 remain unresolved.** Probing by surname alone returns zero hits in that
+export, so it is a subset rather than a formatting mismatch — closing the rest
+needs a broader directory. Those keep the `name:` fallback.
+
+The two ambiguous names are ambiguous in this export too and stay unresolved by
+design.
 
 **Expected effect:** ~95 faculty gain an email at the next scrape, becoming
 eligible for personalised digests and producing attributable feedback.

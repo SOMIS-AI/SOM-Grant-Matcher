@@ -1409,11 +1409,20 @@ def get_faculty_profiles(config: dict, force: bool = False) -> list[dict]:
         # carry an address, so fill it in from there — by unique normalised-name
         # match only. Ambiguous names are logged and skipped rather than guessed:
         # attaching a verdict to the wrong person is worse than a blank.
+        # Two sources, both keyed on the same normalised name. The dedicated
+        # directory (seed_data/faculty_emails.json, imported from a UMSOM export)
+        # wins on conflict: it is an authoritative name→address list, whereas the
+        # eval-app store carries addresses only incidentally alongside keywords.
+        name_to_email = {}
         try:
-            name_to_email = resolve_emails_by_name()
+            name_to_email.update(resolve_emails_by_name())          # eval-app store
         except Exception as e:
-            name_to_email = {}
-            logger.warning(f"Pass 8b: email backfill index unavailable: {e}")
+            logger.warning(f"Pass 8b: eval-app email index unavailable: {e}")
+        try:
+            from faculty_emails import resolve_emails_by_name as _dir_emails
+            name_to_email.update(_dir_emails())                     # directory export
+        except Exception as e:
+            logger.warning(f"Pass 8b: faculty email directory unavailable: {e}")
         if name_to_email:
             filled = 0
             for fac in active_faculty:
