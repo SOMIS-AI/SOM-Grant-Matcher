@@ -66,7 +66,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-09-04 — Self-reported keywords were being truncated out of the embedding
 **Status:** live
-**Commit:** *(pending)*
+**Commit:** `2064323`
 **Change:** `_merge_keywords()` gains `prepend`, and Pass 8b (faculty
 self-reported, from the Eval App campaign) now uses it. Their keywords go to the
 FRONT of `faculty["keywords"]` instead of the end. No thresholds moved, no new
