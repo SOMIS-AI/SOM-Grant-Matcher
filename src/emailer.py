@@ -158,6 +158,11 @@ _FEEDBACK_CFG: dict = {}
 # Count of 👍/👎 link pairs actually rendered this run. Reported in the diagnostic
 # so a run that silently emits no feedback links is visible (2026-08-19).
 _feedback_links_rendered = 0
+# Feedback links rendered for a faculty member with NO email on their profile.
+# Those fall back to a name and need a manual lookup to attribute, so the count
+# is reported in the diagnostic to keep the underlying data gap visible rather
+# than letting it quietly degrade the feedback set (2026-09-04).
+_feedback_links_no_email = 0
 _ABOUT_URL: str = ""
 
 
@@ -268,6 +273,11 @@ def _feedback_links_diagnostic() -> dict:
         "configured": usable,
         "links_rendered_this_run": _feedback_links_rendered,
     }
+    if _feedback_links_no_email:
+        # Not an error — these links work and record a verdict. But the faculty
+        # member has no email on their profile, so the response identifies them
+        # by name and needs a manual lookup. Chase the gap in the roster.
+        block["links_without_email"] = _feedback_links_no_email
     if not usable:
         block["problem"] = problem
     else:
@@ -307,8 +317,35 @@ def _match_feedback_id(m, grant: dict, run_date: str, rater: str = "self") -> st
                  signal, but a third party's read of someone else's fit — filter
                  or down-weight these before drawing threshold conclusions."""
     email = getattr(m, "faculty_email", None) or (m.get("faculty_email", "") if isinstance(m, dict) else "")
+    email = (email or "").strip()
+
+    # Not every faculty profile exposes an email — 4 of 42 delivered matches on
+    # 2026-09-04 had none. Previously that produced a record beginning with an
+    # empty field ("|O-BJA-2026-172724|..."), so the verdict arrived attached to
+    # nobody and was unusable: the one thing this record exists to carry is WHO
+    # rated the match. Fall back to the faculty name, tagged so it is obvious in
+    # the responses sheet that this row needs a manual lookup and is not an
+    # address. Better a name than a blank.
+    if not email:
+        name = (getattr(m, "faculty_name", None)
+                or (m.get("faculty_name", "") if isinstance(m, dict) else "")
+                or "").strip()
+        email = f"name:{name}" if name else "unknown"
+
     gid = grant.get("number") or grant.get("id") or grant.get("title", "")[:60]
-    return f"{email}|{gid}|{run_date}|{_get_conf(m)}|{_get_match_type(m)}|{rater}"
+
+    # The record is pipe-delimited and read back with Excel's Text-to-Columns, so
+    # a literal pipe inside any field silently misaligns every later column. Rare
+    # but real: the keyword store contains a faculty name of the form
+    # "Sagheer | UMMS Ahmed", which would have shipped a 7-field record the
+    # moment the name fallback above fired. Strip pipes rather than escape them —
+    # nothing downstream needs to reconstruct the original character.
+    def _clean(v) -> str:
+        return str(v if v is not None else "").replace("|", "/").strip()
+
+    return "|".join(_clean(x) for x in (
+        email, gid, run_date, _get_conf(m), _get_match_type(m), rater,
+    ))
 
 
 def _feedback_links_html(m, grant: dict, run_date: str, rater: str = "self") -> str:
@@ -321,8 +358,10 @@ def _feedback_links_html(m, grant: dict, run_date: str, rater: str = "self") -> 
     down = _feedback_url(mid, "Not relevant")
     if not up:
         return ""
-    global _feedback_links_rendered
+    global _feedback_links_rendered, _feedback_links_no_email
     _feedback_links_rendered += 1
+    if mid.startswith("name:") or mid.startswith("unknown|"):
+        _feedback_links_no_email += 1
     return (
         f"<div style='margin-top:6px;font-size:11px;'>"
         f"<a href='{esc(up)}' target='_blank' style='color:#2e7d32;text-decoration:none;"
