@@ -312,6 +312,10 @@ def _match_feedback_id(m, grant: dict, run_date: str, rater: str = "self") -> st
       'self'   — the faculty member themselves, from their personalized digest.
       'admin'  — a department research administrator answering ON BEHALF of that
                  faculty member, from the per-department digest.
+      'som_admin' — a school-wide SOM Research Administrator, from the
+                 all-school weekly digest (added 2026-09-05). Like 'admin' they
+                 answer on a faculty member's behalf, but across every
+                 department rather than their own.
       'digest' — someone on the shared DAILY_RECIPIENTS/WEEKLY_RECIPIENTS list
                  rating a match that is not theirs (added 2026-09-03). Useful
                  signal, but a third party's read of someone else's fit — filter
@@ -656,7 +660,15 @@ def _branded_shell(title_gold_line: str, date_line: str, content_html: str,
 
 
 def build_html_email(matched_results: list, run_date: str, dashboard_url: str = "",
-                     digest_label: str = "Daily") -> str:
+                     digest_label: str = "Daily", fb_rater: str = "digest") -> str:
+    """School-wide digest: every grant, every matched faculty member.
+
+    `fb_rater` labels who is answering on the 👍/👎 links. Defaults to 'digest'
+    (the shared DAILY_RECIPIENTS / WEEKLY_RECIPIENTS list). SOM Research
+    Administrators receive the same content under rater 'som_admin', because
+    they know the faculty personally and are answering on their behalf — a
+    materially different signal from an anonymous distribution list, and one
+    worth being able to separate later (2026-09-05)."""
     total_grants = len(matched_results)
     total_faculty_matches = sum(len(r["matches"]) for r in matched_results)
 
@@ -687,7 +699,7 @@ def build_html_email(matched_results: list, run_date: str, dashboard_url: str = 
     # department's administrator. Keeping it a distinct value means feedback from
     # the central list can be weighted differently — or excluded — when the
     # verdicts are used to tune thresholds.
-    grant_cards_html = _grant_cards_html(sorted_results, run_date, fb_rater="digest")
+    grant_cards_html = _grant_cards_html(sorted_results, run_date, fb_rater=fb_rater)
 
     stats_row = f"""
     <!-- Stats row -->

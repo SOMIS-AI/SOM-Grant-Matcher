@@ -11,6 +11,14 @@ on the /app/data mount:
   data/dept_admins.json             list of records →
     [ { department, email, name, cadence, added_by, added_at } ]
 
+  data/som_admins.json              list of records →
+    [ { email, name, title, cadence, added_by, added_at } ]
+    School-wide SOM Research Administrators (2026-09-05). Unlike dept admins,
+    who receive only their own department's matches, these receive EVERY match
+    across the school and rate on behalf of any faculty member — they know the
+    faculty well enough to give per-match verdicts. No `department` field
+    because the scope is deliberately the whole school.
+
   data/email_log.json               rolling audit log (capped) →
     [ { timestamp, type, to, faculty_name?, department?, matches_count, subject } ]
 
@@ -40,6 +48,7 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "data"))
 
 FACULTY_SUBS_FILE = DATA_DIR / "faculty_subscriptions.json"
 DEPT_ADMINS_FILE  = DATA_DIR / "dept_admins.json"
+SOM_ADMINS_FILE   = DATA_DIR / "som_admins.json"
 EMAIL_LOG_FILE    = DATA_DIR / "email_log.json"
 
 # Cap on log size so it doesn't grow unbounded on the Azure Files mount.
@@ -256,6 +265,95 @@ def admins_for_department(dept: str, *, cadence: Optional[str] = None) -> list:
 # ══════════════════════════════════════════════════════════════════════════════
 # EMAIL AUDIT LOG
 # ══════════════════════════════════════════════════════════════════════════════
+
+# ── SOM Research Administrators (school-wide) ────────────────────────────────
+# A fourth audience, added 2026-09-05. The distinction that matters is SCOPE and
+# TRUST, not delivery:
+#
+#   faculty sub  → their own matches            rater 'self'
+#   dept admin   → their department's matches   rater 'admin'
+#   SOM admin    → EVERY match, school-wide     rater 'som_admin'   ← this
+#   main digest  → every match, shared list     rater 'digest'
+#
+# SOM admins see the same content as the shared weekly digest, so why a separate
+# group? Two reasons. They are managed in the portal rather than an env var, so
+# adding one does not need an app-settings change and a restart. And their
+# verdicts carry their own rater value: they know the faculty personally and are
+# answering on their behalf, which is worth more than an anonymous distribution
+# list ('digest') and less than the faculty member's own answer ('self'). Keeping
+# them distinct means that judgement can be made later, from the data, rather
+# than being baked in now.
+
+def load_som_admins() -> list:
+    recs = _load_json(SOM_ADMINS_FILE, [])
+    return recs if isinstance(recs, list) else []
+
+
+def save_som_admins(admins: list) -> None:
+    with _write_lock:
+        _save_json(SOM_ADMINS_FILE, admins)
+
+
+def add_som_admin(*, email: str, name: str = "", title: str = "",
+                  cadence: str = "weekly", added_by: str = "") -> dict:
+    """Create or update one school-wide research administrator."""
+    em = _normalize_email(email)
+    if not em or "@" not in em:
+        raise ValueError("a valid email address is required")
+    cad = (cadence or "weekly").strip().lower()
+    if cad not in VALID_CADENCES:
+        raise ValueError(f"cadence must be one of {sorted(VALID_CADENCES)}")
+
+    admins = load_som_admins()
+    now = _now_iso()
+    for rec in admins:
+        if _normalize_email(rec.get("email")) == em:
+            rec.update({
+                "name": name.strip() or rec.get("name", ""),
+                "title": title.strip() or rec.get("title", ""),
+                "cadence": cad,
+                "updated_at": now,
+            })
+            save_som_admins(admins)
+            logger.info(f"SOM admin updated: {em} ({cad})")
+            return rec
+
+    rec = {
+        "email": em,
+        "name": name.strip(),
+        "title": title.strip(),
+        "cadence": cad,
+        "added_by": added_by,
+        "added_at": now,
+        "updated_at": now,
+    }
+    admins.append(rec)
+    save_som_admins(admins)
+    logger.info(f"SOM admin added: {em} ({cad})")
+    return rec
+
+
+def remove_som_admin(email: str) -> bool:
+    """Tombstone (cadence='off') rather than delete, matching the faculty-sub
+    convention so re-enabling someone keeps their history."""
+    em = _normalize_email(email)
+    admins = load_som_admins()
+    for rec in admins:
+        if _normalize_email(rec.get("email")) == em:
+            rec["cadence"] = "off"
+            rec["updated_at"] = _now_iso()
+            save_som_admins(admins)
+            logger.info(f"SOM admin disabled: {em}")
+            return True
+    return False
+
+
+def som_admins_for_cadence(cadence: str) -> list:
+    """Active SOM admins in one cadence bucket."""
+    want = (cadence or "").strip().lower()
+    return [a for a in load_som_admins()
+            if (a.get("cadence") or "").lower() == want]
+
 
 def log_email(*, kind: str, to: str, subject: str, matches_count: int = 0,
               faculty_name: str = "", department: str = "",

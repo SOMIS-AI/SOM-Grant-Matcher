@@ -45,6 +45,7 @@ from emailer import (
     get_manual_recipients,
     build_faculty_email,
     build_dept_admin_email,
+    build_html_email,
     send_personal_email,
     send_failure_alert,
 )
@@ -524,6 +525,67 @@ def _build_id() -> str:
     return "unknown"
 
 
+def _send_som_admin_digests(config: dict, matched_results: list,
+                            run_date: str, cadence: str = "weekly") -> dict:
+    """Send the school-wide digest to SOM Research Administrators
+    (2026-09-05).
+
+    Content is identical to the shared weekly roundup — every grant, every
+    matched faculty member — but each recipient gets their own copy so the send
+    is individually logged and the 👍/👎 links carry rater 'som_admin' rather
+    than 'digest'. These administrators know the faculty personally and answer
+    on their behalf, so their verdicts are worth separating from an anonymous
+    distribution list's.
+
+    Shares the SendGrid budget with the other fan-outs and writes to the same
+    audit log with kind='som_admin'.
+    """
+    logger = logging.getLogger("main")
+    stats = {"sent": 0, "failed": 0, "failed_recipients": [], "budget_exhausted": False}
+    if not matched_results:
+        return stats
+
+    admins = subscriptions.som_admins_for_cadence(cadence)
+    if not admins:
+        return stats
+
+    dashboard_url = os.environ.get("DASHBOARD_URL", "")
+    label = "Weekly" if cadence == "weekly" else "Daily"
+    n_grants = len(matched_results)
+    n_matches = sum(len(r.get("matches", [])) for r in matched_results)
+    subject = (f"[SOM Grant Matcher] School-wide: {n_matches} faculty match"
+               f"{'' if n_matches == 1 else 'es'} across {n_grants} grant"
+               f"{'' if n_grants == 1 else 's'} - {run_date}")
+    html = build_html_email(matched_results, run_date, dashboard_url,
+                            digest_label=label, fb_rater="som_admin")
+
+    for rec in admins:
+        email = (rec.get("email") or "").strip().lower()
+        if not email:
+            continue
+        if subscriptions.remaining_budget_today() <= 0:
+            stats["budget_exhausted"] = True
+            logger.warning("SendGrid daily cap reached — skipping remaining SOM admin digests.")
+            break
+        sent = send_personal_email(config, email, subject, html)
+        if not sent:
+            time.sleep(2)
+            sent = send_personal_email(config, email, subject, html)
+        if sent:
+            subscriptions.log_email(kind="som_admin", to=email, subject=subject,
+                                    matches_count=n_matches,
+                                    faculty_name=rec.get("name", ""))
+            stats["sent"] += 1
+        else:
+            stats["failed"] += 1
+            stats["failed_recipients"].append(email)
+            logger.error(f"SOM admin digest send FAILED after retry: {email}")
+            subscriptions.log_email(kind="som_admin_failed", to=email, subject=subject,
+                                    matches_count=n_matches,
+                                    faculty_name=rec.get("name", ""))
+    return stats
+
+
 def _send_staff_digests(config: dict, matched_results: list, run_date: str,
                         cadence: str = "weekly", digest_label: str = "") -> dict:
     """Send each active UMSOM staff member their own digest of the grants THEY
@@ -906,6 +968,19 @@ def _run_sends(config, fire_time, matched_results, matcher_diag,
                         logger.info("  Staff weekly digests: no staff matches this week — none sent.")
                 except Exception as e:
                     logger.error(f"Staff weekly fan-out failed: {e}", exc_info=True)
+
+                # School-wide digest for SOM Research Administrators, same
+                # 7-day window (2026-09-05).
+                try:
+                    stats_sa = _send_som_admin_digests(config, weekly_roundup_cache, run_date_w)
+                    if stats_sa["sent"] or stats_sa["failed"]:
+                        logger.info(
+                            f"  ✓ SOM admin weekly digests — sent: {stats_sa['sent']}"
+                            + (f"  ⚠ {stats_sa['failed']} FAILED" if stats_sa["failed"] else "")
+                            + ("  ⚠ budget exhausted" if stats_sa["budget_exhausted"] else "")
+                        )
+                except Exception as e:
+                    logger.error(f"SOM admin weekly fan-out failed: {e}", exc_info=True)
             else:
                 logger.info("  Personalized weekly digests: no matches in the last 7 days — none sent.")
         except Exception as e:

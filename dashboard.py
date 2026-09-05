@@ -1129,6 +1129,7 @@ def health():
 #   /api/subscriptions/faculty       — GET (list), POST (upsert), DELETE (tombstone)
 #   /api/subscriptions/dept-admins   — GET (list), POST (add/update), DELETE (remove)
 #   /api/subscriptions/staff         — GET (list), POST (upsert profile), DELETE (tombstone)
+#   /api/subscriptions/som-admins    — GET (list), POST (add/update), DELETE (tombstone)
 #   /api/subscriptions/log           — GET recent send-audit log + today's count
 # Implementation lives in src/subscriptions.py; this layer just translates
 # HTTP <→ those functions and renders consistent JSON.
@@ -1285,6 +1286,44 @@ def api_subs_dept_admins():
             department=dept, email=email,
             name=(data.get("name") or "").strip(),
             cadence=(data.get("cadence") or "daily").strip().lower(),
+            added_by=session.get("user", "admin"),
+        )
+    except ValueError as e:
+        return _json_err(e)
+    return jsonify({"ok": True, "record": rec})
+
+
+@app.route("/api/subscriptions/som-admins", methods=["GET", "POST", "DELETE"])
+@login_required
+def api_subs_som_admins():
+    """SOM Research Administrators — school-wide (2026-09-05).
+
+    Distinct from /dept-admins by SCOPE: these receive EVERY match across the
+    school rather than one department's, and their feedback is recorded under
+    rater 'som_admin' so it can be weighted separately from an anonymous
+    distribution list.
+    """
+    if request.method == "GET":
+        admins = sorted(_subs.load_som_admins(),
+                        key=lambda a: (a.get("name", "").lower(), a.get("email", "")))
+        active = [a for a in admins if (a.get("cadence") or "") not in ("", "off")]
+        return jsonify({"ok": True, "admins": admins,
+                        "count": len(admins), "active_count": len(active)})
+
+    data = request.get_json(silent=True) or request.form
+    email = (data.get("email") or "").strip()
+    if not email:
+        return _json_err("email is required")
+
+    if request.method == "DELETE":
+        return jsonify({"ok": _subs.remove_som_admin(email)})
+
+    try:
+        rec = _subs.add_som_admin(
+            email=email,
+            name=(data.get("name") or "").strip(),
+            title=(data.get("title") or "").strip(),
+            cadence=(data.get("cadence") or "weekly").strip().lower(),
             added_by=session.get("user", "admin"),
         )
     except ValueError as e:
@@ -2477,6 +2516,51 @@ tr:hover td{background:rgba(15,23,42,.03)}
               <th>Added</th><th>Updated</th><th></th>
             </tr></thead>
             <tbody id="subs-admin-tbody"><tr><td colspan="7" style="color:var(--text3)">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SOM Research Administrators (school-wide) -->
+    <div class="panel" style="margin-top:14px">
+      <div class="panel-hdr">
+        <span class="panel-title">SOM Research Administrators</span>
+        <span class="sec-count" id="subs-somadmin-count" style="margin-left:auto"></span>
+        <button class="btn-sm" style="margin-left:10px" onclick="openSomAdminForm()">+ Add administrator</button>
+      </div>
+      <div class="panel-body">
+        <p style="font-size:12px;color:var(--text3);margin:0 0 12px">
+          School-wide reviewers. They receive a <strong>weekly digest of every match
+          across the School</strong> — not just one department — and can mark each one
+          Good match / Not relevant on the faculty member&rsquo;s behalf. Their verdicts
+          are recorded separately (<code>rater=som_admin</code>) from a department
+          administrator&rsquo;s and from the shared distribution list, so the three can be
+          weighted differently when tuning.
+        </p>
+        <div id="subs-somadmin-form" style="display:none;margin-bottom:14px;padding:12px;
+             background:var(--surf2);border:1px solid var(--border);border-radius:4px">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
+            <input class="search-box" id="sa2-name"  placeholder="full name">
+            <input class="search-box" id="sa2-email" placeholder="email *">
+            <input class="search-box" id="sa2-title" placeholder="job title">
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select class="filter-sel" id="sa2-cadence">
+              <option value="weekly">Weekly</option>
+              <option value="daily">Daily</option>
+              <option value="off">Off</option>
+            </select>
+            <button class="btn-sm" onclick="saveSomAdmin()">Save</button>
+            <button class="btn-sm" onclick="closeSomAdminForm()" style="background:var(--surf2)">Cancel</button>
+            <span id="sa2-status" style="margin-left:10px;font-size:11px;color:var(--text3)"></span>
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr>
+              <th>Name</th><th>Email</th><th>Title</th><th>Cadence</th><th>Updated</th><th></th>
+            </tr></thead>
+            <tbody id="subs-somadmin-tbody"><tr><td colspan="6" style="color:var(--text3)">Loading…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -3847,6 +3931,37 @@ async function loadSubscriptions() {
       '<tr><td colspan="7" style="color:var(--red)">Failed to load: '+escHtml(e.message||e)+'</td></tr>';
   }
 
+  // SOM Research Administrators
+  try {
+    const r = await fetch('/api/subscriptions/som-admins').then(r=>r.json());
+    const admins = r.ok ? (r.admins||[]) : [];
+    window.__somAdmins = admins;
+    document.getElementById('subs-somadmin-count').textContent =
+      (r.active_count||0) + ' active' + (admins.length>(r.active_count||0) ? ' / '+admins.length+' total' : '');
+    const tb = document.getElementById('subs-somadmin-tbody');
+    if (!admins.length) {
+      tb.innerHTML = '<tr><td colspan="6" style="color:var(--text3)">None yet. Click "+ Add administrator" to add one.</td></tr>';
+    } else {
+      tb.innerHTML = admins.map((a,i)=>{
+        const off = (a.cadence||'')==='off';
+        return `<tr style="${off?'opacity:.5':''}">
+          <td><strong>${escHtml(a.name||'')}</strong></td>
+          <td>${escHtml(a.email||'')}</td>
+          <td style="font-size:11px;color:var(--text3)">${escHtml(a.title||'')}</td>
+          <td>${cadenceBadge(a.cadence)}</td>
+          <td style="font-size:11px;color:var(--text3)">${shortDate(a.updated_at)}</td>
+          <td>
+            <button class="btn-sm" onclick="editSomAdmin(${i})">edit</button>
+            <button class="btn-sm" style="background:#fdecec;color:#b91c1c" onclick="deleteSomAdmin(${i})">x</button>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+  } catch(e) {
+    document.getElementById('subs-somadmin-tbody').innerHTML =
+      '<tr><td colspan="6" style="color:var(--red)">Failed to load: '+escHtml(e.message||e)+'</td></tr>';
+  }
+
   // UMSOM staff
   try {
     const r = await fetch('/api/subscriptions/staff').then(r=>r.json());
@@ -4044,6 +4159,50 @@ function openSubAdminForm() {
 function closeSubAdminForm() {
   document.getElementById('subs-admin-form').style.display = 'none';
 }
+function openSomAdminForm(){
+  document.getElementById('subs-somadmin-form').style.display='block';
+  ['sa2-name','sa2-email','sa2-title'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('sa2-email').readOnly=false;
+  document.getElementById('sa2-cadence').value='weekly';
+  document.getElementById('sa2-status').textContent='';
+}
+function closeSomAdminForm(){
+  document.getElementById('subs-somadmin-form').style.display='none';
+}
+function editSomAdmin(i){
+  const a=(window.__somAdmins||[])[i];
+  if(!a){ alert('Could not load that record — refresh and try again.'); return; }
+  openSomAdminForm();
+  document.getElementById('sa2-name').value=a.name||'';
+  document.getElementById('sa2-email').value=a.email||'';
+  document.getElementById('sa2-email').readOnly=true;   // identity key
+  document.getElementById('sa2-title').value=a.title||'';
+  document.getElementById('sa2-cadence').value=a.cadence||'weekly';
+}
+async function saveSomAdmin(){
+  const st=document.getElementById('sa2-status');
+  const body={ name:document.getElementById('sa2-name').value.trim(),
+               email:document.getElementById('sa2-email').value.trim(),
+               title:document.getElementById('sa2-title').value.trim(),
+               cadence:document.getElementById('sa2-cadence').value };
+  if(!body.email){ st.textContent='email is required'; st.style.color='var(--red)'; return; }
+  st.textContent='Saving...'; st.style.color='var(--text3)';
+  try{
+    const r=await fetch('/api/subscriptions/som-admins',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    if(!r.ok){ st.textContent=r.error||'Save failed'; st.style.color='var(--red)'; return; }
+    closeSomAdminForm(); loadSubscriptions();
+  }catch(e){ st.textContent=e.message||String(e); st.style.color='var(--red)'; }
+}
+async function deleteSomAdmin(i){
+  const a=(window.__somAdmins||[])[i];
+  if(!a){ alert('Could not load that record — refresh and try again.'); return; }
+  if(!confirm('Turn off the school-wide digest for '+a.email+'?')) return;
+  await fetch('/api/subscriptions/som-admins',{method:'DELETE',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({email:a.email})});
+  loadSubscriptions();
+}
+
 function openStaffForm(){
   document.getElementById('subs-staff-form').style.display='block';
   ['st-name','st-email','st-dept','st-title','st-keywords','st-text']
