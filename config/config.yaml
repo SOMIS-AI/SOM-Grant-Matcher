@@ -312,6 +312,14 @@ matching:
     - "spatial ecology"
     - "agriculture"
     - "agricultural"
+    # Homograph, added 2026-09-05. On THIS roster "stem" almost always means
+    # stem cells: 16 faculty carry the bare token and 13 of them wrote "stem
+    # cell(s)". So when a "Science, Technology, Engineering and Mathematics"
+    # grant matched on it, the two senses collided and a Psychiatry researcher
+    # scored 88%. Bare token only — "stem cell", "stem cells", "stem cell
+    # therapy", "cancer stem cells" and "neural stem" are separate multi-word
+    # keywords and keep working normally, so no genuine stem-cell match is lost.
+    - "stem"
     # Economic / administrative — put two Surgery faculty on a USDA
     # "Agriculture Risk Management Education" call at 87%.
     - "insurance"

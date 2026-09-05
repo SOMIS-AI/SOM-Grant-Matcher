@@ -64,6 +64,74 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-09-05 — A homograph, and a scoring fix that measurement rejected
+**Status:** live
+**Commit:** *(pending)*
+**Change:** `stem` added to `context_dependent_terms` (56 entries). Bare token
+only. Nothing else changed — see the second half of this entry.
+
+**Why:** a Psychiatry researcher matched "Science, Technology, Engineering, and
+Mathematics Fields" at **88%** on `engineering, stem, technology`. The first two
+are already context-dependent and cannot anchor, so the match rested entirely on
+`stem` — and on this roster that word overwhelmingly means something else:
+
+```
+16 faculty carry the bare token "stem" — 13 of them wrote "stem cell(s)"
+   Xiaofeng Jia      Neurosurgery             Stem cell therapy
+   Eli Bar           Neurosurgery             Cancer Stem Cells
+   Min Jung Kim      Center for Stem Cell Bio Hematopoietic stem-progenitor cells
+```
+
+A STEM-education grant and a stem-cell biologist are two unrelated senses of the
+same four letters. `stem cell`, `stem cells`, `stem cell therapy`, `cancer stem
+cells`, `neural stem` and `induced pluripotent stem cells` are all separate
+multi-word keywords and keep anchoring normally — verified — so no genuine
+stem-cell match is lost. Exactly **one delivered match in the whole archive** is
+affected: the one reported.
+
+---
+
+#### The change this entry does NOT make, and why
+
+The same case exposed something structural that looked more important:
+`context_dependent_terms` is a **drop rule** applied in
+`_keyword_matches_for_grant`. It has no effect on `_compute_confidence`, which
+sums IDF across every matched keyword regardless. So a term we have explicitly
+declared too generic to justify a match **still inflates that match's score**:
+
+```
+confidence scored on all three terms : 85%   ← what shipped
+confidence on the anchoring term alone: 30%
+```
+
+The gate and the scorer disagree, by 55 points. The obvious fix was to
+down-weight context terms in scoring, the same shape as
+`single_keyword_multiplier`.
+
+**Measured first, and the fix would have been worse than the fault.**
+Only **13% of delivered matches (496 of 3,765)** carry a context-dependent term
+at all. Of those, the most generic-heavy are precisely the ones the design
+intends to ALLOW — a real anchor with population modifiers attached:
+
+```
+99%  Katherine Tkaczuk    anchor: cancer      generic: early, stage
+96%  Ze Wang              anchor: sleep       generic: adolescents, young
+99%  Nadine Finigan-Carr  anchor: violence    generic: adults, among, youth
+```
+
+"Early stage cancer", "sleep in adolescents", "violence among youth". A
+ctx-share penalty at 0.3 drops 146 matches (3.9%) and hits exactly those,
+because they have the highest generic ratio. It would trade good matches to
+catch one bad one whose real fault was a homograph.
+
+So the inconsistency is real but mostly benign: in the common case the scorer is
+right to count those terms, because they are modifying something genuine. Left
+alone deliberately. If it is revisited, the lever should key on the *anchor's*
+strength rather than the generic terms' share.
+
+**Outcome:** *pending.*
+**Verdict:** too early
+
 ### 2026-09-04 — Backfill missing faculty emails from the Eval App store
 **Status:** live
 **Commit:** `c1965db`
