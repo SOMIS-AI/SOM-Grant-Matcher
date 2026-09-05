@@ -66,7 +66,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-09-05 — A homograph, and a scoring fix that measurement rejected
 **Status:** live
-**Commit:** *(pending)*
+**Commit:** `3150712`
 **Change:** `stem` added to `context_dependent_terms` (56 entries). Bare token
 only. Nothing else changed — see the second half of this entry.
 
