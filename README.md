@@ -9,6 +9,15 @@ Automatically monitors [Grants.gov](https://www.grants.gov) for new funding oppo
 
 ---
 
+## Documentation map
+
+| File | What it covers |
+|---|---|
+| **[TUNING_LOG.md](TUNING_LOG.md)** | Every deliberate change to *matching* — thresholds, vocabulary, scoring — with why it was tried and whether it worked |
+| **[RECIPIENTS_AND_FEEDBACK.md](RECIPIENTS_AND_FEEDBACK.md)** | Who gets emailed, the 👍/👎 pipeline, the data stores, and how to deploy each kind of change |
+| [AZURE_SETUP_GUIDE.md](AZURE_SETUP_GUIDE.md) | First-time Azure deployment |
+| [seed_data/README.md](seed_data/README.md) | The tracked data files and how to refresh them |
+
 ## How It Works
 
 ```
@@ -150,6 +159,13 @@ The app sends these emails, by audience and trigger:
 | **Diagnostic report** | `DIAGNOSTIC_RECIPIENTS` (admin) | Every scheduled run |
 | **Restart / health** | `RESTART_RECIPIENTS` (admin) | Once on app startup/restart — the only email sent on restart |
 | **Manual digest** | `MANUAL_RECIPIENTS` or `--to` | On demand via `--send-digest` (see below) |
+
+Beyond these env-var lists there are four **portal-managed** audiences —
+individual faculty, Department Grants Administrators, SOM Research
+Administrators (school-wide), and UMSOM Staff — each enrolled from the
+dashboard's Subscriptions tab and each receiving 👍/👎 feedback links tagged
+with who is answering. See **[RECIPIENTS_AND_FEEDBACK.md](RECIPIENTS_AND_FEEDBACK.md)**
+for who sees what, how the feedback comes back, and how to read it.
 
 ### 1. Match Digest (daily and weekly)
 
