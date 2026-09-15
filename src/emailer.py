@@ -166,6 +166,23 @@ _feedback_links_no_email = 0
 _ABOUT_URL: str = ""
 
 
+def reset_feedback_counters() -> None:
+    """Zero the per-run feedback counters. Called once at the top of each
+    pipeline run.
+
+    These are module-level globals, and the scheduler is a long-lived process —
+    so without this they accumulated across every run since the last container
+    restart, while the diagnostic reported them under the name
+    `links_rendered_this_run`. Observed 2026-09-08..09-13: 362, 362, 375, 410,
+    410, 410 — monotonic, with each delta equal to that run's actual matches,
+    and a drop to 0 only when the container restarted. The field over-reported
+    by up to an order of magnitude on a quiet day following a busy one.
+    """
+    global _feedback_links_rendered, _feedback_links_no_email
+    _feedback_links_rendered = 0
+    _feedback_links_no_email = 0
+
+
 def set_feedback_config(feedback_cfg: dict):
     global _FEEDBACK_CFG
     _FEEDBACK_CFG = feedback_cfg or {}

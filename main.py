@@ -149,6 +149,15 @@ def run_pipeline(config: dict, force_scrape: bool = False):
     # bypassed the roster-drop guard (it needs the previous roster to compare
     # against), and (b) made all prior enrichment + departed-faculty history
     # unrecoverable if the scrape failed or the container restarted mid-way.
+    # Per-run feedback counters are module-level globals in a long-lived
+    # process, so they must be zeroed here or the diagnostic reports a running
+    # total under the name links_rendered_this_run (2026-09-15).
+    try:
+        from emailer import reset_feedback_counters
+        reset_feedback_counters()
+    except Exception:
+        pass
+
     logger.info("Step 1/3 — Loading faculty profiles...")
     if force_scrape:
         logger.info("  FORCE_SCRAPE: ignoring cache age — fresh scrape (cache retained for the roster guard)")
