@@ -1383,6 +1383,79 @@ def api_subs_staff():
     return jsonify({"ok": True, "record": rec})
 
 
+@app.route("/api/send-personalized/preview", methods=["POST"])
+@login_required
+def api_send_personalized_preview():
+    """Resolve who a personalized fan-out would reach. Sends nothing, ever."""
+    data = request.get_json(silent=True) or {}
+    try:
+        days = max(1, min(int(data.get("days") or 7), 60))
+    except (TypeError, ValueError):
+        return _json_err("days must be a number")
+    cadence = (data.get("cadence") or "weekly").strip().lower()
+    if cadence not in ("daily", "weekly"):
+        return _json_err("cadence must be 'daily' or 'weekly'")
+    try:
+        import main as _main
+        return jsonify({"ok": True, "report": _main.personalized_dry_run(days=days, cadence=cadence)})
+    except Exception as e:
+        return _json_err(f"preview failed: {e}")
+
+
+@app.route("/api/send-personalized/send", methods=["POST"])
+@login_required
+def api_send_personalized_send():
+    """Actually send the personalized per-faculty/per-dept digests.
+
+    Guarded three ways, because this reaches every enrolled faculty member at
+    once and nothing about it is recallable:
+      * `confirm_count` must equal the number the preview just resolved, so a
+        stale browser tab cannot send to a list the operator never saw;
+      * `confirm: true` must be present;
+      * the preview is re-run server-side and compared, rather than trusting
+        whatever the client posted.
+    """
+    data = request.get_json(silent=True) or {}
+    if not data.get("confirm"):
+        return _json_err("confirm is required")
+    try:
+        days = max(1, min(int(data.get("days") or 7), 60))
+        confirm_count = int(data.get("confirm_count"))
+    except (TypeError, ValueError):
+        return _json_err("days and confirm_count must be numbers")
+    cadence = (data.get("cadence") or "weekly").strip().lower()
+    if cadence not in ("daily", "weekly"):
+        return _json_err("cadence must be 'daily' or 'weekly'")
+
+    try:
+        import main as _main
+        fresh = _main.personalized_dry_run(days=days, cadence=cadence)
+        if fresh["would_send_count"] != confirm_count:
+            return _json_err(
+                f"recipient list changed since the preview "
+                f"({confirm_count} then, {fresh['would_send_count']} now). "
+                f"Preview again before sending."
+            )
+        if not fresh["would_send_count"]:
+            return _json_err("no recipients — nothing to send")
+        cfg = _load_config_for_send()
+        stats = _main._send_personalized_digests(
+            cfg, _main.load_recent_matched_results(days),
+            datetime.now().strftime("%Y-%m-%d"),
+            cadence=cadence,
+            digest_label="Weekly" if cadence == "weekly" else "Daily",
+        )
+        return jsonify({"ok": True, "stats": stats})
+    except Exception as e:
+        app.logger.exception("personalized send failed")
+        return _json_err(f"send failed: {e}")
+
+
+def _load_config_for_send():
+    import main as _main
+    return _main.load_config("config/config.yaml")
+
+
 @app.route("/api/subscriptions/log")
 @login_required
 def api_subs_log():
@@ -2525,6 +2598,35 @@ tr:hover td{background:rgba(15,23,42,.03)}
             <tbody id="subs-admin-tbody"><tr><td colspan="7" style="color:var(--text3)">Loading…</td></tr></tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <!-- Manual personalized send -->
+    <div class="panel" style="margin-top:14px">
+      <div class="panel-hdr">
+        <span class="panel-title">Send personalized digests now</span>
+        <span class="sec-count" id="mps-status" style="margin-left:auto"></span>
+      </div>
+      <div class="panel-body">
+        <p style="font-size:12px;color:var(--text3);margin:0 0 12px">
+          Re-runs the per-faculty and per-department fan-out for a window you choose —
+          for recovering a missed weekly send. Only enrolled faculty who actually matched
+          in that window receive anything. <strong>Preview first:</strong> this reaches every
+          matched subscriber at once and cannot be recalled.
+        </p>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+          <label style="font-size:12px;color:var(--text3)">Window</label>
+          <input class="search-box" id="mps-days" type="number" min="1" max="60" value="7" style="width:80px">
+          <label style="font-size:12px;color:var(--text3)">days &nbsp;·&nbsp; Cadence</label>
+          <select class="filter-sel" id="mps-cadence">
+            <option value="weekly">Weekly</option>
+            <option value="daily">Daily</option>
+          </select>
+          <button class="btn-sm" onclick="previewPersonalized()">Preview recipients</button>
+          <button class="btn-sm" id="mps-send" style="display:none;background:#b45309;color:#fff"
+                  onclick="sendPersonalized()">Send</button>
+        </div>
+        <div id="mps-result" style="font-size:12px"></div>
       </div>
     </div>
 
@@ -4166,6 +4268,68 @@ function openSubAdminForm() {
 function closeSubAdminForm() {
   document.getElementById('subs-admin-form').style.display = 'none';
 }
+let __mpsPreview = null;
+
+async function previewPersonalized(){
+  const st=document.getElementById('mps-status'), out=document.getElementById('mps-result');
+  const btn=document.getElementById('mps-send');
+  btn.style.display='none'; __mpsPreview=null;
+  st.textContent='Resolving...'; out.innerHTML='';
+  try{
+    const body={ days:parseInt(document.getElementById('mps-days').value,10)||7,
+                 cadence:document.getElementById('mps-cadence').value };
+    const r=await fetch('/api/send-personalized/preview',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    if(!r.ok){ st.textContent=''; out.innerHTML='<span style="color:var(--red)">'+escHtml(r.error||'Preview failed')+'</span>'; return; }
+    const p=r.report; __mpsPreview=p;
+    st.textContent=p.would_send_count+' would receive';
+    let html='<div style="margin-bottom:8px">'
+      +'<strong>'+p.matches_in_window+'</strong> match(es) across <strong>'+p.grants_in_window+'</strong> grant(s) in the last '+p.days+' day(s).<br>'
+      +'<strong>'+p.would_send_count+'</strong> of '+p.enrolled_count+' enrolled '+p.cadence+' subscribers would receive a digest; '
+      +p.no_match_count+' have no match in this window and are skipped.<br>'
+      +'Send budget remaining today: '+p.budget_remaining
+      +(p.budget_short_by?' <span style="color:var(--red);font-weight:600">— SHORT by '+p.budget_short_by+', the send would be truncated</span>':'')
+      +'</div>';
+    if(p.recipients.length){
+      html+='<div style="max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:4px">'
+        +'<table><thead><tr><th>Faculty</th><th>Email</th><th>Department</th><th>Matches</th></tr></thead><tbody>'
+        +p.recipients.map(x=>`<tr><td>${escHtml(x.name||'(no name)')}</td><td>${escHtml(x.email)}</td>`
+            +`<td style="font-size:11px;color:var(--text3)">${escHtml(x.department||'')}</td><td>${x.matches}</td></tr>`).join('')
+        +'</tbody></table></div>';
+      document.getElementById('mps-send').textContent='Send to '+p.would_send_count;
+      document.getElementById('mps-send').style.display='';
+    } else {
+      html+='<span style="color:var(--text3)">Nothing to send for this window.</span>';
+    }
+    out.innerHTML=html;
+  }catch(e){ st.textContent=''; out.innerHTML='<span style="color:var(--red)">'+escHtml(e.message||String(e))+'</span>'; }
+}
+
+async function sendPersonalized(){
+  if(!__mpsPreview){ alert('Preview first.'); return; }
+  const n=__mpsPreview.would_send_count;
+  if(!confirm('Send personalized digests to '+n+' faculty now?\n\nThis cannot be undone. Preview was resolved for a '
+              +__mpsPreview.days+'-day '+__mpsPreview.cadence+' window.')) return;
+  const st=document.getElementById('mps-status'), out=document.getElementById('mps-result');
+  const btn=document.getElementById('mps-send');
+  btn.disabled=true; st.textContent='Sending...';
+  try{
+    const r=await fetch('/api/send-personalized/send',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ days:__mpsPreview.days, cadence:__mpsPreview.cadence,
+                            confirm:true, confirm_count:n })}).then(r=>r.json());
+    if(!r.ok){ st.textContent=''; out.innerHTML='<span style="color:var(--red)">'+escHtml(r.error||'Send failed')+'</span>'; btn.disabled=false; return; }
+    const s=r.stats;
+    st.textContent='Sent';
+    out.innerHTML='<div style="color:var(--green,#15803d)"><strong>Sent.</strong> faculty: '+s.faculty_sent
+      +', dept admins: '+s.dept_admin_sent
+      +(s.faculty_failed||s.dept_admin_failed ? ' — <span style="color:var(--red)">FAILED: '+(s.faculty_failed+s.dept_admin_failed)+'</span>':'')
+      +(s.budget_exhausted?' — <span style="color:var(--red)">budget exhausted</span>':'')+'</div>';
+    btn.style.display='none'; __mpsPreview=null;
+    loadSubscriptions();
+  }catch(e){ st.textContent=''; out.innerHTML='<span style="color:var(--red)">'+escHtml(e.message||String(e))+'</span>'; btn.disabled=false; }
+}
+
 function openSomAdminForm(){
   document.getElementById('subs-somadmin-form').style.display='block';
   ['sa2-name','sa2-email','sa2-title'].forEach(id=>document.getElementById(id).value='');

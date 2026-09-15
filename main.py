@@ -534,6 +534,48 @@ def _build_id() -> str:
     return "unknown"
 
 
+def personalized_dry_run(days: int = 7, cadence: str = "weekly") -> dict:
+    """Resolve exactly who a personalized fan-out would reach, without sending.
+
+    Returns a plain dict so both the CLI and the dashboard can render it. Kept
+    separate from the send path on purpose: the preview must be able to run any
+    number of times with no side effects at all.
+    """
+    cadence = (cadence or "weekly").strip().lower()
+    matched = load_recent_matched_results(days)
+    n_matches = sum(len(r.get("matches", [])) for r in matched)
+
+    by_faculty: dict[str, int] = {}
+    for r in matched:
+        for m in r.get("matches", []):
+            em = str(_match_field(m, "faculty_email", "")).strip().lower()
+            if em:
+                by_faculty[em] = by_faculty.get(em, 0) + 1
+
+    enrolled = subscriptions.faculty_subs_for_cadence(cadence)
+    recipients, no_match = [], []
+    for em, rec in enrolled.items():
+        n = by_faculty.get(em, 0)
+        row = {"email": em, "name": rec.get("name", ""),
+               "department": rec.get("department", ""), "matches": n}
+        (recipients if n else no_match).append(row)
+    recipients.sort(key=lambda r: (-r["matches"], r["name"].lower()))
+
+    budget = subscriptions.remaining_budget_today()
+    return {
+        "days": days,
+        "cadence": cadence,
+        "grants_in_window": len(matched),
+        "matches_in_window": n_matches,
+        "enrolled_count": len(enrolled),
+        "would_send_count": len(recipients),
+        "no_match_count": len(no_match),
+        "recipients": recipients,
+        "budget_remaining": budget,
+        "budget_short_by": max(0, len(recipients) - budget),
+    }
+
+
 def run_personalized_digests(config: dict, days: int = 7, cadence: str = "weekly",
                              dry_run: bool = False) -> None:
     """Send the personalized per-faculty and per-department digests on demand.
@@ -560,27 +602,15 @@ def run_personalized_digests(config: dict, days: int = 7, cadence: str = "weekly
     logger.info(f"{len(matched)} grant(s), {n_matches} match(es) over the last {days} day(s)")
 
     if dry_run:
-        enrolled = subscriptions.faculty_subs_for_cadence(cadence)
-        by_faculty = {}
-        for r in matched:
-            for m in r.get("matches", []):
-                em = str(_match_field(m, "faculty_email", "")).strip().lower()
-                if em:
-                    by_faculty.setdefault(em, 0)
-                    by_faculty[em] += 1
-        would, skipped = [], []
-        for em, sub_rec in enrolled.items():
-            n = by_faculty.get(em, 0)
-            (would if n else skipped).append((em, sub_rec.get("name", ""), n))
+        rep = personalized_dry_run(days=days, cadence=cadence)
         logger.info(f"DRY RUN — cadence={cadence}, no email will be sent")
-        logger.info(f"  would send to {len(would)} faculty; "
-                    f"{len(skipped)} enrolled but have no match in this window")
-        for em, nm, n in sorted(would, key=lambda x: -x[2]):
-            logger.info(f"     {n:3d} match(es)  {nm or '(no name)'} <{em}>")
-        budget = subscriptions.remaining_budget_today()
-        logger.info(f"  send budget remaining today: {budget}")
-        if budget < len(would):
-            logger.warning(f"  BUDGET SHORT by {len(would) - budget} — the send would be truncated")
+        logger.info(f"  would send to {rep['would_send_count']} faculty; "
+                    f"{rep['no_match_count']} enrolled but have no match in this window")
+        for r in rep["recipients"]:
+            logger.info(f"     {r['matches']:3d} match(es)  {r['name'] or '(no name)'} <{r['email']}>")
+        logger.info(f"  send budget remaining today: {rep['budget_remaining']}")
+        if rep["budget_short_by"]:
+            logger.warning(f"  BUDGET SHORT by {rep['budget_short_by']} — the send would be truncated")
         return
 
     stats = _send_personalized_digests(config, matched, run_date,
