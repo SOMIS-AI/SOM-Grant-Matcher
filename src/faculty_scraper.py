@@ -1425,19 +1425,29 @@ def get_faculty_profiles(config: dict, force: bool = False) -> list[dict]:
             logger.warning(f"Pass 8b: faculty email directory unavailable: {e}")
         if name_to_email:
             filled = 0
+            replaced_role = 0
             for fac in active_faculty:
-                if (fac.get("email") or "").strip():
+                current = (fac.get("email") or "").strip()
+                # A role mailbox counts as missing: see _is_role_mailbox.
+                if current and not _is_role_mailbox(current):
                     continue
                 key = normalize_person_name(fac.get("name", ""))
                 em = name_to_email.get(key)
-                if em:
+                if em and em.lower() != current.lower():
+                    if current:
+                        logger.info(
+                            f"Pass 8b: replacing shared mailbox {current} with "
+                            f"{em} for {fac.get('name','?')}"
+                        )
+                        replaced_role += 1
                     fac["email"] = em
                     fac["email_source"] = "eval_app_backfill"
                     filled += 1
             still_missing = sum(1 for f in active_faculty if not (f.get("email") or "").strip())
             logger.info(
-                f"Pass 8b: backfilled {filled} email(s) from the Eval App store "
-                f"({still_missing} active faculty still have none)"
+                f"Pass 8b: backfilled {filled} email(s) from the directory "
+                f"({replaced_role} of them replacing a shared/role mailbox; "
+                f"{still_missing} active faculty still have none)"
             )
 
         self_reported = get_keywords_by_email()
@@ -1553,6 +1563,34 @@ def _base_source_label(raw: str) -> str:
         return "Unknown"
     base = s.split("(", 1)[0].strip().lower()
     return _SOURCE_BASE_LABEL.get(base, s)
+
+
+# Shared/role mailboxes scraped from a profile page. A faculty member who holds
+# an administrative post often lists the OFFICE address rather than their own —
+# Sandra M. Quezada's profile carries admissions@som.umaryland.edu because she is
+# an associate dean for admissions. That address is worse than no address at all:
+# it is what the match record then carries, so her feedback is attributed to a
+# shared inbox and her personalised digest would go to the admissions team rather
+# than to her (2026-09-15).
+#
+# Treat these as MISSING so the Pass 8b backfill replaces them from the directory
+# export. Only one profile in the current roster hits this, but the failure is
+# silent and the check is nearly free.
+_ROLE_MAILBOX_LOCALPARTS = {
+    "admissions", "info", "information", "inquiries", "help", "contact",
+    "support", "office", "dept", "department", "research", "education",
+    "registrar", "hr", "communications", "media", "press", "webmaster",
+    "noreply", "no-reply", "alumni", "giving", "development", "general",
+    "main", "reception", "admin",
+}
+
+
+def _is_role_mailbox(email: str) -> bool:
+    """True when an address is a shared/office mailbox rather than a person."""
+    em = (email or "").strip().lower()
+    if not em or "@" not in em:
+        return False
+    return em.split("@", 1)[0] in _ROLE_MAILBOX_LOCALPARTS
 
 
 def _merge_keywords(faculty: dict, new_keywords: list[str], source: str,
