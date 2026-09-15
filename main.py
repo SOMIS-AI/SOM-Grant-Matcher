@@ -534,6 +534,69 @@ def _build_id() -> str:
     return "unknown"
 
 
+def run_personalized_digests(config: dict, days: int = 7, cadence: str = "weekly",
+                             dry_run: bool = False) -> None:
+    """Send the personalized per-faculty and per-department digests on demand.
+
+    The scheduler only fans these out inside its weekly branch, so when a send
+    window is missed — a bug fixed after Tuesday, a container down that
+    morning — the only recovery was to wait a week. That is exactly what
+    happened on 2026-09-15, when the fan-out was found never to have worked at
+    all. This gives a way to re-run one.
+
+    `--dry-run` resolves the full recipient list and prints it without sending,
+    which is worth doing first: this reaches every enrolled faculty member at
+    once, and a mistake is not recallable.
+    """
+    logger = logging.getLogger("main")
+    cadence = (cadence or "weekly").strip().lower()
+
+    matched = load_recent_matched_results(days)
+    if not matched:
+        logger.info(f"No matches in the last {days} day(s) — nothing to send.")
+        return
+    run_date = datetime.now().strftime("%Y-%m-%d")
+    n_matches = sum(len(r.get("matches", [])) for r in matched)
+    logger.info(f"{len(matched)} grant(s), {n_matches} match(es) over the last {days} day(s)")
+
+    if dry_run:
+        enrolled = subscriptions.faculty_subs_for_cadence(cadence)
+        by_faculty = {}
+        for r in matched:
+            for m in r.get("matches", []):
+                em = str(_match_field(m, "faculty_email", "")).strip().lower()
+                if em:
+                    by_faculty.setdefault(em, 0)
+                    by_faculty[em] += 1
+        would, skipped = [], []
+        for em, sub_rec in enrolled.items():
+            n = by_faculty.get(em, 0)
+            (would if n else skipped).append((em, sub_rec.get("name", ""), n))
+        logger.info(f"DRY RUN — cadence={cadence}, no email will be sent")
+        logger.info(f"  would send to {len(would)} faculty; "
+                    f"{len(skipped)} enrolled but have no match in this window")
+        for em, nm, n in sorted(would, key=lambda x: -x[2]):
+            logger.info(f"     {n:3d} match(es)  {nm or '(no name)'} <{em}>")
+        budget = subscriptions.remaining_budget_today()
+        logger.info(f"  send budget remaining today: {budget}")
+        if budget < len(would):
+            logger.warning(f"  BUDGET SHORT by {len(would) - budget} — the send would be truncated")
+        return
+
+    stats = _send_personalized_digests(config, matched, run_date,
+                                       cadence=cadence,
+                                       digest_label="Weekly" if cadence == "weekly" else "Daily")
+    logger.info(
+        f"  ✓ faculty sent: {stats['faculty_sent']}, dept admins sent: {stats['dept_admin_sent']} "
+        f"(across {stats['depts_with_matches']} dept(s)); "
+        f"{stats['faculty_skipped_no_match']} enrolled with no match"
+        + (f"  ⚠ {stats['faculty_failed'] + stats['dept_admin_failed']} FAILED"
+           if stats.get("faculty_failed") or stats.get("dept_admin_failed") else "")
+        + ("  ⚠ budget exhausted" if stats["budget_exhausted"] else "")
+    )
+    _alert_partial_send_failures(config, stats, cadence)
+
+
 def _match_field(m, field: str, default=""):
     """Read one field from a match that may be a Match namedtuple OR a plain dict.
 
@@ -1193,6 +1256,13 @@ def main():
                         help="Window in days for --send-digest (default 1 = last 24h)")
     parser.add_argument("--to", default="",
                         help="Comma-separated recipient override for --send-digest")
+    parser.add_argument("--send-personalized", action="store_true",
+                        help="Send the personalized per-faculty/per-dept digests now "
+                             "(recovery for a missed weekly window). Use --dry-run first.")
+    parser.add_argument("--cadence", default="weekly", choices=["daily", "weekly"],
+                        help="Which subscription bucket --send-personalized targets")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="With --send-personalized: list recipients and send nothing")
     parser.add_argument("--config", default="config/config.yaml",
                         help="Path to config file")
     args = parser.parse_args()
@@ -1212,6 +1282,11 @@ def main():
 
     if args.refresh:
         run_refresh(config, force_scrape=args.scrape)
+        return
+
+    if args.send_personalized:
+        run_personalized_digests(config, days=args.days, cadence=args.cadence,
+                                 dry_run=args.dry_run)
         return
 
     if args.send_digest:

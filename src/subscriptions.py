@@ -54,10 +54,27 @@ EMAIL_LOG_FILE    = DATA_DIR / "email_log.json"
 # Cap on log size so it doesn't grow unbounded on the Azure Files mount.
 EMAIL_LOG_CAP = 5000
 
-# Daily SendGrid free-tier ceiling; we refuse to send overflow beyond this
-# and log a warning so the operator can decide to upgrade.
-SENDGRID_DAILY_CAP = 100
-SAFETY_HEADROOM    = 10   # halt at cap - headroom to leave room for diagnostic + restart emails
+# Daily send ceiling. Originally the SendGrid free-tier limit of 100; the plan
+# was upgraded on 2026-09-15, so this is now configurable rather than hardcoded.
+#
+# It is deliberately still a ceiling and not removed outright. The cap is the
+# only thing standing between a fan-out bug and several thousand emails to real
+# faculty — and this project has already shipped one fan-out that silently sent
+# nothing, so the reverse is worth guarding too. Set SENDGRID_DAILY_CAP to a
+# comfortable multiple of the subscriber count rather than to infinity.
+#
+#   SENDGRID_DAILY_CAP=2000   → cap at 2000/day
+#   SENDGRID_DAILY_CAP=0      → no cap at all (not recommended)
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, "").strip() or default)
+    except ValueError:
+        logger.warning(f"{name} is not an integer; using {default}")
+        return default
+
+
+SENDGRID_DAILY_CAP = _int_env("SENDGRID_DAILY_CAP", 100)
+SAFETY_HEADROOM    = _int_env("SENDGRID_SAFETY_HEADROOM", 10)   # leaves room for diagnostic + restart emails
 
 VALID_CADENCES = {"daily", "weekly", "off"}
 
@@ -428,7 +445,13 @@ def count_today_emails() -> int:
 
 
 def remaining_budget_today() -> int:
-    """Emails we can still send today before hitting the safety cap."""
+    """Emails we can still send today before hitting the safety cap.
+
+    A cap of 0 (or less) disables the ceiling entirely — callers treat any
+    positive return as 'room available', so a large sentinel is returned.
+    """
+    if SENDGRID_DAILY_CAP <= 0:
+        return 1_000_000
     used = count_today_emails()
     budget = SENDGRID_DAILY_CAP - SAFETY_HEADROOM - used
     return max(budget, 0)
