@@ -534,6 +534,28 @@ def _build_id() -> str:
     return "unknown"
 
 
+def _match_field(m, field: str, default=""):
+    """Read one field from a match that may be a Match namedtuple OR a plain dict.
+
+    Both shapes reach the fan-outs. find_matches() returns Match namedtuples, so
+    the DAILY path gets those. load_recent_matched_results() rebuilds the weekly
+    7-day window from match_results.json and produces plain DICTS — and
+    `getattr(some_dict, "faculty_email", "")` silently returns the default,
+    because a dict does not expose its keys as attributes.
+
+    That silence is why this went unnoticed from 2026-06-05 until 2026-09-15:
+    every weekly personalized digest saw an empty email, every enrolled faculty
+    member was counted `faculty_skipped_no_match`, and the run logged a cheerful
+    "faculty sent: 0" that was indistinguishable from a quiet week. No faculty,
+    dept-admin or staff digest had EVER been delivered. emailer.py already reads
+    both shapes this way throughout; the fan-outs simply did not.
+    """
+    v = getattr(m, field, None)
+    if v is None and isinstance(m, dict):
+        v = m.get(field, default)
+    return default if v is None else v
+
+
 def _send_som_admin_digests(config: dict, matched_results: list,
                             run_date: str, cadence: str = "weekly") -> dict:
     """Send the school-wide digest to SOM Research Administrators
@@ -650,9 +672,9 @@ def _send_staff_digests(config: dict, matched_results: list, run_date: str,
         ms = r.get("matches", []) if isinstance(r, dict) else []
         mine: dict[str, list] = {}
         for m in ms:
-            if not getattr(m, "is_staff", False):
+            if not _match_field(m, "is_staff", False):
                 continue
-            em = (getattr(m, "faculty_email", "") or "").strip().lower()
+            em = str(_match_field(m, "faculty_email", "")).strip().lower()
             if em:
                 mine.setdefault(em, []).append(m)
         for em, ms_for in mine.items():
@@ -744,8 +766,8 @@ def _send_personalized_digests(config: dict, matched_results: list,
         per_fac: dict[str, list] = {}
         per_dept: dict[str, list] = {}
         for m in ms:
-            email = (getattr(m, "faculty_email", "") or "").strip().lower()
-            dept  = getattr(m, "faculty_department", "") or ""
+            email = str(_match_field(m, "faculty_email", "")).strip().lower()
+            dept  = str(_match_field(m, "faculty_department", ""))
             dept_key = subscriptions.normalize_dept_name(dept)
             if email:
                 per_fac.setdefault(email, []).append(m)
