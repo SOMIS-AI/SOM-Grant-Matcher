@@ -7,7 +7,7 @@ is shaped the way it is.
 This file covers the **audience and feedback** side, which that log explicitly
 excludes. Both exist so a decision can be re-read later instead of re-derived.
 
-Last updated 2026-09-05.
+Last updated 2026-09-15.
 
 ---
 
@@ -46,6 +46,56 @@ now:
 Collapsing these into one field would have made the feedback set look larger
 while quietly mixing first-party verdicts with strangers' guesses.
 
+### Enrol from the ROSTER email — this is the one that bites
+
+A faculty member's address exists in three places and only one governs delivery:
+
+| Where | Used for |
+|---|---|
+| **The scraped roster** (`/api/export/faculty`) | **The match record carries this. The fan-out indexes by it.** |
+| The directory export (`seed_data/faculty_emails.json`) | Backfilling a roster entry that is missing or is a shared mailbox |
+| The subscription | Whatever was typed when enrolling |
+
+**A subscription is delivered only if its address matches the roster address
+exactly.** A mismatch is silent — the person is counted
+`faculty_skipped_no_match`, which looks identical to having no matches that
+week.
+
+Clinical faculty frequently carry a hospital address on the roster (`@umm.edu`,
+`@smail.umaryland.edu`) while the directory lists `@som.umaryland.edu`.
+Enrolling 100 faculty from the directory on 2026-09-08 put **18 of them on
+addresses the matcher never uses**. Re-running the exercise from the roster
+export on 2026-09-15 produced **zero** mismatches.
+
+After any bulk add, re-read the list and check every active address against the
+roster. The visible tell is an enrolled record with **no name shown** — the bulk
+endpoint fills name and department only when it finds the address in the roster.
+
+### Sending a digest outside the schedule
+
+The scheduler fans out personalized digests only inside its Tuesday branch, so a
+missed window used to mean waiting a week. Two ways to recover one:
+
+- **Dashboard → Subscriptions → "Send personalized digests now".** Preview
+  resolves the window and lists every recipient with their match count, the
+  subscribers skipped for having no match, and the remaining send budget. Only
+  then does a Send button appear. The preview has no side effects; run it freely.
+- **CLI:** `python main.py --send-personalized --days 7 [--cadence weekly] [--dry-run]`
+
+The send is guarded: `confirm_count` must equal what the preview resolved, and
+the preview is re-run server-side and compared, so a stale browser tab cannot
+send to a list nobody reviewed.
+
+### Send budget
+
+`SENDGRID_DAILY_CAP` and `SENDGRID_SAFETY_HEADROOM` are app settings (was
+hardcoded at 100/10 for the SendGrid free tier; the plan was upgraded
+2026-09-15 and the cap set to 1000). A cap of `0` disables the ceiling.
+
+**Keep a ceiling.** It is the only thing between a fan-out bug and thousands of
+emails to real faculty. Set it to a comfortable multiple of the subscriber
+count, not to infinity.
+
 ### Why SOM Research Administrators exist separately from the shared digest
 
 The *content* is identical to the shared weekly roundup. The value is elsewhere:
@@ -67,11 +117,22 @@ attribution.
 digest email → 👍/👎 link → prefilled Microsoft Form → Responses tab → you read it
 ```
 
-**Nothing is fed back into scoring automatically, by design.** As of 2026-09-05
-the verdict set is still effectively empty and unvalidated; wiring it into
-confidence before anyone has inspected it would mean tuning on a signal nobody
-has looked at. `digest`-rater verdicts in particular must never be auto-applied.
-Revisit once the floor decision has been made on real data.
+**Nothing is fed back into scoring automatically, by design.** The verdict set
+is still small and unvalidated; wiring it into confidence before anyone has
+inspected it would mean tuning on a signal nobody has looked at. `digest`-rater
+verdicts in particular must never be auto-applied. Revisit once the floor
+decision has been made on real data.
+
+**The first faculty digests were delivered on 2026-09-15** — 14 of them. Until
+that day none had ever been sent: the weekly fan-out read match fields with
+`getattr()`, but the weekly path supplies plain dicts, so every address came
+back empty and every subscriber was bucketed `faculty_skipped_no_match`. The
+scheduler logged `faculty sent: 0`, which is indistinguishable from a quiet
+week, and it went unnoticed from 2026-06-05. See `_match_field()` in `main.py`.
+
+The lesson generalises: **check what an operation did, not what it returned.**
+In a system whose normal state is "some weeks there are no matches", doing
+nothing and having nothing to do look identical from outside.
 
 ### The match record
 
@@ -205,7 +266,12 @@ hammers the UMSOM site daily for no benefit.
   `Brian W. Jackson` each map to two addresses in every source we have.
   Attaching someone's digest or verdict to the wrong colleague is worse than a
   blank, so ambiguity is skipped rather than tie-broken.
-- **Enrolment email must match the roster email exactly** (both lowercased). A
-  mismatch means that person is silently counted `faculty_skipped_no_match` and
-  never hears anything. All 39 enrolments were checked clean on 2026-09-05.
+- **Enrolment email must match the roster email exactly** (both lowercased) —
+  see the enrolment rule above. All 236 active subscribers were verified against
+  the roster on 2026-09-15; the only mismatch is Sandra Quezada, whose roster
+  entry is a shared admissions mailbox until the next scrape applies the
+  role-mailbox correction.
+- **~190 faculty have no email anywhere** and cannot be enrolled at all. Several
+  would otherwise rank well as subscribers. Listed in
+  `Faculty_Missing_Emails_2026-09-04.xlsx` (OneDrive project folder).
 - **Feedback is not used in scoring.** See above — deliberate, revisit later.
