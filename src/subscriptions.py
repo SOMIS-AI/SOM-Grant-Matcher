@@ -178,6 +178,37 @@ def remove_faculty_sub(email: str) -> bool:
     return True
 
 
+def purge_faculty_sub(email: str) -> bool:
+    """HARD-delete a faculty subscription record, tombstone included.
+
+    remove_faculty_sub() sets cadence='off', which is the right default: a
+    genuine opt-out must survive so nobody is re-subscribed against their
+    wishes, and the bulk-add endpoint deliberately SKIPS any address in that
+    state.
+
+    But the same state is produced by an administrative removal — correcting a
+    wrong address, say — and then that protection works against us: the address
+    is silently skipped on a later bulk-add, with no error, which is exactly the
+    failure mode that hid the broken weekly digests for three months. Use this
+    only for records that were never a real opt-out (2026-09-15).
+    """
+    email_key = _normalize_email(email)
+    if not email_key:
+        return False
+    with _write_lock:
+        store = _load_json(FACULTY_SUBS_FILE, {"subscriptions": {}})
+        all_subs = store.get("subscriptions", {})
+        if email_key not in all_subs:
+            return False
+        all_subs.pop(email_key)
+        _save_json(FACULTY_SUBS_FILE, {
+            "subscriptions": all_subs,
+            "updated_at":    _now_iso(),
+        })
+    logger.info(f"Faculty subscription PURGED (not tombstoned): {email_key}")
+    return True
+
+
 def faculty_subs_for_cadence(cadence: str) -> dict:
     """Return only subscriptions whose cadence matches the given value."""
     return {e: r for e, r in load_faculty_subs().items() if r.get("cadence") == cadence}

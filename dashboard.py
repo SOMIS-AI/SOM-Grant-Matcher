@@ -1164,6 +1164,13 @@ def api_subs_faculty():
         return _json_err("email is required")
 
     if request.method == "DELETE":
+        # Default is a tombstone (cadence='off') so a genuine opt-out is never
+        # silently undone. purge=1 removes the record entirely — for entries
+        # that were never a real opt-out, e.g. an address corrected by an
+        # administrator, which would otherwise be skipped forever by bulk-add.
+        purge = str(data.get("purge") or request.args.get("purge") or "").lower()
+        if purge in ("1", "true", "yes"):
+            return jsonify({"ok": _subs.purge_faculty_sub(email), "purged": True})
         ok = _subs.remove_faculty_sub(email)
         return jsonify({"ok": ok})
 
