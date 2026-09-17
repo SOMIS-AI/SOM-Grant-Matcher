@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-04T17:22:32+00:00",
+  "updated_at": "2026-09-17T00:07:26+00:00",
   "sources": [
     {
       "filename": "Faculty Name and Email Export from Fac Eval App-04Sept2026.csv",
@@ -58,6 +58,20 @@
           ]
         }
       ]
+    },
+    {
+      "filename": "missing_two_2026-09-16.csv",
+      "imported_at": "2026-09-17T00:07:26+00:00",
+      "stats": {
+        "rows_total": 2,
+        "usable": 2,
+        "added": 2,
+        "updated": 0,
+        "unchanged": 0,
+        "skipped_no_email": 0,
+        "ambiguous": 0
+      },
+      "ambiguous_names": []
     }
   ],
   "by_name": {
@@ -10385,6 +10399,20 @@
       "department": "Medicine",
       "source_file": "Faculty Name and Email Export from Fac Eval App-04Sept2026.csv",
       "updated_at": "2026-09-04T17:22:32+00:00"
+    },
+    "harish babu": {
+      "email": "hbabu@som.umaryland.edu",
+      "name": "Harish Babu",
+      "department": "Neurology",
+      "source_file": "missing_two_2026-09-16.csv",
+      "updated_at": "2026-09-17T00:07:26+00:00"
+    },
+    "daiheon lee": {
+      "email": "daiheon.lee@som.umaryland.edu",
+      "name": "Daiheon Lee",
+      "department": "Neurosurgery",
+      "source_file": "missing_two_2026-09-16.csv",
+      "updated_at": "2026-09-17T00:07:26+00:00"
     }
   }
 }
