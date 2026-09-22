@@ -5,7 +5,9 @@ Automatically monitors [Grants.gov](https://www.grants.gov) for new funding oppo
 > **Changing how matching behaves?** Record it in **[TUNING_LOG.md](TUNING_LOG.md)** —
 > thresholds, filters, scoring and vocabulary changes, with why they were tried and
 > whether they actually worked. It also lists approaches already known to fail, so
-> we stop re-trying them. Measure outcomes with `python tools/diag_trend.py <Diag Files folder>`.
+> we stop re-trying them. Measure outcomes with `python tools/diag_trend.py "<Diag Files folder>"`.
+> Scott keeps the emailed diagnostics and match workbooks in
+> `C:\Users\ScottStefan\OneDrive - Blue Cap IT\Personal\UMSOM\AI\AI Grant Matcher\Diag Files`.
 
 ---
 

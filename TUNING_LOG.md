@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-09-22 — Agency corroboration gate, admin vocabulary, per-faculty cap
 **Status:** live
-**Commit:** *(this commit)*
+**Commit:** `5ab07f6`
 **Change:** three things, all from the 09-22 diagnostic review.
 
 1. **Agency corroboration gate.** New key
