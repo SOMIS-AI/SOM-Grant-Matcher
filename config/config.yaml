@@ -224,6 +224,31 @@ matching:
 
   min_semantic_confidence: 50
 
+  # ── Per-faculty per-run cap (2026-09-22) ──────────────────────────────────
+  # The most grants one person can be matched to in a single run. When one
+  # faculty member lands on five grants in a morning it is almost always one
+  # broad vocabulary hit repeated ("substance use" across five treatment-court
+  # calls), not five genuine fits. Their top N by confidence are kept. 0 = off.
+  max_grants_per_faculty_per_run: 3
+
+  # ── Agency corroboration gate (2026-09-22) ────────────────────────────────
+  # Agencies whose calls fund programme delivery, not research, but whose text
+  # is dense with clinical vocabulary. On the 09-22 run two BJA veterans-court
+  # calls delivered 80 keyword-only matches at 59-99% ("traumatic brain
+  # injury", "veterans") to bench neuroscientists and anesthesiologists, while
+  # the semantic channel had rejected every one (max cosine 0.37 / 0.42 against
+  # a 0.40 threshold). On these agencies a keyword-only match is dropped; a
+  # match also carrying semantic evidence ("both") or found semantically passes.
+  # Case-insensitive substring match against the grant's agency field.
+  corroboration_required_agencies:
+    - "bureau of justice assistance"
+    - "office of juvenile justice"
+    - "national institute of justice"
+    - "office for victims of crime"
+    - "office on violence against women"
+    - "community oriented policing"
+    - "department of justice"
+
   # ── Semantic distinctive-concept guard (2026-06-26) ───────────────────────
   # Publication-enriched embeddings (fix #4) raise recall but reintroduce the
   # "kidney disease ≠ kidney cancer" confusion on the SEMANTIC channel: a PKD
@@ -347,6 +372,17 @@ matching:
     - "strategic partnerships"
     - "food"
     - "online"
+    # ── 2026-09-22 additions (09-15..09-22 diag review) ─────────────────────
+    # "social workers" alone put a Radiology faculty on an OJJDP child-abuse
+    # TA call at 54%; "challenges" + "opportunities" alone put two faculty on
+    # "Advancing Global Health" at 60% — both words are funding-announcement
+    # phrasing ("challenges and opportunities"), not topics. "history" is a
+    # profile-form word ("history of ...") with no topical content.
+    - "social worker"
+    - "social workers"
+    - "challenges"
+    - "opportunities"
+    - "history"
 
   # ── Research track-record signal (Theme 2, 2026-06-23) ────────────────────
   # Weight a match by the faculty member's external publication/grant footprint,
@@ -799,6 +835,16 @@ matching:
                          # Education" call at 66% on this term alone. Stop-worded
                          # rather than context-dependent: it should never anchor a
                          # match, and it adds nothing when it co-occurs either.
+    # -- 2026-09-22 additions (09-15..09-22 diag review) --
+    # Grants-administration vocabulary. Every OJJDP/BJA call carries these
+    # phrases, and so do the profiles of faculty who run training programmes,
+    # so they anchored 99% matches (multidisciplinary teams + training and
+    # technical assistance) onto child-abuse and missing-children TA calls.
+    # They describe how a programme is delivered, never what it is about.
+    - "training and technical assistance"
+    - "technical assistance"
+    - "multidisciplinary team"
+    - "multidisciplinary teams"
 
 # --- Logging ---
 logging:

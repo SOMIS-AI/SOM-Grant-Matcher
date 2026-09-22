@@ -40,7 +40,12 @@ Two rules that make the log worth keeping:
 
 Every run writes `grant_matcher_diagnostic_YYYY-MM-DD.json`, which records the
 tuning parameters in force **and** the resulting counts. That archive is the
-evidence base:
+evidence base. The files are emailed to a UMSOM mailbox and Scott saves them (with the
+Daily/Weekly `UMSOM_Grant_Matches_*.xlsx` workbooks) to:
+
+    C:\Users\ScottStefan\OneDrive - Blue Cap IT\Personal\UMSOM\AI\AI Grant Matcher\Diag Files
+
+Point the commands below at that folder:
 
 ```bash
 python tools/diag_trend.py "<Diag Files folder>"                  # full table
@@ -63,6 +68,100 @@ comparable across those boundaries; ratios like `keep%` are.
 ---
 
 ## The log
+
+### 2026-09-22 — Agency corroboration gate, admin vocabulary, per-faculty cap
+**Status:** live
+**Commit:** *(this commit)*
+**Change:** three things, all from the 09-22 diagnostic review.
+
+1. **Agency corroboration gate.** New key
+   `matching.corroboration_required_agencies` (DOJ family: BJA, OJJDP, NIJ,
+   OVC, OVW, COPS, "department of justice"). On a grant whose agency matches,
+   a keyword-only match is dropped; `both` and `semantic` pass. Recorded in the
+   diagnostic as `corroboration_gated` (per grant) and `summary.corroboration_gated`.
+2. **Grants-administration vocabulary.** `stop_words` += `training and
+   technical assistance`, `technical assistance`, `multidisciplinary team(s)`.
+   `context_dependent_terms` += `social worker(s)`, `challenges`,
+   `opportunities`, `history`.
+3. **Per-faculty per-run cap.** New key `matching.max_grants_per_faculty_per_run: 3`.
+   After every grant is scored, each person keeps their top three grants for the
+   run (confidence, then `both` > keyword > semantic). Recorded as
+   `faculty_capped` and `summary.faculty_capped`.
+
+**Why:** the 09-22 run delivered **131 matches**, and roughly 100 were wrong the
+same way. Two Bureau of Justice Assistance veterans-court calls took 80 of them
+(40 each, both hitting the per-grant cap from 53 and 71 candidates), every one
+keyword-only, at 59-99%:
+
+```
+BJA National Center for Veterans Justice   246 kw hits   0 semantic   40 delivered   avg 79%
+BJA Veterans Treatment Court Program       231 kw hits   1 semantic   40 delivered   avg 84%
+   top anchors: traumatic brain injury (32), brain (18), veterans (8)
+   departments: Anesthesiology 11, Radiology 6, Neurosurgery 3 ...
+```
+
+These are court-programme administration calls. A bench TBI neuroscientist is
+not who BJA funds, but "traumatic brain injury" appears in the synopsis because
+the courts screen for it. The semantic channel had already said no to every one
+of these — max cosine **0.3704** and **0.4183** against the 0.40 threshold,
+`above_threshold` 0 and 3 — so the keyword channel was delivering exactly the
+matches the embedding channel had rejected. The same shape recurs across the
+OJJDP calls the same morning (Juvenile Drug Treatment Court: 13 keyword-only
+Psychiatry faculty on "substance use disorders").
+
+The vocabulary items are the smaller leaks in the same run: one Psychiatry
+faculty reached 99% on three OJJDP calls purely on `multidisciplinary teams,
+training and technical assistance`; a Radiology faculty hit a child-abuse TA
+call at 54% on `social workers`; two faculty hit "Advancing Global Health" at
+60% on `challenges, opportunities` alone.
+
+**Replayed against the 09-22 delivery** (from the Daily workbook, not the
+matcher, so semantic scores are as they were):
+
+```
+delivered                    131
+after vocabulary changes     126   (5 dropped: Lever x3, Singh, M. Lavoie)
+after corroboration gate      18   (108 keyword-only DOJ rows dropped)
+after per-faculty cap         18   (no one was still on >3 grants)
+```
+
+Survivors are the seven `both`/`semantic` matches on the BJA opioid call (Weintraub,
+Bergeria, Dunn ...), three school-mental-health `both` matches on the STOP School
+Violence call (Beason, Schaeffer, Knox), Schaeffer on the child-abuse call, and
+the six Global Health / one DoW MURI rows the gate does not touch.
+
+**Accepted cost:** one match that looks genuine is lost — Kleykamp on the BJA
+COSSUP call at 99%, keyword-only on `opioid, opioids, overdose, substance use`.
+The semantic channel did not corroborate her (the call's semantic candidates
+were 8, and 7 other Psychiatry faculty on the same call did get `both`). The
+gate is deliberately blunt: a DOJ call has to earn its matches through the
+embedding channel. If feedback shows this costing real matches, the fix is to
+lower the bar on DOJ calls to "keyword-only AND cosine >= 0.35", not to remove
+the gate.
+
+**Alternative rejected:** raising `min_confidence_score` or tightening the
+per-grant cap. Neither separates these — the bad matches sit at 99%, above
+every genuine one, because IDF scoring rewards a rare phrase regardless of who
+published the call. The per-faculty cap on its own would also not have helped
+on 09-22 (it trims nothing after the gate) — it is a safety net for the next
+run where one broad hit repeats across a batch of related calls, which the
+BJA/OJJDP release pattern makes likely.
+
+**Deliberately left alone:**
+- `traumatic brain injury`, `veterans`, `substance use` — genuine anchors on
+  NIH/DoD/VA calls; the problem was the publisher, not the phrase.
+- `faculty, impact, students` still delivered one Pediatrics faculty at 83% on
+  the DoW MURI call even though `faculty` and `students` are context-dependent —
+  `impact` is the surviving anchor. Left for now; one row.
+- NIJ is in the gate list although it does fund real research (the 09-18 ABCD
+  call delivered 6, 3 of them `both`). Those three survive; the keyword-only
+  three would not. Watch this.
+
+**Expected effect:** on DOJ-heavy mornings, delivered count falls by an order of
+magnitude and `keyword_only` on DOJ agencies goes to zero; `both` on those
+agencies unchanged. On other mornings, no change beyond the vocabulary items.
+**Outcome:** *pending — first DOJ release after deploy.*
+**Verdict:** too early
 
 ### 2026-09-05 — A homograph, and a scoring fix that measurement rejected
 **Status:** live

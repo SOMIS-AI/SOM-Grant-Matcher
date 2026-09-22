@@ -283,6 +283,7 @@ def run_pipeline(config: dict, force_scrape: bool = False):
             "params": {}, "stop_words_suppressed": [], "per_grant": [],
             "semantic_score_distributions": [], "confidence_histograms": [],
             "grants_capped": [], "idf_filtered_keywords": [],
+            "corroboration_gated": [], "faculty_capped": [],
         }
         return [], empty_diag, scraper_health
     logger.info(f"  ✓ {len(new_grants)} new grants retrieved from all sources")

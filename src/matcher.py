@@ -1039,6 +1039,51 @@ def _merge_match_dicts(keyword_matches, semantic_matches, idf_table,
 
 # -- Main entry point ---------------------------------------------------------
 
+def _type_rank(m) -> int:
+    """Sort helper: agreement first, then keyword, then semantic-only."""
+    return 0 if m.match_type == "both" else (1 if m.match_type == "keyword" else 2)
+
+
+def _apply_per_faculty_cap(results, cap):
+    """
+    Keep each faculty member's top `cap` grants for this run, ranked by
+    confidence, then match type ("both" > keyword > semantic), then similarity.
+
+    Returns (results, info). `results` keeps its order and length — a grant
+    whose matches were all trimmed comes back with an empty match list so the
+    caller can keep per-grant diagnostics aligned by index. `info` is one dict
+    per capped faculty member, empty when nothing was trimmed.
+    """
+    per_fac = {}
+    for gi, r in enumerate(results):
+        for m in r["matches"]:
+            per_fac.setdefault(m.faculty_name, []).append(
+                (-m.confidence_score, _type_rank(m), -m.similarity_score, gi)
+            )
+    drop, info = set(), []
+    for name, entries in per_fac.items():
+        if len(entries) <= cap:
+            continue
+        entries.sort()
+        trimmed = entries[cap:]
+        for e in trimmed:
+            drop.add((e[3], name))
+        info.append({
+            "faculty":        name,
+            "had":            len(entries),
+            "kept":           cap,
+            "dropped":        len(trimmed),
+            "kept_grants":    [results[e[3]]["grant"]["title"][:60] for e in entries[:cap]],
+            "dropped_grants": [f"{results[e[3]]['grant']['title'][:60]} ({-e[0]}%)" for e in trimmed],
+        })
+    if not drop:
+        return results, []
+    info.sort(key=lambda c: -c["dropped"])
+    capped = [{**r, "matches": [m for m in r["matches"] if (gi, m.faculty_name) not in drop]}
+              for gi, r in enumerate(results)]
+    return capped, info
+
+
 def find_matches(grants, faculty, config=None):
     """
     Hybrid matching: keyword regex + semantic embeddings.
@@ -1070,6 +1115,16 @@ def find_matches(grants, faculty, config=None):
     max_per_grant    = matching_cfg.get("max_matches_per_grant", DEFAULT_MAX_MATCHES_PER_GRANT)
     min_idf_match    = matching_cfg.get("min_idf_for_match", DEFAULT_MIN_IDF_FOR_MATCH)
     max_grant_chars  = matching_cfg.get("max_grant_text_chars", 3000)
+    # Agency corroboration gate (2026-09-22). On these agencies a keyword-only
+    # match is not delivered: the semantic channel must agree ("both") or find
+    # the faculty on its own ("semantic"). Case-insensitive substring match on
+    # the grant's agency field. Empty list = disabled.
+    corroboration_agencies = [str(a).lower().strip()
+                              for a in (matching_cfg.get("corroboration_required_agencies") or [])
+                              if str(a).strip()]
+    # Per-faculty per-run cap (2026-09-22): the most grants one person can be
+    # matched to in a single run. 0 = disabled.
+    max_per_faculty  = int(matching_cfg.get("max_grants_per_faculty_per_run", 0) or 0)
 
     # Phrase-aware scoring config (passed per-grant via scoring_ctx)
     phrase_cfg       = matching_cfg.get("phrase_scoring", {}) or {}
@@ -1108,6 +1163,7 @@ def find_matches(grants, faculty, config=None):
         matching_cfg.get("semantic_concept_guard", {})
     )
     concept_guarded_total = 0
+    corroboration_gated_total = 0
     if concept_guard:
         logger.info(
             f"Semantic concept guard: {len(concept_guard['groups'])} group(s) active "
@@ -1135,6 +1191,8 @@ def find_matches(grants, faculty, config=None):
             "min_idf_for_match": min_idf_match,
             "semantic_enabled": sem_enabled,
             "single_keyword_multiplier": single_kw_mult,
+            "max_grants_per_faculty_per_run": max_per_faculty,
+            "corroboration_required_agencies": corroboration_agencies,
         },
         "stop_words_suppressed": [],
         "per_grant": [],                   # per-grant detail for the diagnostic email
@@ -1142,6 +1200,8 @@ def find_matches(grants, faculty, config=None):
         "confidence_histograms": [],        # confidence distribution per grant
         "idf_filtered_keywords": [],        # keywords removed by IDF floor per grant
         "grants_capped": [],                # grants that hit the per-grant cap
+        "corroboration_gated": [],          # keyword-only matches dropped on corroboration-required agencies
+        "faculty_capped": [],               # faculty trimmed by the per-run cap
         # Theme 3 / Theme 2 audit (2026-06-23): matches dropped because every
         # matched keyword was a generic context-dependent term, and matches
         # dropped because a no-research-footprint faculty hit the hard gate on a
@@ -1578,6 +1638,35 @@ def find_matches(grants, faculty, config=None):
         ]
         suppressed += before_single - len(all_matches)
 
+        # ── Agency corroboration gate (2026-09-22) ───────────────────────────
+        # Programme-delivery agencies (DOJ family) publish calls whose text is
+        # full of clinical vocabulary ("traumatic brain injury", "substance
+        # use") but whose work is court/programme administration. A keyword hit
+        # there is not evidence of fit, so keyword-only matches are dropped;
+        # "both" and "semantic" carry embedding evidence and pass. See
+        # TUNING_LOG 2026-09-22.
+        if all_matches and corroboration_agencies:
+            agency_lc = (grant.get("agency") or "").lower()
+            hit = next((a for a in corroboration_agencies if a in agency_lc), None)
+            if hit:
+                gated = [m for m in all_matches if m.match_type == "keyword"]
+                if gated:
+                    all_matches = [m for m in all_matches if m.match_type != "keyword"]
+                    corroboration_gated_total += len(gated)
+                    _diag["corroboration_gated"].append({
+                        "grant_title": grant["title"][:80],
+                        "agency":      (grant.get("agency") or "")[:80],
+                        "matched_on":  hit,
+                        "count":       len(gated),
+                        "kept":        len(all_matches),
+                        "sample":      [f"{m.faculty_name} ({m.confidence_score}%)"
+                                        for m in gated[:8]],
+                    })
+                    logger.info(
+                        f"  Corroboration gate: dropped {len(gated)} keyword-only match(es) on "
+                        f"'{grant['title'][:50]}...' (agency matched '{hit}'); {len(all_matches)} kept"
+                    )
+
         # ── Per-grant match cap ──────────────────────────────────────────────
         if max_per_grant and len(all_matches) > max_per_grant:
             original_count = len(all_matches)
@@ -1636,6 +1725,44 @@ def find_matches(grants, faculty, config=None):
                 "avg_confidence": avg_conf,
             })
 
+    # ── Per-faculty per-run cap (2026-09-22) ────────────────────────────────
+    # A run that lands the same person on many grants at once is almost always
+    # one broad vocabulary hit repeated, not many genuine fits. Keep each
+    # faculty member's top `max_per_faculty` grants for the run.
+    faculty_capped_total = 0
+    if max_per_faculty > 0 and results:
+        results, capped_info = _apply_per_faculty_cap(results, max_per_faculty)
+        if capped_info:
+            faculty_capped_total = sum(c["dropped"] for c in capped_info)
+            _diag["faculty_capped"] = capped_info
+            # Recount delivered matches and refresh the per-grant rollup, which
+            # was appended in the same order as `results` (one entry each).
+            kw_only = sem_only = both = 0
+            per_grant = _diag["per_grant"]
+            aligned = len(per_grant) == len(results)
+            refreshed, survivors = [], []
+            for i, r in enumerate(results):
+                ms = r["matches"]
+                if not ms:
+                    continue
+                survivors.append(r)
+                for m in ms:
+                    if m.match_type == "both":      both    += 1
+                    elif m.match_type == "keyword": kw_only += 1
+                    else:                           sem_only += 1
+                if aligned:
+                    pg = per_grant[i]
+                    pg["after_confidence_filter"] = len(ms)
+                    pg["avg_confidence"] = round(sum(m.confidence_score for m in ms) / len(ms))
+                    refreshed.append(pg)
+            results = survivors
+            if aligned:
+                _diag["per_grant"] = refreshed
+            logger.info(
+                f"  Per-faculty cap ({max_per_faculty}/run): trimmed {faculty_capped_total} "
+                f"match(es) across {len(capped_info)} faculty"
+            )
+
     total_matches = kw_only + sem_only + both
     logger.info(
         f"Matching complete: {len(results)}/{len(grants)} grants matched | "
@@ -1657,6 +1784,10 @@ def find_matches(grants, faculty, config=None):
         logger.info(f"  {clinical_basic_suppressed_total} matches suppressed — basic-only faculty on clinical-required grant{_ro}")
     if concept_guarded_total:
         logger.info(f"  {concept_guarded_total} semantic matches demoted — distinctive-concept guard (e.g. kidney-disease vs cancer)")
+    if corroboration_gated_total:
+        logger.info(f"  {corroboration_gated_total} keyword-only matches dropped — agency requires semantic corroboration")
+    if faculty_capped_total:
+        logger.info(f"  {faculty_capped_total} matches trimmed — per-faculty cap of {max_per_faculty} grants per run")
 
     # ── Standardised diagnostic log lines (parsed by grant_matcher_diagnostics.py) ──
     print(f"Processing {_faculty_count} faculty")
@@ -1683,6 +1814,8 @@ def find_matches(grants, faculty, config=None):
         "track_record_gated": track_record_gated_total,
         "clinical_basic_suppressed": clinical_basic_suppressed_total,
         "semantic_concept_guarded": concept_guarded_total,
+        "corroboration_gated": corroboration_gated_total,
+        "faculty_capped": faculty_capped_total,
         "keyword_only": kw_only,
         "semantic_only": sem_only,
         "both": both,
