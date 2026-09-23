@@ -1,0 +1,215 @@
+{
+ "updated_at": "2026-09-23T20:02:13+00:00",
+ "sources": [
+  {
+   "filename": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
+   "imported_at": "2026-09-23T20:02:13+00:00",
+   "stats": {
+    "rows_total": 12,
+    "added": 11,
+    "duplicate": 0,
+    "unparseable": 1,
+    "keywords_resolved": 11
+   }
+  }
+ ],
+ "verdicts": [
+  {
+   "form_id": "1",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
+   "responded_at": "2026-09-04 06:22:30",
+   "verdict": "good",
+   "email": "aluckste@som.umaryland.edu",
+   "grant": "TI-27-001",
+   "run_date": "September 04, 2026",
+   "confidence": 51,
+   "match_type": "semantic",
+   "rater": "digest",
+   "comment": "",
+   "grant_title": "Providers Clinical Support System \u2013 Universities",
+   "keywords": []
+  },
+  {
+   "form_id": "3",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
+   "responded_at": "2026-09-04 09:05:19",
+   "verdict": "not_relevant",
+   "email": "aluckste@som.umaryland.edu",
+   "grant": "SM-27-002",
+   "run_date": "September 04, 2026",
+   "confidence": 50,
+   "match_type": "semantic",
+   "rater": "digest",
+   "comment": "test",
+   "grant_title": "Assisted Outpatient Treatment",
+   "keywords": []
+  },
+  {
+   "form_id": "4",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
+   "responded_at": "2026-09-04 12:08:40",
+   "verdict": "good",
+   "email": "ngoel1@som.umaryland.edu",
+   "grant": "RFA-RM-28-003",
+   "run_date": "September 04, 2026",
+   "confidence": 50,
+   "match_type": "semantic",
+   "rater": "digest",
+   "comment": "",
+   "grant_title": "NIH Director's Transformative Research Award (R01 Clinical Trial Optional)",
+   "keywords": []
+  },
+  {
+   "form_id": "5",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
+   "responded_at": "2026-09-05 10:08:25",
+   "verdict": "good",
+   "email": "jerica.knox@som.umaryland.edu",
+   "grant": "USDA-NIFA-WAMS-011117",
+   "run_date": "September 05, 2026",
+   "confidence": 88,
+   "match_type": "keyword",
+   "rater": "digest",
+   "comment": "",
+   "grant_title": "Science, Technology, Engineering, and Mathematics Fields",
+   "keywords": [
+    "engineering",
+    "stem",
+    "technology"
+   ]
+  },
+  {
+   "form_id": "6",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
+   "responded_at": "2026-09-05 10:08:35",
+   "verdict": "not_relevant",
+   "email": "kbarry@som.umaryland.edu",
+   "grant": "USDA-NIFA-ICGP-012261",
+   "run_date": "September 05, 2026",
+   "confidence": 65,
+   "match_type": "keyword",
+   "rater": "digest",
+   "comment": "",
+   "grant_title": "Outreach and Assistance for Veteran Farmers and Ranchers Program",
+   "keywords": [
+    "agriculture",
+    "farmers"
+   ]
+  },
+  {
+   "form_id": "7",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
+   "responded_at": "2026-09-22 06:03:16",
+   "verdict": "not_relevant",
+   "email": "bpolster@som.umaryland.edu",
+   "grant": "O-BJA-2026-172760",
+   "run_date": "2026-09-22",
+   "confidence": 59,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "BJA FY 2026 National Center for Veterans Justice",
+   "keywords": [
+    "brain",
+    "traumatic brain injury"
+   ]
+  },
+  {
+   "form_id": "8",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
+   "responded_at": "2026-09-22 06:05:45",
+   "verdict": "good",
+   "email": "kconnors@som.umaryland.edu",
+   "grant": "O-NIJ-2026-172757",
+   "run_date": "2026-09-22",
+   "confidence": 99,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "NIJ FY 2026 Invited to Apply - Adolescent Brain Cognitive Development: Social Development Sub-study (ABCD-SD)",
+   "keywords": [
+    "adolescent brain",
+    "brain",
+    "cognitive development",
+    "the adolescent",
+    "the adolescent brain"
+   ]
+  },
+  {
+   "form_id": "9",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
+   "responded_at": "2026-09-22 08:58:14",
+   "verdict": "not_relevant",
+   "email": "aluckste@som.umaryland.edu",
+   "grant": "O-OJJDP-2026-172741",
+   "run_date": "2026-09-22",
+   "confidence": 50,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "I don't have a track record re juvenile justice so would not be viable.",
+   "grant_title": "OJJDP FY 2026 Juvenile Drug Treatment Court Program",
+   "keywords": [
+    "mental health",
+    "substance use"
+   ]
+  },
+  {
+   "form_id": "10",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
+   "responded_at": "2026-09-22 10:52:46",
+   "verdict": "not_relevant",
+   "email": "tfaw@som.umaryland.edu",
+   "grant": "O-BJA-2026-172760",
+   "run_date": "2026-09-22",
+   "confidence": 99,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "BJA FY 2026 National Center for Veterans Justice",
+   "keywords": [
+    "brain",
+    "brain injury",
+    "injury",
+    "traumatic brain",
+    "traumatic brain injury"
+   ]
+  },
+  {
+   "form_id": "11",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
+   "responded_at": "2026-09-22 13:06:32",
+   "verdict": "not_relevant",
+   "email": "meagan.fitzpatrick@som.umaryland.edu",
+   "grant": "RFA-MH-27-150",
+   "run_date": "2026-09-22",
+   "confidence": 62,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "I don't work on psychotropic drugs",
+   "grant_title": "Advancing Real-World Effectiveness Evidence for Rapid-Acting Psychotropic Interventional Drugs (RAPIDs)",
+   "keywords": [
+    "Real-world effectiveness"
+   ]
+  },
+  {
+   "form_id": "12",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
+   "responded_at": "2026-09-22 18:20:34",
+   "verdict": "not_relevant",
+   "email": "dmayer@som.umaryland.edu",
+   "grant": "O-BJA-2026-172760",
+   "run_date": "2026-09-22",
+   "confidence": 99,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "The Category of Funding Activity is: Law, Justice and Legal Services\nI'm doing MRI research",
+   "grant_title": "BJA FY 2026 National Center for Veterans Justice",
+   "keywords": [
+    "brain",
+    "brain injury",
+    "traumatic brain",
+    "traumatic brain injury"
+   ]
+  }
+ ]
+}

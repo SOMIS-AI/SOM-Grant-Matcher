@@ -224,6 +224,21 @@ matching:
 
   min_semantic_confidence: 50
 
+  # ── Faculty feedback (2026-09-23) ─────────────────────────────────────────
+  # The 👍/👎 clicks from the digests, imported from the Form export into
+  # seed_data/feedback_verdicts.json (python -m src.feedback_store <xlsx>).
+  # A "Not relevant" suppresses that (person, grant) pair — and the same call
+  # re-posted — for good, and halves the anchoring keywords' weight for that
+  # person only; a "Good match" lifts them by 1.2. Only the faculty member's
+  # own ("self") verdicts are applied; admin ratings from the shared digest
+  # are kept for review. Global thresholds are NOT tuned from feedback yet —
+  # six real verdicts is enough for per-person facts, not for 1,300 people.
+  feedback:
+    enabled: true
+    use_third_party_verdicts: false
+    rejected_keyword_multiplier: 0.5
+    good_keyword_multiplier: 1.2
+
   # ── Semantic confidence scale (2026-09-22) ────────────────────────────────
   # Cosine similarity is mapped linearly onto the 0-100 confidence scale:
   # semantic_sim_low -> 0, semantic_sim_high -> 100. Before this, confidence

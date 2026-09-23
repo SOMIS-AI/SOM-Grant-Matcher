@@ -7,6 +7,25 @@ deployment and updated by committing to source control.
 
 ## Files
 
+### `feedback_verdicts.json`
+
+The 👍 / 👎 verdicts faculty click in their digests, imported from the
+Microsoft Form export that lands in
+`OneDrive - Blue Cap IT/Personal/UMSOM/AI/AI Grant Matcher/Faculty Feedback Data/`.
+Keyed by the Form's row Id so re-importing an export never duplicates.
+
+**How to add a new export:**
+
+    python -m src.feedback_store "<path-to-export.xlsx>" --archive "<Diag Files folder>"
+
+`--archive` looks each verdict up in the Daily match workbooks so it carries
+the grant title and the keywords that anchored the match; without it the
+verdict still suppresses the grant but cannot weight keywords. Commit the
+JSON, push, restart. Takes effect on the next run — no scrape needed.
+
+What the matcher does with it is documented in `src/feedback_store.py` and
+under `matching.feedback` in `config/config.yaml`.
+
 ### `eval_app_keywords.json`
 
 Self-reported research keywords collected from UMSOM faculty via the Faculty

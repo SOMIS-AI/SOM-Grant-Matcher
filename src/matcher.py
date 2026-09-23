@@ -1190,6 +1190,21 @@ def find_matches(grants, faculty, config=None):
     # Per-faculty per-run cap (2026-09-22): the most grants one person can be
     # matched to in a single run. 0 = disabled.
     max_per_faculty  = int(matching_cfg.get("max_grants_per_faculty_per_run", 0) or 0)
+    # Faculty feedback (2026-09-23): 👎 on a delivered match suppresses that
+    # (person, grant) pair for good and down-weights the anchoring keywords
+    # for that person; 👍 lifts them. See feedback_store.build_feedback_index.
+    feedback_idx = None
+    try:
+        from feedback_store import load_feedback_index
+        feedback_idx = load_feedback_index(config)
+    except Exception as e:
+        logger.warning(f"Feedback store unavailable — matching without it: {e}")
+    if feedback_idx:
+        fc = feedback_idx["counts"]
+        logger.info(f"Feedback: {fc['applied']} verdict(s) applied "
+                    f"({fc['not_relevant']} not relevant, {fc['good']} good, {fc['optout']} opt-out); "
+                    f"{len(feedback_idx['kw_weights'])} faculty with keyword weights")
+    feedback_suppressed_total = 0
     # Semantic confidence scale (2026-09-22): cosine sim_low -> 0, sim_high -> 100.
     sem_sim_low      = float(matching_cfg.get("semantic_sim_low",  DEFAULT_SEM_SIM_LOW))
     sem_sim_high     = float(matching_cfg.get("semantic_sim_high", DEFAULT_SEM_SIM_HIGH))
@@ -1263,6 +1278,7 @@ def find_matches(grants, faculty, config=None):
             "semantic_sim_low": sem_sim_low,
             "semantic_sim_high": sem_sim_high,
             "corroboration_required_agencies": corroboration_agencies,
+            "feedback_verdicts_applied": (feedback_idx or {}).get("counts", {}).get("applied", 0),
         },
         "stop_words_suppressed": [],
         "per_grant": [],                   # per-grant detail for the diagnostic email
@@ -1271,6 +1287,7 @@ def find_matches(grants, faculty, config=None):
         "idf_filtered_keywords": [],        # keywords removed by IDF floor per grant
         "grants_capped": [],                # grants that hit the per-grant cap
         "corroboration_gated": [],          # keyword-only matches dropped on corroboration-required agencies
+        "feedback_suppressed": [],          # (faculty, grant) pairs the faculty member rejected
         "faculty_capped": [],               # faculty trimmed by the per-run cap
         # Theme 3 / Theme 2 audit (2026-06-23): matches dropped because every
         # matched keyword was a generic context-dependent term, and matches
@@ -1562,6 +1579,31 @@ def find_matches(grants, faculty, config=None):
             sim_by_name=sim_by_name, sem_threshold=sem_threshold,
             scoring_ctx=scoring_ctx,
         )
+
+        # ── Faculty feedback suppression (2026-09-23) ────────────────────────
+        # A match the faculty member already rated "Not relevant" — same grant
+        # number, or the same call re-posted under the same title — is never
+        # delivered to them again. Applied before any scoring so it cannot be
+        # out-ranked back in.
+        if all_matches and feedback_idx and (feedback_idx["suppress"] or feedback_idx["suppress_titles"]):
+            gnum = (grant.get("number") or grant.get("id") or "").strip()
+            gtitle_n = feedback_idx["norm_title"](grant.get("title", ""))
+            kept, dropped = [], []
+            for m in all_matches:
+                em = (m.faculty_email or "").lower()
+                if em and ((em, gnum) in feedback_idx["suppress"]
+                           or (em, gtitle_n) in feedback_idx["suppress_titles"]):
+                    dropped.append(m)
+                else:
+                    kept.append(m)
+            if dropped:
+                all_matches = kept
+                feedback_suppressed_total += len(dropped)
+                _diag["feedback_suppressed"].append({
+                    "grant_title": grant["title"][:80],
+                    "count":       len(dropped),
+                    "sample":      [m.faculty_name for m in dropped[:8]],
+                })
 
         # ── Theme 2: research track-record weighting + hard gate ─────────────
         # Re-weight each match by the faculty member's external footprint, then
@@ -1857,6 +1899,8 @@ def find_matches(grants, faculty, config=None):
         logger.info(f"  {concept_guarded_total} semantic matches demoted — distinctive-concept guard (e.g. kidney-disease vs cancer)")
     if corroboration_gated_total:
         logger.info(f"  {corroboration_gated_total} keyword-only matches dropped — agency requires semantic corroboration")
+    if feedback_suppressed_total:
+        logger.info(f"  {feedback_suppressed_total} matches suppressed — faculty rated the pair Not relevant")
     if faculty_capped_total:
         logger.info(f"  {faculty_capped_total} matches trimmed — per-faculty cap of {max_per_faculty} grants per run")
 
@@ -1887,6 +1931,7 @@ def find_matches(grants, faculty, config=None):
         "semantic_concept_guarded": concept_guarded_total,
         "corroboration_gated": corroboration_gated_total,
         "faculty_capped": faculty_capped_total,
+        "feedback_suppressed": feedback_suppressed_total,
         "keyword_only": kw_only,
         "semantic_only": sem_only,
         "both": both,

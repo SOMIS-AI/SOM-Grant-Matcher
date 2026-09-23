@@ -299,7 +299,7 @@ def run_pipeline(config: dict, force_scrape: bool = False):
             "params": {}, "stop_words_suppressed": [], "per_grant": [],
             "semantic_score_distributions": [], "confidence_histograms": [],
             "grants_capped": [], "idf_filtered_keywords": [],
-            "corroboration_gated": [], "faculty_capped": [],
+            "corroboration_gated": [], "faculty_capped": [], "feedback_suppressed": [],
         }
         return [], empty_diag, scraper_health
     logger.info(f"  ✓ {len(new_grants)} new grants retrieved from all sources")
@@ -916,8 +916,25 @@ def _send_personalized_digests(config: dict, matched_results: list,
     # or a second manual run never emails the same person twice.
     already = subscriptions.sent_recipients(run_date)
     enrolled = subscriptions.faculty_subs_for_cadence(cadence)
-    faculty_todo = [(email, sub) for email, sub in enrolled.items() if by_faculty.get(email)]
-    stats["faculty_skipped_no_match"] = len(enrolled) - len(faculty_todo)
+    # 2026-09-23: a faculty member who clicked the digest's opt-out link is
+    # skipped here even if still enrolled — the subscription edit is manual,
+    # the click is not. Logged loudly so the enrolment gets cleaned up.
+    optout = set()
+    try:
+        from feedback_store import load_feedback_index
+        fb = load_feedback_index(config)
+        optout = set(fb["optout"]) if fb else set()
+    except Exception as e:
+        logging.getLogger("main").warning(f"feedback opt-outs unavailable: {e}")
+    opted = sorted(e for e in enrolled if e in optout)
+    if opted:
+        logging.getLogger("main").warning(
+            f"{len(opted)} enrolled faculty clicked opt-out and are skipped — "
+            f"unenrol them in the dashboard: {', '.join(opted[:20])}")
+    stats["faculty_skipped_optout"] = len(opted)
+    faculty_todo = [(email, sub) for email, sub in enrolled.items()
+                    if by_faculty.get(email) and email not in optout]
+    stats["faculty_skipped_no_match"] = len(enrolled) - len(faculty_todo) - len(opted)
     for idx, (email, sub) in enumerate(faculty_todo):
         bucket = by_faculty.get(email)
         if ("faculty", email) in already:
