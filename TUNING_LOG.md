@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-09-23 — First faculty feedback: NIJ out of the gate, two vocabulary items
 **Status:** live
-**Commit:** *(this commit)*
+**Commit:** `7485c80`
 **Change:** `corroboration_required_agencies` drops `national institute of
 justice` (BJA, OJJDP, OVC, OVW, COPS and "department of justice" stay).
 `context_dependent_terms` += `real-world effectiveness`, `real world
