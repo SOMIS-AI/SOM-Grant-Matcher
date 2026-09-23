@@ -233,6 +233,11 @@ matching:
   # own ("self") verdicts are applied; admin ratings from the shared digest
   # are kept for review. Global thresholds are NOT tuned from feedback yet —
   # six real verdicts is enough for per-person facts, not for 1,300 people.
+  # A keyword the faculty member typed about their own work (Eval App campaign,
+  # Pass 8b) counts 1.25x in keyword scoring. Nothing else about the score
+  # changes; faculty without self-reported keywords score exactly as before.
+  self_reported_keyword_multiplier: 1.25
+
   feedback:
     enabled: true
     use_third_party_verdicts: false
@@ -438,7 +443,11 @@ matching:
   research_evidence:
     nih_reporter_multiplier: 1.05        # has NIH RePORTER grant(s) — strongest track record
     publication_multiplier:  1.00        # has PubMed/Europe PMC/ORCID/S2/ClinicalTrials footprint
-    none_multiplier:         0.80        # only profile / self-reported keywords (no external footprint)
+    none_multiplier:         0.80        # only scraped profile keywords (no external footprint)
+    self_reported_multiplier: 1.00       # 2026-09-23: no external footprint but the faculty member
+                                          # described their own research (Eval App). Neutral — the
+                                          # 0.80 was about thin evidence, and this evidence is not
+                                          # thin. Still gated off major mechanisms (PI credibility).
     gate_major_mechanisms:   true        # hard-drop "none"-tier faculty from the major mechanisms below
     gate_pi_track_record:    true        # STRICTER: drop "none" AND "pub" tiers (require NIH-funded,
                                           # i.e. nih-tier) from the PI-track-record mechanisms below

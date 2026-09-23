@@ -52,7 +52,7 @@ import time
 from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -282,6 +282,7 @@ def _compute_confidence(
     similarity_score: float,
     match_type: str,
     scoring_ctx: dict | None = None,
+    kw_weights: Optional[dict] = None,
 ) -> int:
     """
     Compute a 0-100 confidence score for a single faculty-grant match.
@@ -317,17 +318,23 @@ def _compute_confidence(
     # outscore two loose single-word hits ("kidney" + "cancer"). Normalised over
     # 20.0 (a single strong word still tops out modestly; a specific phrase can
     # carry a match on its own). Legacy (no ctx): flat min(IDF, 5.0) sum.
+    # Per-person keyword weights (2026-09-23): a keyword the faculty member
+    # typed themselves (Eval App) counts more; one that anchored a match they
+    # rejected counts less for them; one they confirmed counts more. 1.0 when
+    # absent, so every other faculty scores exactly as before.
+    kw_weights = kw_weights or {}
     idf_sum = 0.0
     for kw in matched_keywords:
         kw_norm = normalize(kw).strip()
         idf     = idf_table.get(kw_norm, 1.0)
+        weight  = float(kw_weights.get(kw_norm, 1.0))
         if phrase_on:
             n_tok  = max(len(_meaningful_tokens(kw_norm, stops, min_kw_len)), 1)
             cap    = phrase_cap if n_tok >= 2 else base_cap
             factor = 1.0 + token_bonus * (n_tok - 1)
-            idf_sum += min(idf, cap) * factor
+            idf_sum += min(idf, cap) * factor * weight
         else:
-            idf_sum += min(idf, base_cap)
+            idf_sum += min(idf, base_cap) * weight
     kw_confidence = min(idf_sum / 20.0, 1.0)
 
     # ── Factor 2: Title match bonus ───────────────────────────────────────────
@@ -763,7 +770,10 @@ def _research_tier(faculty: dict) -> str:
     Classify a faculty member's external research footprint:
       'nih'     — has NIH RePORTER grant(s); strongest track record
       'pub'     — has publication footprint (PubMed/Europe PMC/ORCID/S2/CT.gov)
-      'none'    — only profile / self-reported keywords; no external footprint
+      'self'    — no external footprint, but the faculty member described
+                  their research themselves (Eval App); neutral weight, still
+                  gated off major mechanisms like 'none' (2026-09-23)
+      'none'    — only scraped profile keywords; no external footprint
       'unknown' — attribution not captured (pre-rescrape cache); treat neutrally
     """
     kbs = faculty.get("keywords_by_source")
@@ -773,6 +783,8 @@ def _research_tier(faculty: dict) -> str:
         return "nih"
     if any(kbs.get(lbl) for lbl in _EVIDENCE_SOURCE_LABELS):
         return "pub"
+    if kbs.get("Faculty Self-Reported"):
+        return "self"
     return "none"
 
 
@@ -1031,6 +1043,7 @@ def _keyword_matches_for_grant(grant, faculty, stop_words, min_kw_len,
                 matched, idf_table, grant_text, grant_title,
                 similarity_score=0.0, match_type="keyword",
                 scoring_ctx=scoring_ctx,
+                kw_weights=(scoring_ctx or {}).get("kw_weights_by_name", {}).get(person["name"]),
             )
 
             results[person["name"]] = Match(
@@ -1084,6 +1097,7 @@ def _merge_match_dicts(keyword_matches, semantic_matches, idf_table,
                     kw.matched_keywords, idf_table, grant_text, grant_title,
                     similarity_score=sim, match_type="both",
                     scoring_ctx=scoring_ctx,
+                    kw_weights=(scoring_ctx or {}).get("kw_weights_by_name", {}).get(name),
                 )
                 merged.append(kw._replace(
                     match_type="both", similarity_score=sim, confidence_score=confidence
@@ -1230,6 +1244,7 @@ def find_matches(grants, faculty, config=None):
         "nih":     float(re_cfg.get("nih_reporter_multiplier", 1.0)),
         "pub":     float(re_cfg.get("publication_multiplier", 1.0)),
         "none":    float(re_cfg.get("none_multiplier", 1.0)),
+        "self":    float(re_cfg.get("self_reported_multiplier", 1.0)),
         "unknown": 1.0,   # never penalize on missing attribution
     }
     gate_major       = bool(re_cfg.get("gate_major_mechanisms", False))
@@ -1279,6 +1294,7 @@ def find_matches(grants, faculty, config=None):
             "semantic_sim_high": sem_sim_high,
             "corroboration_required_agencies": corroboration_agencies,
             "feedback_verdicts_applied": (feedback_idx or {}).get("counts", {}).get("applied", 0),
+            "self_reported_keyword_multiplier": float(matching_cfg.get("self_reported_keyword_multiplier", 1.0)),
         },
         "stop_words_suppressed": [],
         "per_grant": [],                   # per-grant detail for the diagnostic email
@@ -1323,6 +1339,28 @@ def find_matches(grants, faculty, config=None):
 
     # Name → faculty lookup for building semantic matches without re-scanning
     faculty_by_name = {f.get("name", ""): f for f in faculty}
+
+    # Per-person keyword weights (2026-09-23): self-reported keywords get
+    # matching.self_reported_keyword_multiplier; feedback verdicts multiply on
+    # top. Faculty with neither are absent from the map (weight 1.0).
+    self_mult = float(matching_cfg.get("self_reported_keyword_multiplier", 1.0))
+    kw_weights_by_name: dict = {}
+    fb_kw = (feedback_idx or {}).get("kw_weights", {})
+    for f in faculty:
+        w: dict = {}
+        if self_mult != 1.0:
+            for kw in ((f.get("keywords_by_source") or {}).get("Faculty Self-Reported") or []):
+                k = normalize(kw).strip()
+                if k:
+                    w[k] = self_mult
+        em = (f.get("email") or "").lower()
+        for k, mult in fb_kw.get(em, {}).items():
+            w[k] = round(w.get(k, 1.0) * mult, 4)
+        if w:
+            kw_weights_by_name[f.get("name", "")] = w
+    if kw_weights_by_name:
+        logger.info(f"Keyword weights: {len(kw_weights_by_name)} faculty "
+                    f"(self-reported x{self_mult}, feedback for {len(fb_kw)})")
 
     faculty_with_embeddings = sum(1 for f in faculty if f.get("embedding"))
     if sem_enabled and faculty_with_embeddings == 0:
@@ -1452,6 +1490,7 @@ def find_matches(grants, faculty, config=None):
             "cfg":            phrase_cfg,
             "single_kw_mult": single_kw_mult,
             "sem_conf_range": (sem_sim_low, sem_sim_high),
+            "kw_weights_by_name": kw_weights_by_name,
         }
 
         context_dropped = []
@@ -1622,10 +1661,10 @@ def find_matches(grants, faculty, config=None):
             for m in all_matches:
                 fac  = faculty_by_name.get(m.faculty_name, {})
                 tier = _research_tier(fac)
-                if grant_requires_nih and tier in ("none", "pub"):
+                if grant_requires_nih and tier in ("none", "self", "pub"):
                     gated_here.append(m.faculty_name)
                     continue
-                if grant_is_major and tier == "none":
+                if grant_is_major and tier in ("none", "self"):
                     gated_here.append(m.faculty_name)
                     continue
                 mult = tier_mult.get(tier, 1.0)
