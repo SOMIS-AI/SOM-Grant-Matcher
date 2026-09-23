@@ -764,11 +764,25 @@ def _compile_clinical_basic(cfg: dict):
         return None
 
     def _terms_rx(terms):
-        # one alternation regex, word-boundary anchored, case-insensitive
-        parts = [re.escape(normalize(t).strip()) for t in (terms or []) if str(t).strip()]
+        # One alternation regex, case-insensitive. A plain term matches as a
+        # whole word. A term ending in "*" is a STEM and matches as a prefix
+        # ("epidemiolog*" hits epidemiology / epidemiologic / epidemiologist).
+        # Before 2026-09-22 every term was wrapped in \b...\b, so the stem
+        # "epidemiolog" could never match anything and an epidemiologist with
+        # no other clinical term was classed basic-only.
+        parts = []
+        for t in (terms or []):
+            t = str(t).strip()
+            if not t:
+                continue
+            is_stem = t.endswith("*")
+            core = re.escape(normalize(t.rstrip("*")).strip())
+            if not core:
+                continue
+            parts.append(core + (r"\w*" if is_stem else r"\b"))
         if not parts:
             return None
-        return re.compile(r"\b(?:" + "|".join(parts) + r")\b", re.IGNORECASE)
+        return re.compile(r"\b(?:" + "|".join(parts) + r")", re.IGNORECASE)
 
     clinical_required = []
     for pat in cfg.get("clinical_required_patterns", []):
@@ -823,9 +837,14 @@ def _compile_semantic_concept_guard(cfg: dict):
     groups = []
     for g in cfg.get("groups", []):
         try:
-            grant_rx = [re.compile(r"\b" + p + r"\b", re.IGNORECASE)
+            # Markers are STEMS matched as prefixes at a word start: "oncolog"
+            # must hit oncology / oncologist / oncological. Until 2026-09-22
+            # they were wrapped in \b...\b, so every stem marker (oncolog,
+            # leukem, metasta, neoplas, malignan, chemotherap, immunotherap)
+            # was dead and the guard only fired on whole-word markers.
+            grant_rx = [re.compile(r"\b" + p + r"\w*", re.IGNORECASE)
                         for p in (g.get("grant_markers") or [])]
-            ev_rx    = [re.compile(r"\b" + p + r"\b", re.IGNORECASE)
+            ev_rx    = [re.compile(r"\b" + p + r"\w*", re.IGNORECASE)
                         for p in (g.get("evidence_markers") or [])]
         except re.error as e:
             logger.warning(f"Bad semantic_concept_guard regex in group {g.get('name')!r}: {e}")

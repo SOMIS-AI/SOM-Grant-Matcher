@@ -261,6 +261,8 @@ matching:
   # Keyword/"both" matches are lexically grounded and are never guarded.
   # Each group: grant_markers flag the grant as being about the concept;
   # evidence_markers are what the faculty must show to be a credible semantic match.
+  # Markers are matched as PREFIXES at a word start ("oncolog" hits oncology,
+  # oncologist) — fixed 2026-09-22; before that the stems below never fired.
   semantic_concept_guard:
     enabled: true
     demote_multiplier: 0.4        # semantic-only match missing the concept evidence → conf ×0.4
@@ -504,7 +506,8 @@ matching:
       - human subjects
       - participants
       - registry
-      - epidemiolog
+      - 'epidemiolog*'              # trailing * = stem/prefix match (2026-09-22); plain terms
+                                    # match whole words. "epidemiolog" alone never matched.
       - health services
       - clinical outcomes
     min_basic_signals: 1          # ≥ this many basic terms to qualify as basic-science
