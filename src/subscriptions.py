@@ -405,7 +405,7 @@ def som_admins_for_cadence(cadence: str) -> list:
 
 def log_email(*, kind: str, to: str, subject: str, matches_count: int = 0,
               faculty_name: str = "", department: str = "",
-              recipients_count: int = 1) -> None:
+              recipients_count: int = 1, run_date: str = "") -> None:
     """Append one entry to the rolling audit log.
 
     `kind`: 'faculty' / 'dept_admin' (personalized), their *_failed variants,
@@ -422,12 +422,29 @@ def log_email(*, kind: str, to: str, subject: str, matches_count: int = 0,
         "faculty_name":  faculty_name,
         "department":    department,
         "recipients_count": max(1, int(recipients_count)),
+        "run_date":      run_date or "",
     }
     with _write_lock:
         log = _load_json(EMAIL_LOG_FILE, {"log": []}).get("log", [])
         log.append(entry)
         log = log[-EMAIL_LOG_CAP:]
         _save_json(EMAIL_LOG_FILE, {"log": log, "updated_at": _now_iso()})
+
+
+def sent_recipients(run_date: str) -> set:
+    """{(kind, to)} of every SUCCESSFUL send the audit log holds for `run_date`.
+
+    Lets a fan-out resume after a crash, a budget stop, or a manual re-run
+    without emailing anyone twice (2026-09-22). Entries written before
+    run_date was logged have no run_date and never match, so this is
+    conservative: it can only skip a send it has positive evidence for.
+    """
+    if not run_date:
+        return set()
+    log = _load_json(EMAIL_LOG_FILE, {"log": []}).get("log", [])
+    return {(e.get("kind"), e.get("to")) for e in log
+            if e.get("run_date") == run_date
+            and e.get("kind") in ("faculty", "dept_admin")}
 
 
 def count_today_emails() -> int:

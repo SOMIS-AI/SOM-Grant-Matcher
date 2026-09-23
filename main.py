@@ -838,7 +838,12 @@ def _send_personalized_digests(config: dict, matched_results: list,
              "dept_admin_sent": 0, "depts_with_matches": 0,
              "faculty_failed": 0, "dept_admin_failed": 0,
              "failed_recipients": [],
-             "budget_exhausted": False}
+             "budget_exhausted": False,
+             # 2026-09-22: resume safety. already_sent = skipped because the
+             # audit log already holds a send for this run_date; deferred =
+             # never attempted because the daily budget ran out.
+             "faculty_skipped_already_sent": 0, "dept_admin_skipped_already_sent": 0,
+             "faculty_deferred": 0, "dept_admin_deferred": 0}
 
     if not matched_results:
         return stats
@@ -873,16 +878,26 @@ def _send_personalized_digests(config: dict, matched_results: list,
             by_dept.setdefault(dept_key, []).append({"grant": grant, "matches": ms_for_dept})
 
     # ── 2. Per-faculty personal digests ─────────────────────────────────────
+    # One read of the audit log for the whole fan-out: anyone it already shows
+    # as sent for this run_date is skipped, so a crash mid-batch, a budget stop
+    # or a second manual run never emails the same person twice.
+    already = subscriptions.sent_recipients(run_date)
     enrolled = subscriptions.faculty_subs_for_cadence(cadence)
-    for email, sub in enrolled.items():
+    faculty_todo = [(email, sub) for email, sub in enrolled.items() if by_faculty.get(email)]
+    stats["faculty_skipped_no_match"] = len(enrolled) - len(faculty_todo)
+    for idx, (email, sub) in enumerate(faculty_todo):
         bucket = by_faculty.get(email)
-        if not bucket:
-            stats["faculty_skipped_no_match"] += 1
+        if ("faculty", email) in already:
+            stats["faculty_skipped_already_sent"] += 1
             continue
         if subscriptions.remaining_budget_today() <= 0:
             stats["budget_exhausted"] = True
+            stats["faculty_deferred"] = sum(
+                1 for e, _ in faculty_todo[idx:] if ("faculty", e) not in already)
             logger = logging.getLogger("main")
-            logger.warning("SendGrid daily cap reached — skipping remaining faculty digests.")
+            logger.warning(
+                f"SendGrid daily cap reached — {stats['faculty_deferred']} faculty digest(s) "
+                f"deferred. Re-run the personalized send for {run_date}; sent recipients are skipped.")
             break
         name = sub.get("name", "")
         subject, html = build_faculty_email(name, bucket, run_date, dashboard_url,
@@ -895,7 +910,7 @@ def _send_personalized_digests(config: dict, matched_results: list,
             subscriptions.log_email(
                 kind="faculty", to=email, subject=subject,
                 matches_count=len(bucket), faculty_name=name,
-                department=sub.get("department", ""),
+                department=sub.get("department", ""), run_date=run_date,
             )
             stats["faculty_sent"] += 1
         else:
@@ -908,7 +923,7 @@ def _send_personalized_digests(config: dict, matched_results: list,
             subscriptions.log_email(
                 kind="faculty_failed", to=email, subject=subject,
                 matches_count=len(bucket), faculty_name=name,
-                department=sub.get("department", ""),
+                department=sub.get("department", ""), run_date=run_date,
             )
 
     # ── 3. Per-department admin digests ─────────────────────────────────────
@@ -928,11 +943,14 @@ def _send_personalized_digests(config: dict, matched_results: list,
 
         admins = subscriptions.admins_for_department(dept_label, cadence=cadence)
         for admin in admins:
+            if ("dept_admin", (admin.get("email") or "").strip().lower()) in already:
+                stats["dept_admin_skipped_already_sent"] += 1
+                continue
             if subscriptions.remaining_budget_today() <= 0:
+                # keep iterating so every unsent admin is counted as deferred
                 stats["budget_exhausted"] = True
-                logger = logging.getLogger("main")
-                logger.warning("SendGrid daily cap reached — skipping remaining dept-admin digests.")
-                return stats
+                stats["dept_admin_deferred"] += 1
+                continue
             subject, html = build_dept_admin_email(dept_label, dept_bucket, run_date,
                                                    dashboard_url, digest_label=digest_label,
                                                    recipient_email=admin["email"])
@@ -945,7 +963,7 @@ def _send_personalized_digests(config: dict, matched_results: list,
                     kind="dept_admin", to=admin["email"], subject=subject,
                     matches_count=len(dept_bucket),
                     faculty_name=admin.get("name", ""),
-                    department=dept_label,
+                    department=dept_label, run_date=run_date,
                 )
                 stats["dept_admin_sent"] += 1
             else:
@@ -957,8 +975,12 @@ def _send_personalized_digests(config: dict, matched_results: list,
                     kind="dept_admin_failed", to=admin["email"], subject=subject,
                     matches_count=len(dept_bucket),
                     faculty_name=admin.get("name", ""),
-                    department=dept_label,
+                    department=dept_label, run_date=run_date,
                 )
+    if stats["dept_admin_deferred"]:
+        logging.getLogger("main").warning(
+            f"SendGrid daily cap reached — {stats['dept_admin_deferred']} dept-admin digest(s) "
+            f"deferred. Re-run the personalized send for {run_date}; sent recipients are skipped.")
     return stats
 
 
@@ -973,6 +995,18 @@ def _alert_partial_send_failures(config, stats, label):
             f"{stats.get('faculty_failed', 0)} faculty and "
             f"{stats.get('dept_admin_failed', 0)} dept-admin send(s) failed after retry. "
             f"Failed recipients: {', '.join(stats.get('failed_recipients', [])[:25])}",
+        )
+    # 2026-09-22: a budget stop used to be a WARNING line only — the fan-out
+    # silently ended and the unsent faculty were never told about. Alert with
+    # the counts and the recovery (re-run is safe: sent recipients are skipped).
+    deferred = stats.get("faculty_deferred", 0) + stats.get("dept_admin_deferred", 0)
+    if stats.get("budget_exhausted") and deferred:
+        send_failure_alert(
+            config, f"personalized_{label}_budget_exhausted",
+            f"SendGrid daily cap reached: {stats.get('faculty_deferred', 0)} faculty and "
+            f"{stats.get('dept_admin_deferred', 0)} dept-admin digest(s) were NOT sent. "
+            f"Raise SENDGRID_DAILY_CAP or re-run: python main.py --send-personalized "
+            f"--cadence {label} (already-sent recipients are skipped automatically).",
         )
 
 
