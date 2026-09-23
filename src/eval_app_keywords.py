@@ -184,6 +184,37 @@ def _unmask(text: str, spans: dict) -> str:
     return text
 
 
+# Tokens after which ". " is punctuation, not a list separator (lowercased).
+_PERIOD_ABBREVS = {
+    "dept", "depts", "univ", "assoc", "prof", "approx", "etc", "vs", "inc",
+    "corp", "ltd", "jr", "sr", "st", "mt", "no", "vol", "fig", "eq", "al",
+    "dr", "mr", "mrs", "ms", "hosp", "med", "sci", "res", "lab", "int", "natl",
+    "gen", "spec", "ref", "rev", "ed", "eds", "trans", "ca", "cf", "pp",
+}
+
+
+def _period_separator(m) -> str:
+    """re.sub callback for `<token>. `: return "|" when the period separates
+    list items, or the original text when it is punctuation."""
+    tok = m.group(1)
+    if tok.endswith("§") or tok[-1].isdigit():
+        return tok + "|"
+    if len(tok) == 1:                      # initial: "E. coli", "U.S. "
+        return m.group(0)
+    if tok.lower() in _PERIOD_ABBREVS:
+        return m.group(0)
+    return tok + "|"
+
+
+# Leading tokens that carry no topical content when a fragment starts with
+# them ("and side effects", "the adolescent brain", "of Computer Sciences").
+# Deliberately excludes short prepositions/articles that begin real terms
+# ("In vivo", "A / PDE11", "At-risk youth").
+_LEADING_FILLER = {"and", "or", "the", "of", "for", "with", "but", "also",
+                   "including", "particularly", "especially", "ultimately",
+                   "additionally", "specifically", "finally", "e.g.", "i.e."}
+
+
 def _split_candidates(text: str) -> list[str]:
     """Split a 'Research Keywords' value into candidate keyword strings.
 
@@ -209,6 +240,21 @@ def _split_candidates(text: str) -> list[str]:
     s = re.sub(r"(?<=\s)\d+[\.\)]\s+", "|", s)
     s = re.sub(r"^\s*\d+[\.\)]\s+", "", s)
     s = re.sub(r"[•·▪◦●]\s*", "|", s)
+    # 2b. Numbered lists whose line breaks the export flattened away
+    #     ("pharmacoepidemiology2. epidemiology3. GLP-1"): a 1-2 digit run
+    #     glued to the END of a lowercase word and followed by ". " or ") "
+    #     is the next item's marker, not part of the term. Lowercase guard
+    #     keeps "IL6. " / "COVID-19. " intact (2026-09-23).
+    s = re.sub(r"(?<=[a-z])\d{1,2}[\.\)]\s+", "|", s)
+    # 2c. Periods used as list separators ("carbon monoxide. decompression
+    #     sickness"). A ". " is a separator unless the token before it is an
+    #     initial ("E. coli", "U.S."), a degree ("Ph.D." — no space after the
+    #     first period, so only "D." is seen), or a common abbreviation
+    #     ("Dept. of", "Univ.", "etc."). Digits and masked paren groups (the
+    #     placeholder ends in "§") always split (2026-09-23). Prose paragraphs
+    #     never reach here: parse_keywords_field routes them to the phrase
+    #     extractor first.
+    s = re.sub(r"([\w§]+)\.\s+", _period_separator, s)
     # 3. Split on the explicit delimiters
     pieces = re.split(r"[|;,\n\r]+", s)
     out = []
@@ -241,6 +287,13 @@ def _clean_one(candidate: str) -> Optional[str]:
     # the trailing `)` since the inner content survived paren-aware splitting.
     s = candidate.strip(" \t\r\n-:.;,[]\"'")
     s = re.sub(r"\s+", " ", s)
+    # Drop leading conjunctions/articles/prepositions (2026-09-23): "and side
+    # effects" -> "side effects", "the adolescent brain" -> "adolescent brain".
+    # A fragment that is nothing but filler ("Ultimately", "and") is dropped.
+    toks = s.split(" ")
+    while toks and toks[0].lower().strip(",;:") in _LEADING_FILLER:
+        toks.pop(0)
+    s = " ".join(toks)
     if len(s) < _MIN_KW_LEN or len(s) > _MAX_KW_LEN:
         return None
     if _looks_like_sentence(s):
