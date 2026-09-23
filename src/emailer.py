@@ -99,6 +99,18 @@ def _days_until(close_date_str: str) -> str:
         return close_date_str
 
 
+def _match_field(m, field: str, default=""):
+    """Read one field from a match that may be a Match namedtuple OR a plain
+    dict. The daily path carries namedtuples; the weekly 7-day roundup is
+    rebuilt from match_results.json as dicts, and getattr() on a dict silently
+    returns the default — which is how every weekly opt-out and "none of these
+    are relevant" link went out with no email attached (found 2026-09-22).
+    Mirrors main._match_field."""
+    if isinstance(m, dict):
+        return m.get(field, default)
+    return getattr(m, field, default)
+
+
 def _get_conf(m) -> int:
     """Extract confidence score from a Match object or dict, with legacy fallback."""
     c = getattr(m, "confidence_score", None)
@@ -1002,7 +1014,7 @@ def build_faculty_email(faculty_name: str, matches_for_faculty: list,
     fb_email = ""
     for r in matches_for_faculty:
         for m in r["matches"]:
-            fb_email = getattr(m, "faculty_email", "") or ""
+            fb_email = str(_match_field(m, "faculty_email", "") or "").strip()
             if fb_email:
                 break
         if fb_email:

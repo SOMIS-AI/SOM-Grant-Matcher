@@ -918,7 +918,7 @@ def _send_personalized_digests(config: dict, matched_results: list,
         dept_label = ""
         for r in dept_bucket:
             for m in r["matches"]:
-                dl = getattr(m, "faculty_department", "")
+                dl = _match_field(m, "faculty_department", "")
                 if dl:
                     dept_label = dl
                     break
