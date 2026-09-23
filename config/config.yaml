@@ -224,6 +224,16 @@ matching:
 
   min_semantic_confidence: 50
 
+  # ── Semantic confidence scale (2026-09-22) ────────────────────────────────
+  # Cosine similarity is mapped linearly onto the 0-100 confidence scale:
+  # semantic_sim_low -> 0, semantic_sim_high -> 100. Before this, confidence
+  # was raw cosine x 100, so a semantic match needed sim >= 0.50 to clear the
+  # floor of 50 against a model whose ceiling is ~0.57; the archive shows the
+  # floor discarding ~95% of semantic candidates. With 0.30/0.60 a sim of 0.45
+  # scores 50, 0.50 scores 67, 0.55 scores 83. Tune the floor, not these.
+  semantic_sim_low: 0.30
+  semantic_sim_high: 0.60
+
   # ── Per-faculty per-run cap (2026-09-22) ──────────────────────────────────
   # The most grants one person can be matched to in a single run. When one
   # faculty member lands on five grants in a morning it is almost always one

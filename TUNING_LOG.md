@@ -69,6 +69,78 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-09-22 — Scoring audit: dead stem markers, semantic scale, nested keywords
+**Status:** live
+**Commit:** *(this commit)*
+**Change:** three scoring defects found by the 2026-09-22 code audit, each
+fixed at the mechanism rather than with a new threshold.
+
+1. **Stem markers never matched.** `semantic_concept_guard` markers and the
+   `clinical_basic_filter` term lists were compiled as `\b<term>\b`. Every
+   marker written as a stem — `oncolog`, `leukem`, `metasta`, `neoplas`,
+   `malignan`, `chemotherap`, `immunotherap`, and `epidemiolog` — could not
+   match any real word, so the kidney-disease-vs-kidney-cancer guard shipped
+   on 2026-06-26 fired only on whole-word markers (`cancer`, `carcinoma`,
+   `tumour`), and an epidemiologist with no other clinical term was classed
+   basic-only. Verified before the fix: "pediatric oncology program",
+   "metastatic disease", "leukemia" — no hit. Concept-guard markers are now
+   prefix-matched at a word start; term lists take a trailing `*` to mark a
+   stem (`epidemiolog*`), plain terms stay whole-word so `rat` cannot hit
+   `rate`. This is the exact failure recorded under *Don't retry these*
+   ("word-boundary a stem"), reintroduced in a different file.
+
+2. **Semantic confidence was raw cosine × 100.** Keyword confidence is an IDF
+   sum normalised to 0-100; semantic confidence was `sim × 100`. Sharing one
+   floor of 50 therefore demanded sim ≥ 0.50 from a model whose measured
+   ceiling is 0.573. The archive shows the cost:
+
+   ```
+   date     semantic candidates   kept   lost to floor
+   09-01           96               5        91
+   09-04          239              17       222
+   09-18           78               0        78
+   ```
+
+   Cosine is now mapped linearly onto the scale: `semantic_sim_low` (0.30)
+   → 0, `semantic_sim_high` (0.60) → 100, so 0.45 → 50, 0.50 → 67, 0.55 → 83.
+   The same mapping feeds the `both` branch (`max(kw, sem) × 1.15`), so a
+   keyword match with strong semantic agreement now scores higher than one
+   with marginal agreement, which it did not before. Tune the floor, not
+   these two numbers.
+
+3. **Nested keyword variants counted as independent evidence.** A profile
+   that lists "traumatic brain injury", "traumatic brain", "brain injury" and
+   "brain" matched all four on a grant that mentions the phrase once, and
+   each added its full IDF weight. That is how one concept reached 99%: all
+   80 BJA veterans-court rows on 09-22 carried exactly this set. Scoring now
+   collapses any matched keyword that appears, as whole words, inside a
+   longer matched keyword. The Match keeps its full list for display; only
+   the score and the single-keyword demotion see the collapsed set. On the
+   09-22 TBI set the score falls from 99 to the score of "traumatic brain
+   injury" alone.
+
+**Why now:** the audit reviewer's claim was that a single rare bigram
+saturates to 99%. Checked against the roster: IDF tops out at ln(1307) ≈
+7.2, so a lone bigram scores ≈ 57 and a trigram ≈ 79 before bonuses. The
+saturation in the archive comes from overlap, not from one phrase — hence
+fix 3 instead of a per-keyword cap.
+
+**Expected effect:**
+- `semantic_only` in the daily summary stops sitting at 0-1; the
+  `semantic_lost_to_floor` share drops from ~95% toward half.
+- Keyword-only rows at ≥ 90% (438 of 6,576 delivered rows since May) fall
+  sharply, led by the TBI/brain family; genuine multi-concept matches
+  ("opioid, overdose, substance use") are unchanged.
+- `semantic_concept_guarded` in the summary, at 0 on every run since June,
+  starts registering on oncology-flavoured grants.
+
+**Not measured:** the `both` branch uplift. A `both` match with sim 0.50 moves
+from 57 to 77 when its keyword score is lower than that. Watch the ≥ 90 band
+for `both` rows over the first week.
+
+**Outcome:** *pending — first week of diagnostics after deploy.*
+**Verdict:** too early
+
 ### 2026-09-22 — Agency corroboration gate, admin vocabulary, per-faculty cap
 **Status:** live
 **Commit:** `5ab07f6`

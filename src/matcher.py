@@ -106,6 +106,8 @@ DEFAULT_COMPONENT_ONLY_MULTIPLIER  = 0.5   # demote a match whose ONLY hits are 
 # was found and then immediately filtered out (the "dead zone"). When unset in config,
 # min_semantic_confidence falls back to min_confidence_score (no behaviour change).
 DEFAULT_MIN_SEMANTIC_CONFIDENCE    = None
+DEFAULT_SEM_SIM_LOW                = 0.30  # cosine that maps to confidence 0   (2026-09-22)
+DEFAULT_SEM_SIM_HIGH               = 0.60  # cosine that maps to confidence 100 (0.45 -> 50)
 
 # ── Administrative / procedural keyword blocklist ─────────────────────────────
 # These words appear in NIH notices and grant titles but carry zero scientific
@@ -242,6 +244,36 @@ def _meaningful_tokens(kw_norm: str, stops: set, min_kw_len: int) -> list:
     return [t for t in kw_norm.split() if len(t) >= min_kw_len and t not in stops]
 
 
+def _independent_keywords(matched_keywords: list) -> list:
+    """Collapse nested keyword variants into independent evidence.
+
+    A profile often lists one concept several ways — "traumatic brain injury",
+    "traumatic brain", "brain injury", "brain" — and a grant that mentions the
+    phrase once matches all four. Scoring each as a separate hit let ONE
+    concept sum to a saturated 99%: on 2026-09-22 all 80 BJA veterans-court
+    rows carried exactly this set. Keep only keywords that are not contained,
+    as whole words, inside a longer matched keyword. Order of survivors follows
+    the original list so display and diagnostics are unchanged.
+    """
+    norm = [(kw, normalize(kw).strip()) for kw in (matched_keywords or [])]
+    norm = [(kw, n) for kw, n in norm if n]
+    by_len = sorted(norm, key=lambda t: -len(t[1]))
+    kept_norm = []
+    for _, n in by_len:
+        if n in kept_norm:
+            continue
+        if any(re.search(r"\b" + re.escape(n) + r"\b", k) for k in kept_norm):
+            continue
+        kept_norm.append(n)
+    seen = set()
+    out = []
+    for kw, n in norm:
+        if n in kept_norm and n not in seen:
+            out.append(kw)
+            seen.add(n)
+    return out
+
+
 def _compute_confidence(
     matched_keywords: list,
     idf_table: dict,
@@ -268,6 +300,10 @@ def _compute_confidence(
 
     # Read off the same matching config as the rest of scoring; 1.0 = disabled.
     single_kw_mult = float(ctx.get("single_kw_mult", 1.0))
+
+    # Nested variants of one concept are one piece of evidence (2026-09-22).
+    # Applied to scoring only; the Match keeps its full keyword list for display.
+    matched_keywords = _independent_keywords(matched_keywords)
 
     token_bonus  = cfg.get("token_bonus", DEFAULT_PHRASE_TOKEN_BONUS)
     base_cap     = cfg.get("idf_cap", DEFAULT_PHRASE_IDF_CAP)
@@ -347,7 +383,17 @@ def _compute_confidence(
         kw_conf *= single_kw_mult
 
     # ── Factor 4: Apply match type multiplier ─────────────────────────────────
-    sem_conf = float(similarity_score or 0.0)
+    # Map cosine onto the 0-1 confidence scale (2026-09-22). Raw cosine was
+    # used before, so a semantic match needed sim >= 0.50 to clear a floor of
+    # 50 — against a model whose measured ceiling is ~0.57. The archive shows
+    # the floor discarding ~95% of semantic candidates as a result. Linear:
+    # sim_low -> 0, sim_high -> 1; defaults 0.30/0.60 put sim 0.45 at 50.
+    sem_low, sem_high = ctx.get("sem_conf_range", (DEFAULT_SEM_SIM_LOW, DEFAULT_SEM_SIM_HIGH))
+    sim = float(similarity_score or 0.0)
+    if sem_high > sem_low:
+        sem_conf = min(max((sim - sem_low) / (sem_high - sem_low), 0.0), 1.0)
+    else:
+        sem_conf = sim
 
     if match_type == "both":
         # Both methods agree → strongest signal
@@ -1144,6 +1190,9 @@ def find_matches(grants, faculty, config=None):
     # Per-faculty per-run cap (2026-09-22): the most grants one person can be
     # matched to in a single run. 0 = disabled.
     max_per_faculty  = int(matching_cfg.get("max_grants_per_faculty_per_run", 0) or 0)
+    # Semantic confidence scale (2026-09-22): cosine sim_low -> 0, sim_high -> 100.
+    sem_sim_low      = float(matching_cfg.get("semantic_sim_low",  DEFAULT_SEM_SIM_LOW))
+    sem_sim_high     = float(matching_cfg.get("semantic_sim_high", DEFAULT_SEM_SIM_HIGH))
 
     # Phrase-aware scoring config (passed per-grant via scoring_ctx)
     phrase_cfg       = matching_cfg.get("phrase_scoring", {}) or {}
@@ -1211,6 +1260,8 @@ def find_matches(grants, faculty, config=None):
             "semantic_enabled": sem_enabled,
             "single_keyword_multiplier": single_kw_mult,
             "max_grants_per_faculty_per_run": max_per_faculty,
+            "semantic_sim_low": sem_sim_low,
+            "semantic_sim_high": sem_sim_high,
             "corroboration_required_agencies": corroboration_agencies,
         },
         "stop_words_suppressed": [],
@@ -1383,6 +1434,7 @@ def find_matches(grants, faculty, config=None):
             "title_tokens":   title_tokens,
             "cfg":            phrase_cfg,
             "single_kw_mult": single_kw_mult,
+            "sem_conf_range": (sem_sim_low, sem_sim_high),
         }
 
         context_dropped = []
