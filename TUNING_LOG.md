@@ -69,6 +69,63 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-09-23 — Faculty feedback enters matching; self-reported keywords count more
+**Status:** live
+**Commit:** `ac61e8e` (with `7aa4b3f`)
+**Change:** three things, all sourced from what faculty tell us directly.
+
+1. **Feedback suppression.** New store `seed_data/feedback_verdicts.json`
+   (imported from the Form export by `src/feedback_store.py`). A `self`
+   "Not relevant" on a (person, grant) pair drops that pair — and the same
+   call re-posted under the same title — from every future run, before any
+   scoring. Recorded as `feedback_suppressed`. A footer opt-out click makes
+   the personalised fan-out skip that person even while still enrolled, with a
+   loud log line so the enrolment gets cleaned up.
+2. **Per-person keyword weights from feedback.** The keywords that anchored a
+   rejected keyword/`both` match are multiplied by
+   `feedback.rejected_keyword_multiplier` (0.5) for that person only; a "Good
+   match" multiplies by 1.2. Implemented as a `kw_weights` map passed into
+   `_compute_confidence` per faculty member — nobody without a verdict changes.
+   Only the faculty member's own verdicts apply; admin ratings from the shared
+   digest (`rater=digest`) are stored but not used
+   (`feedback.use_third_party_verdicts: false`).
+3. **Self-reported keywords.** `matching.self_reported_keyword_multiplier: 1.25`
+   on the IDF weight of any keyword in the person's `Faculty Self-Reported`
+   bucket, through the same map. And a new research tier `self` (Eval App
+   keywords, no external footprint) with `research_evidence.self_reported_multiplier: 1.0`
+   instead of the `none` tier's 0.80 — that penalty was about thin evidence, and
+   a faculty member's own description of their work is not thin. The
+   major-mechanism and PI-track-record gates still treat `self` like `none`:
+   those are about PI credibility, not topic.
+
+**Why:** before this, neither source was prioritised. Feedback reached only a
+spreadsheet a human reads; the September 22 verdicts changed matching only
+because a person turned them into a rule. Lucksted's "juvenile justice is not
+for me" is a fact about her, not about the vocabulary, and item 2 is how that
+fact now lands without a config edit. Self-reported keywords were merged (at
+the front, so they survive the embedding cap) but scored like any scraped
+term, and a person with only self-reported keywords was classed "no research
+footprint" and multiplied by 0.80 — the source we trust most was, in that one
+path, penalised.
+
+**Evidence at the time:** 12 Form responses (6 `self`, 6 `digest`; see the
+entry above). Store after import: 6 applied verdicts (5 not relevant, 1 good),
+keyword weights for 5 faculty.
+
+**Expected effect:** the five rejected pairs never recur; those five people
+score lower on the same vocabulary elsewhere and Connors scores higher on
+adolescent-brain terms. Faculty with self-reported keywords move up modestly
+on calls that hit those terms. `keyword_only` at 90+ should not rise.
+
+**#4 — deliberately NOT done: tuning global thresholds from feedback.** Six
+real verdicts is enough to act on per-person facts, nowhere near enough to
+move a floor or a multiplier for 1,300 people. Check back once there are a few
+dozen verdicts per match type; the store's `counts` in the diagnostic
+(`feedback_verdicts_applied`) says when that is.
+
+**Outcome:** *pending.*
+**Verdict:** too early
+
 ### 2026-09-23 — First faculty feedback: NIJ out of the gate, two vocabulary items
 **Status:** live
 **Commit:** `7485c80`
