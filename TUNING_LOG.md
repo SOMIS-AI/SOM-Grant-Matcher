@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-09-22 — Scoring audit: dead stem markers, semantic scale, nested keywords
 **Status:** live
-**Commit:** *(this commit)*
+**Commit:** `e8a41fe`
 **Change:** three scoring defects found by the 2026-09-22 code audit, each
 fixed at the mechanism rather than with a new threshold.
 
