@@ -1110,6 +1110,61 @@ def load_faculty_cache(cache_file: str) -> Optional[dict]:
     return None
 
 
+# ── Scrape checkpoints (2026-09-22) ───────────────────────────────────────────
+# The full scrape is 8 sequential network passes over ~1,300 faculty (hours)
+# and used to write its cache only at the very end. A container restart
+# mid-way — routine on Azure — lost everything, and the next run started over.
+# Each completed pass is now checkpointed to <cache_file>.partial on the same
+# (persistent) mount; a fresh scrape that finds a recent checkpoint resumes
+# from the pass after it. The checkpoint is deleted once the real cache is
+# written, and ignored when older than PARTIAL_MAX_AGE_HOURS.
+
+PARTIAL_MAX_AGE_HOURS = 36
+
+
+def _partial_path(cache_file: str) -> str:
+    return f"{cache_file}.partial"
+
+
+def _save_partial(cache_file: str, all_faculty: list, completed_pass: int, started_at: str) -> None:
+    try:
+        from atomic_io import atomic_write_json
+        atomic_write_json(_partial_path(cache_file), {
+            "started_at":     started_at,
+            "checkpoint_at":  datetime.utcnow().isoformat(),
+            "completed_pass": int(completed_pass),
+            "faculty":        all_faculty,
+        })
+        logger.info(f"Checkpoint: pass {completed_pass} saved ({len(all_faculty)} profiles)")
+    except Exception as e:
+        logger.warning(f"Checkpoint after pass {completed_pass} failed (scrape continues): {e}")
+
+
+def _load_partial(cache_file: str) -> Optional[dict]:
+    p = Path(_partial_path(cache_file))
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        started = datetime.fromisoformat(data.get("started_at", "2000-01-01"))
+        age_h = (datetime.utcnow() - started).total_seconds() / 3600
+        done = int(data.get("completed_pass", 0) or 0)
+        if age_h > PARTIAL_MAX_AGE_HOURS or done < 1 or not data.get("faculty"):
+            logger.info(f"Ignoring scrape checkpoint ({age_h:.1f}h old, pass {done}) — starting fresh")
+            return None
+        return data
+    except Exception as e:
+        logger.warning(f"Could not read scrape checkpoint {p}: {e} — starting fresh")
+        return None
+
+
+def _clear_partial(cache_file: str) -> None:
+    try:
+        Path(_partial_path(cache_file)).unlink(missing_ok=True)
+    except Exception as e:
+        logger.warning(f"Could not remove scrape checkpoint: {e}")
+
+
 def save_faculty_cache(cache_file: str, data: dict):
     # Atomic write: this is the largest state file in the app (1267+ profiles
     # with embeddings, multi-MB on an SMB mount) and therefore the longest
@@ -1214,6 +1269,15 @@ def get_faculty_profiles(config: dict, force: bool = False) -> list[dict]:
     session = requests.Session()
     all_faculty = []
 
+    # Resume from a checkpoint left by an interrupted scrape (see _save_partial).
+    checkpoint  = _load_partial(cache_file)
+    resume_pass = int(checkpoint["completed_pass"]) if checkpoint else 0
+    started_at  = checkpoint["started_at"] if checkpoint else datetime.utcnow().isoformat()
+    if checkpoint:
+        all_faculty = checkpoint["faculty"]
+        logger.info(f"Resuming scrape from checkpoint: passes 1-{resume_pass} already done, "
+                    f"{len(all_faculty)} profiles loaded")
+
     # Auto-discover the current department listing URLs from the live index so
     # the redesign's renamed slugs (e.g. biochemistry, urology) are handled and
     # we don't silently miss whole departments. Falls back to the built-in list.
@@ -1221,176 +1285,204 @@ def get_faculty_profiles(config: dict, force: bool = False) -> list[dict]:
     dept_paths = discover_department_pages(session, index_url) or DEPARTMENT_PAGES
     total = len(dept_paths)
 
-    # ── Pass 1: department listing pages ──────────────────────────────────────
-    logger.info(f"Pass 1/9: Scraping {total} UMSOM department pages...")
-    for i, path in enumerate(dept_paths, 1):
-        url = urljoin(BASE_URL, path)
-        logger.info(f"  Dept {i}/{total}: {url}")
-        fac = scrape_department_page(session, url)
-        all_faculty.extend(fac)
-        time.sleep(0.5)
+    if resume_pass < 1:
+        # ── Pass 1: department listing pages ──────────────────────────────────────
+        logger.info(f"Pass 1/9: Scraping {total} UMSOM department pages...")
+        for i, path in enumerate(dept_paths, 1):
+            url = urljoin(BASE_URL, path)
+            logger.info(f"  Dept {i}/{total}: {url}")
+            fac = scrape_department_page(session, url)
+            all_faculty.extend(fac)
+            time.sleep(0.5)
 
-    all_faculty = deduplicate_faculty(all_faculty)
-    with_kw = sum(1 for f in all_faculty if f.get("keywords"))
-    logger.info(f"Pass 1 complete: {len(all_faculty)} unique faculty, {with_kw} with keywords")
+        all_faculty = deduplicate_faculty(all_faculty)
+        with_kw = sum(1 for f in all_faculty if f.get("keywords"))
+        logger.info(f"Pass 1 complete: {len(all_faculty)} unique faculty, {with_kw} with keywords")
 
-    # ── Roster-drop safety guard ──────────────────────────────────────────────
-    # A transient partial scrape (department pages timing out, a renamed slug that
-    # discovery missed, the site briefly serving an error shell) can return far
-    # fewer faculty than reality. The active-faculty check below marks EVERYONE
-    # absent from this scrape inactive — cutting them off from grant alerts for up
-    # to rescrape_interval_hours. So an implausibly small scrape must not be
-    # trusted to overwrite a good roster: keep the cached roster, mark no one
-    # inactive, and don't save (next run re-scrapes and retries). Compares raw
-    # scraped counts (pre title-exclusion) so the intentional emeritus/adjunct/
-    # volunteer filtering never trips this guard.
-    if cache:
-        prev_active = [f for f in cache.get("faculty", []) if not f.get("inactive")]
-        max_drop = config["faculty"].get("max_roster_drop_pct", 0.15)
-        if prev_active and len(all_faculty) < (1 - max_drop) * len(prev_active):
-            logger.error(
-                f"ROSTER GUARD TRIPPED: fresh scrape found only {len(all_faculty)} "
-                f"faculty vs {len(prev_active)} active in cache "
-                f"(drop > {max_drop:.0%}). Treating this as a partial scrape failure "
-                f"— keeping the cached roster, marking no one inactive, not saving. "
-                f"Next run will retry. Investigate department-page scraping/discovery."
-            )
-            return _apply_title_exclusions(
-                prev_active,
-                config["faculty"].get("excluded_title_patterns", []),
-                config["faculty"].get("excluded_employment_statuses", []),
-                config["faculty"].get("excluded_emp_types", []),
-            )
+        # ── Roster-drop safety guard ──────────────────────────────────────────────
+        # A transient partial scrape (department pages timing out, a renamed slug that
+        # discovery missed, the site briefly serving an error shell) can return far
+        # fewer faculty than reality. The active-faculty check below marks EVERYONE
+        # absent from this scrape inactive — cutting them off from grant alerts for up
+        # to rescrape_interval_hours. So an implausibly small scrape must not be
+        # trusted to overwrite a good roster: keep the cached roster, mark no one
+        # inactive, and don't save (next run re-scrapes and retries). Compares raw
+        # scraped counts (pre title-exclusion) so the intentional emeritus/adjunct/
+        # volunteer filtering never trips this guard.
+        if cache:
+            prev_active = [f for f in cache.get("faculty", []) if not f.get("inactive")]
+            max_drop = config["faculty"].get("max_roster_drop_pct", 0.15)
+            if prev_active and len(all_faculty) < (1 - max_drop) * len(prev_active):
+                logger.error(
+                    f"ROSTER GUARD TRIPPED: fresh scrape found only {len(all_faculty)} "
+                    f"faculty vs {len(prev_active)} active in cache "
+                    f"(drop > {max_drop:.0%}). Treating this as a partial scrape failure "
+                    f"— keeping the cached roster, marking no one inactive, not saving. "
+                    f"Next run will retry. Investigate department-page scraping/discovery."
+                )
+                return _apply_title_exclusions(
+                    prev_active,
+                    config["faculty"].get("excluded_title_patterns", []),
+                    config["faculty"].get("excluded_employment_statuses", []),
+                    config["faculty"].get("excluded_emp_types", []),
+                )
 
-    # ── Active faculty check: compare against previous cache ─────────────────
-    # Anyone in the previous cache but NOT in this scrape is marked inactive.
-    # This prevents departed faculty from receiving grant alerts.
-    current_names = {f["name"].lower().strip() for f in all_faculty}
-    current_emails = {f["email"].lower().strip() for f in all_faculty if f.get("email")}
-    if cache:
-        prev_faculty = cache.get("faculty", [])
-        reactivated = 0
-        departed = 0
-        for prev in prev_faculty:
-            prev_name = prev.get("name", "").lower().strip()
-            prev_email = prev.get("email", "").lower().strip()
-            in_current = (prev_name in current_names) or (prev_email and prev_email in current_emails)
-            if not in_current:
-                # Mark as inactive — preserve enrichment data but exclude from matching
-                prev["inactive"] = True
-                prev["inactive_since"] = datetime.utcnow().isoformat()
-                all_faculty.append(prev)
-                departed += 1
-            else:
-                reactivated += 1
-        if departed:
-            logger.info(f"Active faculty check: {departed} faculty marked inactive (not in current scrape), "
-                        f"{len(current_names)} active")
-    logger.info(f"Total profiles tracked: {len(all_faculty)} ({len(current_names)} active)")
+        # ── Active faculty check: compare against previous cache ─────────────────
+        # Anyone in the previous cache but NOT in this scrape is marked inactive.
+        # This prevents departed faculty from receiving grant alerts.
+        current_names = {f["name"].lower().strip() for f in all_faculty}
+        current_emails = {f["email"].lower().strip() for f in all_faculty if f.get("email")}
+        if cache:
+            prev_faculty = cache.get("faculty", [])
+            reactivated = 0
+            departed = 0
+            for prev in prev_faculty:
+                prev_name = prev.get("name", "").lower().strip()
+                prev_email = prev.get("email", "").lower().strip()
+                in_current = (prev_name in current_names) or (prev_email and prev_email in current_emails)
+                if not in_current:
+                    # Mark as inactive — preserve enrichment data but exclude from matching
+                    prev["inactive"] = True
+                    prev["inactive_since"] = datetime.utcnow().isoformat()
+                    all_faculty.append(prev)
+                    departed += 1
+                else:
+                    reactivated += 1
+            if departed:
+                logger.info(f"Active faculty check: {departed} faculty marked inactive (not in current scrape), "
+                            f"{len(current_names)} active")
+        logger.info(f"Total profiles tracked: {len(all_faculty)} ({len(current_names)} active)")
 
-    # Title-based exclusion (emeritus, adjunct, visiting, postdoc, research-associate).
-    # Marks excluded faculty in place with excluded_from_matching=True so the marks
-    # persist via the cache save and so the dashboard can show their status;
-    # subsequent enrichment passes skip them (saves thousands of API calls).
-    _apply_title_exclusions(
-        all_faculty,
-        config["faculty"].get("excluded_title_patterns", []),
-        config["faculty"].get("excluded_employment_statuses", []),
-        config["faculty"].get("excluded_emp_types", []),
-    )
+        # Title-based exclusion (emeritus, adjunct, visiting, postdoc, research-associate).
+        # Marks excluded faculty in place with excluded_from_matching=True so the marks
+        # persist via the cache save and so the dashboard can show their status;
+        # subsequent enrichment passes skip them (saves thousands of API calls).
+        _apply_title_exclusions(
+            all_faculty,
+            config["faculty"].get("excluded_title_patterns", []),
+            config["faculty"].get("excluded_employment_statuses", []),
+            config["faculty"].get("excluded_emp_types", []),
+        )
 
-    # ── Pass 2: individual UMSOM profile pages (Research Interests extraction) ──
-    # Runs on ALL active, non-excluded faculty — not just those missing keywords.
-    # For faculty who already have keywords from Pass 1, the Research Interests
-    # section is MERGED in as additional high-quality keywords.
-    # For faculty with no keywords at all, this is their first enrichment opportunity.
-    active_with_url = [f for f in all_faculty
-                       if not f.get("inactive")
-                       and not f.get("excluded_from_matching")
-                       and (f.get("profile_url") or f.get("url","").startswith("http"))]
-    logger.info(f"Pass 2/9: Visiting {len(active_with_url)} individual UMSOM profiles "
-                f"(Research Interests extraction)...")
-    for i, fac in enumerate(active_with_url, 1):
-        if i % 100 == 0:
-            logger.info(f"  Profile scrape: {i}/{len(active_with_url)}")
-        scrape_individual_profile(session, fac)
-        time.sleep(0.3)
+        _save_partial(cache_file, all_faculty, 1, started_at)
 
-    with_kw = sum(1 for f in all_faculty if not f.get("inactive") and f.get("keywords"))
-    still_missing = sum(1 for f in all_faculty if not f.get("inactive") and not f.get("keywords"))
-    ri_sourced = sum(1 for f in all_faculty
-                     if not f.get("inactive")
-                     and "umsom_research_interests" in f.get("keyword_source", ""))
-    logger.info(f"Pass 2 complete: {with_kw} with keywords, {still_missing} still missing, "
-                f"{ri_sourced} enriched from Research Interests section")
-
-    # ── Pass 3: PubMed enrichment (ALL active, non-excluded faculty) ──────────
+    # Derived once here so a resumed run (which skips passes) still has it.
     active_faculty = [f for f in all_faculty
                       if not f.get("inactive") and not f.get("excluded_from_matching")]
-    logger.info(f"Pass 3/9: PubMed enrichment for all {len(active_faculty)} active faculty...")
-    for i, fac in enumerate(active_faculty, 1):
-        if i % 100 == 0:
-            logger.info(f"  PubMed progress: {i}/{len(active_faculty)}")
-        enrich_from_pubmed(session, fac)
-        time.sleep(0.4)  # NCBI rate limit: max 3 req/sec without API key
 
-    with_kw = sum(1 for f in active_faculty if f.get("keywords"))
-    logger.info(f"Pass 3 complete: {with_kw}/{len(active_faculty)} active faculty now have keywords")
+    if resume_pass < 2:
+        # ── Pass 2: individual UMSOM profile pages (Research Interests extraction) ──
+        # Runs on ALL active, non-excluded faculty — not just those missing keywords.
+        # For faculty who already have keywords from Pass 1, the Research Interests
+        # section is MERGED in as additional high-quality keywords.
+        # For faculty with no keywords at all, this is their first enrichment opportunity.
+        active_with_url = [f for f in all_faculty
+                           if not f.get("inactive")
+                           and not f.get("excluded_from_matching")
+                           and (f.get("profile_url") or f.get("url","").startswith("http"))]
+        logger.info(f"Pass 2/9: Visiting {len(active_with_url)} individual UMSOM profiles "
+                    f"(Research Interests extraction)...")
+        for i, fac in enumerate(active_with_url, 1):
+            if i % 100 == 0:
+                logger.info(f"  Profile scrape: {i}/{len(active_with_url)}")
+            scrape_individual_profile(session, fac)
+            time.sleep(0.3)
 
-    # ── Pass 4: NIH RePORTER enrichment (ALL active faculty) ─────────────────
-    logger.info(f"Pass 4/9: NIH RePORTER keyword enrichment for all {len(active_faculty)} active faculty...")
-    for i, fac in enumerate(active_faculty, 1):
-        if i % 50 == 0:
-            logger.info(f"  NIH RePORTER progress: {i}/{len(active_faculty)}")
-        enrich_from_nih_reporter(session, fac)
-        time.sleep(0.5)
+        with_kw = sum(1 for f in all_faculty if not f.get("inactive") and f.get("keywords"))
+        still_missing = sum(1 for f in all_faculty if not f.get("inactive") and not f.get("keywords"))
+        ri_sourced = sum(1 for f in all_faculty
+                         if not f.get("inactive")
+                         and "umsom_research_interests" in f.get("keyword_source", ""))
+        logger.info(f"Pass 2 complete: {with_kw} with keywords, {still_missing} still missing, "
+                    f"{ri_sourced} enriched from Research Interests section")
 
-    with_kw = sum(1 for f in active_faculty if f.get("keywords"))
-    logger.info(f"Pass 4 complete: {with_kw}/{len(active_faculty)} active faculty now have keywords")
+        _save_partial(cache_file, all_faculty, 2, started_at)
 
-    # ── Pass 5: ORCID enrichment (ALL active faculty) ─────────────────────────
-    logger.info(f"Pass 5/9: ORCID enrichment for all {len(active_faculty)} active faculty...")
-    for i, fac in enumerate(active_faculty, 1):
-        if i % 50 == 0:
-            logger.info(f"  ORCID progress: {i}/{len(active_faculty)}")
-        enrich_from_orcid(session, fac)
-        time.sleep(0.5)
+    if resume_pass < 3:
+        # ── Pass 3: PubMed enrichment (ALL active, non-excluded faculty) ──────────
+        active_faculty = [f for f in all_faculty
+                          if not f.get("inactive") and not f.get("excluded_from_matching")]
+        logger.info(f"Pass 3/9: PubMed enrichment for all {len(active_faculty)} active faculty...")
+        for i, fac in enumerate(active_faculty, 1):
+            if i % 100 == 0:
+                logger.info(f"  PubMed progress: {i}/{len(active_faculty)}")
+            enrich_from_pubmed(session, fac)
+            time.sleep(0.4)  # NCBI rate limit: max 3 req/sec without API key
 
-    with_kw = sum(1 for f in active_faculty if f.get("keywords"))
-    logger.info(f"Pass 5 complete: {with_kw}/{len(active_faculty)} active faculty now have keywords")
+        with_kw = sum(1 for f in active_faculty if f.get("keywords"))
+        logger.info(f"Pass 3 complete: {with_kw}/{len(active_faculty)} active faculty now have keywords")
 
-    # ── Pass 6: Semantic Scholar enrichment (ALL active faculty) ──────────────
-    logger.info(f"Pass 6/9: Semantic Scholar enrichment for all {len(active_faculty)} active faculty...")
-    for i, fac in enumerate(active_faculty, 1):
-        if i % 50 == 0:
-            logger.info(f"  Semantic Scholar progress: {i}/{len(active_faculty)}")
-        enrich_from_semantic_scholar(session, fac)
-        time.sleep(1.0)  # S2 free tier: 1 req/sec
+        _save_partial(cache_file, all_faculty, 3, started_at)
 
-    with_kw = sum(1 for f in active_faculty if f.get("keywords"))
-    logger.info(f"Pass 6 complete: {with_kw}/{len(active_faculty)} active faculty now have keywords")
+    if resume_pass < 4:
+        # ── Pass 4: NIH RePORTER enrichment (ALL active faculty) ─────────────────
+        logger.info(f"Pass 4/9: NIH RePORTER keyword enrichment for all {len(active_faculty)} active faculty...")
+        for i, fac in enumerate(active_faculty, 1):
+            if i % 50 == 0:
+                logger.info(f"  NIH RePORTER progress: {i}/{len(active_faculty)}")
+            enrich_from_nih_reporter(session, fac)
+            time.sleep(0.5)
 
-    # ── Pass 7: ClinicalTrials.gov (ALL active faculty) ───────────────────────
-    logger.info(f"Pass 7/9: ClinicalTrials.gov enrichment for all {len(active_faculty)} active faculty...")
-    for i, fac in enumerate(active_faculty, 1):
-        if i % 50 == 0:
-            logger.info(f"  ClinicalTrials progress: {i}/{len(active_faculty)}")
-        enrich_from_clinicaltrials(session, fac)
-        time.sleep(0.4)
+        with_kw = sum(1 for f in active_faculty if f.get("keywords"))
+        logger.info(f"Pass 4 complete: {with_kw}/{len(active_faculty)} active faculty now have keywords")
 
-    with_kw = sum(1 for f in active_faculty if f.get("keywords"))
-    logger.info(f"Pass 7 complete: {with_kw}/{len(active_faculty)} active faculty now have keywords")
+        _save_partial(cache_file, all_faculty, 4, started_at)
 
-    # ── Pass 8: Europe PMC (ALL active faculty) ───────────────────────────────
-    logger.info(f"Pass 8/9: Europe PMC enrichment for all {len(active_faculty)} active faculty...")
-    for i, fac in enumerate(active_faculty, 1):
-        if i % 100 == 0:
-            logger.info(f"  Europe PMC progress: {i}/{len(active_faculty)}")
-        enrich_from_europe_pmc(session, fac)
-        time.sleep(0.5)
+    if resume_pass < 5:
+        # ── Pass 5: ORCID enrichment (ALL active faculty) ─────────────────────────
+        logger.info(f"Pass 5/9: ORCID enrichment for all {len(active_faculty)} active faculty...")
+        for i, fac in enumerate(active_faculty, 1):
+            if i % 50 == 0:
+                logger.info(f"  ORCID progress: {i}/{len(active_faculty)}")
+            enrich_from_orcid(session, fac)
+            time.sleep(0.5)
 
-    with_kw = sum(1 for f in active_faculty if f.get("keywords"))
-    logger.info(f"Pass 8 complete: {with_kw}/{len(active_faculty)} active faculty now have keywords")
+        with_kw = sum(1 for f in active_faculty if f.get("keywords"))
+        logger.info(f"Pass 5 complete: {with_kw}/{len(active_faculty)} active faculty now have keywords")
+
+        _save_partial(cache_file, all_faculty, 5, started_at)
+
+    if resume_pass < 6:
+        # ── Pass 6: Semantic Scholar enrichment (ALL active faculty) ──────────────
+        logger.info(f"Pass 6/9: Semantic Scholar enrichment for all {len(active_faculty)} active faculty...")
+        for i, fac in enumerate(active_faculty, 1):
+            if i % 50 == 0:
+                logger.info(f"  Semantic Scholar progress: {i}/{len(active_faculty)}")
+            enrich_from_semantic_scholar(session, fac)
+            time.sleep(1.0)  # S2 free tier: 1 req/sec
+
+        with_kw = sum(1 for f in active_faculty if f.get("keywords"))
+        logger.info(f"Pass 6 complete: {with_kw}/{len(active_faculty)} active faculty now have keywords")
+
+        _save_partial(cache_file, all_faculty, 6, started_at)
+
+    if resume_pass < 7:
+        # ── Pass 7: ClinicalTrials.gov (ALL active faculty) ───────────────────────
+        logger.info(f"Pass 7/9: ClinicalTrials.gov enrichment for all {len(active_faculty)} active faculty...")
+        for i, fac in enumerate(active_faculty, 1):
+            if i % 50 == 0:
+                logger.info(f"  ClinicalTrials progress: {i}/{len(active_faculty)}")
+            enrich_from_clinicaltrials(session, fac)
+            time.sleep(0.4)
+
+        with_kw = sum(1 for f in active_faculty if f.get("keywords"))
+        logger.info(f"Pass 7 complete: {with_kw}/{len(active_faculty)} active faculty now have keywords")
+
+        _save_partial(cache_file, all_faculty, 7, started_at)
+
+    if resume_pass < 8:
+        # ── Pass 8: Europe PMC (ALL active faculty) ───────────────────────────────
+        logger.info(f"Pass 8/9: Europe PMC enrichment for all {len(active_faculty)} active faculty...")
+        for i, fac in enumerate(active_faculty, 1):
+            if i % 100 == 0:
+                logger.info(f"  Europe PMC progress: {i}/{len(active_faculty)}")
+            enrich_from_europe_pmc(session, fac)
+            time.sleep(0.5)
+
+        with_kw = sum(1 for f in active_faculty if f.get("keywords"))
+        logger.info(f"Pass 8 complete: {with_kw}/{len(active_faculty)} active faculty now have keywords")
+
+        _save_partial(cache_file, all_faculty, 8, started_at)
 
     # ── Pass 8b: Faculty self-reported keywords (from Eval App campaign) ──────
     # Reads data/eval_app_keywords.json (accumulated from spreadsheets dropped
@@ -1520,6 +1612,7 @@ def get_faculty_profiles(config: dict, force: bool = False) -> list[dict]:
         "faculty": all_faculty  # store all including inactive (with inactive flag)
     }
     save_faculty_cache(cache_file, cache_data)
+    _clear_partial(cache_file)
     return active_faculty  # only return active faculty for matching
 
 

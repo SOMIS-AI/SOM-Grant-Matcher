@@ -32,7 +32,7 @@ import yaml
 # Add src/ to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from faculty_scraper import get_faculty_profiles
+from faculty_scraper import get_faculty_profiles, load_faculty_cache, _apply_title_exclusions
 from grants_poller import fetch_new_grants, fetch_all_sources, commit_seen_grants
 from matcher import find_matches, get_last_diagnostic, load_recent_matched_results
 from emailer import (
@@ -164,8 +164,24 @@ def run_pipeline(config: dict, force_scrape: bool = False):
     try:
         faculty = get_faculty_profiles(config, force=force_scrape)
     except Exception as e:
+        # 2026-09-22: a scrape failure used to abort the whole run — no
+        # matching, no email that day, and the same stale cache triggered the
+        # same full scrape (and often the same failure) the next morning.
+        # Match against the last good roster instead; the scrape retries next
+        # run, resuming from its checkpoint.
         logger.error(f"Faculty scraping failed: {e}", exc_info=True)
-        return None
+        faculty = _cached_faculty_fallback(config)
+        if not faculty:
+            return None
+        logger.warning(f"  Using the last good faculty cache ({len(faculty)} active) for this run")
+        try:
+            send_failure_alert(
+                config, "faculty_scrape_failed",
+                f"{type(e).__name__}: {e}. Matched against the cached roster "
+                f"({len(faculty)} active faculty) instead; the scrape will retry next run.",
+            )
+        except Exception:
+            pass
 
     if not faculty:
         logger.warning("No faculty profiles loaded. Skipping run.")
@@ -626,6 +642,23 @@ def run_personalized_digests(config: dict, days: int = 7, cadence: str = "weekly
         + ("  ⚠ budget exhausted" if stats["budget_exhausted"] else "")
     )
     _alert_partial_send_failures(config, stats, cadence)
+
+
+def _cached_faculty_fallback(config: dict) -> list:
+    """Active, non-excluded faculty from the last saved cache, or []."""
+    try:
+        cache = load_faculty_cache(config["faculty"]["cache_file"])
+    except Exception:
+        cache = None
+    if not cache or not cache.get("faculty"):
+        return []
+    active = [f for f in cache["faculty"] if not f.get("inactive")]
+    return _apply_title_exclusions(
+        active,
+        config["faculty"].get("excluded_title_patterns", []),
+        config["faculty"].get("excluded_employment_statuses", []),
+        config["faculty"].get("excluded_emp_types", []),
+    )
 
 
 def _match_field(m, field: str, default=""):
