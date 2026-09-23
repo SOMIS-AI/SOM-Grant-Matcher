@@ -69,6 +69,52 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-09-23 — First faculty feedback: NIJ out of the gate, two vocabulary items
+**Status:** live
+**Commit:** *(this commit)*
+**Change:** `corroboration_required_agencies` drops `national institute of
+justice` (BJA, OJJDP, OVC, OVW, COPS and "department of justice" stay).
+`context_dependent_terms` += `real-world effectiveness`, `real world
+effectiveness`, `farmers`, `farmer`, `ranchers`.
+
+**Why:** the first feedback-form export (12 rows to 2026-09-23). Six are real
+`self` verdicts from the 09-22 personalised digests; the other six were placed
+from the shared admin digest (one says "test") and are third-party reads.
+
+```
+Polster      BJA Veterans Justice        59  keyword   Not relevant
+Faw          BJA Veterans Justice        99  keyword   Not relevant
+Mayer        BJA Veterans Justice        99  keyword   Not relevant  "I'm doing MRI research"
+Lucksted     OJJDP Juvenile Drug Court   50  keyword   Not relevant  "no track record re juvenile justice"
+Fitzpatrick  NIH rapid-acting psychotrop 62  keyword   Not relevant  "I don't work on psychotropic drugs"
+Connors      NIJ Adolescent Brain (ABCD) 99  keyword   Good match
+```
+
+Four of the five complaints are the BJA/OJJDP flood the 09-22 gate was built
+for, and the two 99% rows are the nested "brain / brain injury / traumatic
+brain / traumatic brain injury" set the same day's collapse fix counts once.
+The gate as shipped would also have removed the single confirmed good match,
+because NIJ was on the list. NIJ funds research (it is DOJ's research arm);
+the 09-18 NIJ call had `both` on half its deliveries. Removed.
+
+Fitzpatrick matched on the lone phrase "Real-world effectiveness" — a study
+design, not a topic; "effectiveness" alone was already a stop word but the
+hyphenated phrase survived as its own keyword. Barry (admin-digest verdict,
+09-05) matched a veteran-farmers outreach call on "agriculture, farmers";
+"agriculture" was demoted on 08-22, "farmers" was not.
+
+**Also noted, not changed:** Connors' keyword list carries "the adolescent" and
+"the adolescent brain" — profile keywords are stored with a leading article.
+Harmless since nested variants collapse, but the keyword cleaner is not
+stripping leading stop words. Response rate 6 of 131 delivered rows (~5%).
+Three 99% rows were rated and two were wrong: the top of the scale was not
+separating good from bad, which is what the collapse fix targets.
+
+**Expected effect:** NIJ calls deliver as before the gate; the two phrases stop
+anchoring on their own. Nothing else moves.
+**Outcome:** *pending — next feedback export.*
+**Verdict:** too early
+
 ### 2026-09-22 — Scoring audit: dead stem markers, semantic scale, nested keywords
 **Status:** live
 **Commit:** `e8a41fe`
@@ -227,7 +273,7 @@ BJA/OJJDP release pattern makes likely.
   `impact` is the surviving anchor. Left for now; one row.
 - NIJ is in the gate list although it does fund real research (the 09-18 ABCD
   call delivered 6, 3 of them `both`). Those three survive; the keyword-only
-  three would not. Watch this.
+  three would not. Watch this. *(Removed the next day — see 2026-09-23.)*
 
 **Expected effect:** on DOJ-heavy mornings, delivered count falls by an order of
 magnitude and `keyword_only` on DOJ agencies goes to zero; `both` on those

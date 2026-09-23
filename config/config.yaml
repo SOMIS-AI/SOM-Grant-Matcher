@@ -253,7 +253,11 @@ matching:
   corroboration_required_agencies:
     - "bureau of justice assistance"
     - "office of juvenile justice"
-    - "national institute of justice"
+    # NIJ deliberately NOT listed (removed 2026-09-23). It is DOJ's research
+    # arm, not a programme office: the one confirmed "Good match" in the first
+    # faculty feedback (Connors, NIJ Adolescent Brain Cognitive Development,
+    # keyword-only 99%) would have been gated, and the 09-18 NIJ call had
+    # semantic support on half its deliveries. BJA/OJJDP stay gated.
     - "office for victims of crime"
     - "office on violence against women"
     - "community oriented policing"
@@ -395,6 +399,19 @@ matching:
     - "challenges"
     - "opportunities"
     - "history"
+    # ── 2026-09-23 additions (first faculty feedback, 09-22 digests) ────────
+    # "Real-world effectiveness" alone put a Medicine faculty on an NIH
+    # rapid-acting-psychotropics call at 62%; she replied that she does not
+    # work on psychotropic drugs. It names a study design, not a topic (the
+    # bare word "effectiveness" was already a stop word; the hyphenated phrase
+    # survived as its own keyword). "farmers"/"ranchers": "agriculture, farmers"
+    # put an epidemiologist on a USDA veteran-farmers outreach call at 65% —
+    # "agriculture" was demoted on 08-22, its companion was not.
+    - "real-world effectiveness"
+    - "real world effectiveness"
+    - "farmers"
+    - "farmer"
+    - "ranchers"
 
   # ── Research track-record signal (Theme 2, 2026-06-23) ────────────────────
   # Weight a match by the faculty member's external publication/grant footprint,
