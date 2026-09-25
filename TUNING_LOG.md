@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-09-25 — Generic-evidence guard on semantic-only matches
 **Status:** live
-**Commit:** *(this commit)*
+**Commit:** `2421151`
 **Change:** new `matching.semantic_generic_guard`, two rules. (a) After the
 "≈ term" evidence is generated for a delivered semantic-only match, if every
 evidence term is in `generic_terms` (or is an erratum/correction title), the
