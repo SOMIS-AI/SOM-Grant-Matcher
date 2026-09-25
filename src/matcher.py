@@ -886,6 +886,52 @@ def _faculty_is_basic_only(faculty: dict, cb) -> bool:
 # "kidney disease ≠ kidney cancer" confusion that publication-enriched embeddings
 # reintroduce on the semantic channel. Keyword/"both" matches are never guarded.
 
+def _compile_semantic_generic_guard(cfg: dict):
+    """Compile matching.semantic_generic_guard. Returns None when disabled."""
+    cfg = cfg or {}
+    if not cfg.get("enabled"):
+        return None
+    terms = {normalize(t).strip() for t in (cfg.get("generic_terms") or []) if str(t).strip()}
+    prefixes = tuple(normalize(t).strip() for t in (cfg.get("ignore_evidence_prefixes") or []) if str(t).strip())
+    topicless = []
+    for pat in (cfg.get("topicless_grant_patterns") or []):
+        try:
+            topicless.append(re.compile(pat, re.IGNORECASE))
+        except re.error as e:
+            logger.warning(f"Bad semantic_generic_guard.topicless_grant_patterns regex {pat!r}: {e}")
+    if not terms and not topicless:
+        return None
+    return {"terms": terms, "ignore_prefixes": prefixes, "topicless": topicless,
+            "demote": float(cfg.get("demote_multiplier", 0.4))}
+
+
+def _grant_is_topicless(grant: dict, guard) -> bool:
+    """True for mechanisms that have no research topic to match on (book and
+    conference grants, supplements, loan repayment): a semantic-only match on
+    one of these is never evidence of fit, whatever the faculty's terms."""
+    if not guard or not guard.get("topicless"):
+        return False
+    hay = f"{grant.get('title', '')} {grant.get('number', '')}"
+    return any(rx.search(hay) for rx in guard["topicless"])
+
+
+def _evidence_is_generic(evidence: list, guard: dict) -> bool:
+    """True when a semantic-only match's evidence terms say nothing topical:
+    every term is in the generic list, or is an erratum/correction title, or
+    there is no evidence at all."""
+    if not guard:
+        return False
+    specific = 0
+    for t in evidence or []:
+        n = normalize(str(t)).strip()
+        if not n:
+            continue
+        if n in guard["terms"] or n.startswith(guard["ignore_prefixes"]):
+            continue
+        specific += 1
+    return specific == 0
+
+
 def _compile_semantic_concept_guard(cfg: dict):
     """Compile matching.semantic_concept_guard into compiled regex groups.
     Returns None when disabled/empty."""
@@ -1118,6 +1164,38 @@ def _merge_match_dicts(keyword_matches, semantic_matches, idf_table,
 
 # -- Main entry point ---------------------------------------------------------
 
+def _fill_semantic_evidence(all_matches, grant, faculty_by_name, evidence_fn,
+                            generic_guard=None, min_sem_conf=None,
+                            grant_topicless=False):
+    """
+    Fill the "≈ term" evidence on semantic-only matches and apply the
+    generic-evidence guard (2026-09-25): when every evidence term is generic
+    academic vocabulary, confidence is multiplied by guard["demote"]; a match
+    that then falls under the semantic floor is dropped. Keyword and "both"
+    matches are untouched — they are lexically grounded.
+
+    Returns (matches, guarded) where guarded is [(faculty_name, original
+    confidence, evidence_terms)] for the diagnostic.
+    """
+    out, guarded = [], []
+    for m in all_matches:
+        if m.match_type != "semantic" or m.matched_keywords:
+            out.append(m)
+            continue
+        fac = faculty_by_name.get(m.faculty_name)
+        ev = evidence_fn(grant, fac) if fac else []
+        if ev:
+            m = m._replace(matched_keywords=[f"≈ {t}" for t in ev])
+        if generic_guard and (grant_topicless or _evidence_is_generic(ev, generic_guard)):
+            guarded.append((m.faculty_name, m.confidence_score, list(ev)))
+            new_conf = max(int(round(m.confidence_score * generic_guard["demote"])), 0)
+            if min_sem_conf is not None and new_conf < min_sem_conf:
+                continue                       # dropped from delivery
+            m = m._replace(confidence_score=new_conf)
+        out.append(m)
+    return out, guarded
+
+
 def _type_rank(m) -> int:
     """Sort helper: agreement first, then keyword, then semantic-only."""
     return 0 if m.match_type == "both" else (1 if m.match_type == "keyword" else 2)
@@ -1262,6 +1340,13 @@ def find_matches(grants, faculty, config=None):
     )
     concept_guarded_total = 0
     corroboration_gated_total = 0
+    # Generic-evidence guard (2026-09-25): a semantic-only match whose closest
+    # profile terms are all generic academic vocabulary ("biomedical research",
+    # "clinical trials") has no topical basis. See TUNING_LOG 2026-09-25.
+    generic_guard = _compile_semantic_generic_guard(
+        matching_cfg.get("semantic_generic_guard", {})
+    )
+    generic_guarded_total = 0
     if concept_guard:
         logger.info(
             f"Semantic concept guard: {len(concept_guard['groups'])} group(s) active "
@@ -1319,6 +1404,7 @@ def find_matches(grants, faculty, config=None):
         # the grant is about a distinctive concept (e.g. cancer) the faculty shows
         # no evidence of — the kidney-disease-vs-kidney-cancer confusion.
         "semantic_concept_guarded": [],     # {grant_title, group, count, sample:[faculty]}
+        "semantic_generic_guarded": [],     # semantic-only matches whose evidence was all generic
         # Detailed audit lists for grants that were skipped before matching.
         # Counts are in summary.grants_skipped_*; these lists let us go back
         # and verify whether the filters dropped anything that should have
@@ -1842,14 +1928,20 @@ def find_matches(grants, faculty, config=None):
         if sem_enabled and sim_by_name:
             try:
                 from embedder import semantic_evidence
-                for i, m in enumerate(all_matches):
-                    if m.match_type == "semantic" and not m.matched_keywords:
-                        fac = faculty_by_name.get(m.faculty_name)
-                        ev = semantic_evidence(grant, fac) if fac else []
-                        if ev:
-                            all_matches[i] = m._replace(
-                                matched_keywords=[f"≈ {t}" for t in ev]
-                            )
+                topicless = _grant_is_topicless(grant, generic_guard)
+                all_matches, guarded_here = _fill_semantic_evidence(
+                    all_matches, grant, faculty_by_name, semantic_evidence,
+                    generic_guard, min_sem_conf, grant_topicless=topicless,
+                )
+                if guarded_here:
+                    generic_guarded_total += len(guarded_here)
+                    _diag["semantic_generic_guarded"].append({
+                        "grant_title": grant["title"][:80],
+                        "reason":      "topic-less mechanism" if topicless else "generic evidence",
+                        "count":       len(guarded_here),
+                        "sample":      [f"{n} ({c}%: {', '.join(ev[:3])})"
+                                        for n, c, ev in guarded_here[:8]],
+                    })
             except Exception as e:
                 logger.warning(f"semantic evidence generation failed: {e}")
 
@@ -1938,6 +2030,8 @@ def find_matches(grants, faculty, config=None):
         logger.info(f"  {concept_guarded_total} semantic matches demoted — distinctive-concept guard (e.g. kidney-disease vs cancer)")
     if corroboration_gated_total:
         logger.info(f"  {corroboration_gated_total} keyword-only matches dropped — agency requires semantic corroboration")
+    if generic_guarded_total:
+        logger.info(f"  {generic_guarded_total} semantic-only matches demoted — evidence was all generic vocabulary")
     if feedback_suppressed_total:
         logger.info(f"  {feedback_suppressed_total} matches suppressed — faculty rated the pair Not relevant")
     if faculty_capped_total:
@@ -1971,6 +2065,7 @@ def find_matches(grants, faculty, config=None):
         "corroboration_gated": corroboration_gated_total,
         "faculty_capped": faculty_capped_total,
         "feedback_suppressed": feedback_suppressed_total,
+        "semantic_generic_guarded": generic_guarded_total,
         "keyword_only": kw_only,
         "semantic_only": sem_only,
         "both": both,

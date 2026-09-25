@@ -300,6 +300,7 @@ def run_pipeline(config: dict, force_scrape: bool = False):
             "semantic_score_distributions": [], "confidence_histograms": [],
             "grants_capped": [], "idf_filtered_keywords": [],
             "corroboration_gated": [], "faculty_capped": [], "feedback_suppressed": [],
+            "semantic_generic_guarded": [],
         }
         return [], empty_diag, scraper_health
     logger.info(f"  ✓ {len(new_grants)} new grants retrieved from all sources")

@@ -69,6 +69,58 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-09-25 — Generic-evidence guard on semantic-only matches
+**Status:** live
+**Commit:** *(this commit)*
+**Change:** new `matching.semantic_generic_guard`, two rules. (a) After the
+"≈ term" evidence is generated for a delivered semantic-only match, if every
+evidence term is in `generic_terms` (or is an erratum/correction title), the
+match is guarded. (b) If the grant itself matches `topicless_grant_patterns`
+(G13 scholarly works, R13/U13 conference grants, supplements, loan repayment,
+SBIR/STTR), every semantic-only match on it is guarded. Guarded = confidence
+× `demote_multiplier` (0.4), dropped when that falls under
+`min_semantic_confidence`. Keyword and `both` matches are untouched.
+Recorded as `semantic_generic_guarded` (per grant, with the evidence) and in
+the summary.
+
+**Why:** the 09-22 semantic-scale fix reopened the channel — 18 semantic-only
+deliveries on 09-25 after weeks of 0-1 — and the first day showed both edges
+of it. The good edge: HIV implementation science to Claassen, Riedel, Tepper,
+Lavoie, Kattakuzhy; diagnostics to Morgan on "diagnostic stewardship". The bad
+edge: the NLM G13 "Scholarly Works in Biomedicine and Health" award — a grant
+for writing books, with no topic — drew 7 faculty at 50-62% on evidence such
+as "biomedical research", "clinical trials as topic", "medical education",
+"national institutes of health (u.s.)", plus one on the title of an erratum.
+Nothing in the score separates those from the HIV rows (50-70%), but the
+evidence does: the HIV rows are explained by "HIV implementation science",
+"hiv care", "HIV prevention"; the G13 rows by words that describe every
+faculty member at a medical school.
+
+Same shape as the concept guard: judge the semantic match by whether the
+faculty text shows something specific, not by its cosine. Applied only where
+the evidence exists (delivered rows), so it costs no extra embedding calls.
+
+**Measured before choosing the rules:** the evidence rule alone caught 1 of
+the 7 G13 rows (Keller: "clinical trials as topic, fellowships and
+scholarships, clinical trial endpoints"). The other six carried genuinely
+specific terms — "pharmacogenomics", "metagenomics", "therapeutic alliance" —
+that describe the person perfectly and the award not at all, because the
+award has no topic. So the second rule keys on the mechanism, not the
+evidence; without it the guard would have been cosmetic.
+
+**Replayed on 09-25:** 7 of 7 G13 rows guarded (1 by evidence, 6 by
+mechanism); 0 of the 18 other semantic-only rows. Delivered would have been
+25 instead of 32.
+
+**Expected effect:** semantic-only deliveries on topic-less mechanisms
+(G13, training/fellowship program announcements, institutional awards) fall to
+zero; topical semantic deliveries unchanged. Watch `semantic_generic_guarded`
+for any grant where it fires on more than a handful — that is the signal a
+term in the list is too broad.
+
+**Outcome:** *pending.*
+**Verdict:** too early
+
 ### 2026-09-23 — Faculty feedback enters matching; self-reported keywords count more
 **Status:** live
 **Commit:** `ac61e8e` (with `7aa4b3f`)

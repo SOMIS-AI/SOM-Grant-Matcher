@@ -297,6 +297,78 @@ matching:
   # evidence_markers are what the faculty must show to be a credible semantic match.
   # Markers are matched as PREFIXES at a word start ("oncolog" hits oncology,
   # oncologist) — fixed 2026-09-22; before that the stems below never fired.
+  # ── Semantic generic-evidence guard (2026-09-25) ──────────────────────────
+  # A semantic-only match is explained to the faculty member by its "≈ term"
+  # evidence: their own profile terms closest to the grant. When EVERY such
+  # term is generic academic vocabulary the match has no topical basis — on
+  # 09-25 the NLM G13 "scholarly works" award (a book-writing grant with no
+  # topic) drew 7 faculty on "biomedical research", "clinical trials",
+  # "medical education" and "national institutes of health (u.s.)". Such a
+  # match is multiplied by demote_multiplier and dropped if it then falls
+  # under min_semantic_confidence. Evidence that is an erratum/correction
+  # title is ignored when judging. Keyword and "both" matches are never
+  # touched. Curatable — add generic offenders as they surface.
+  #
+  # topicless_grant_patterns: mechanisms with no research topic at all — a
+  # semantic-only match on one of these is guarded whatever the faculty's
+  # terms say, because there is nothing for them to fit. Measured on 09-25:
+  # the evidence rule alone caught 1 of the 7 G13 rows (the others had real
+  # terms — "pharmacogenomics", "metagenomics" — that simply cannot describe
+  # fit to a book-writing award); the mechanism rule catches all 7.
+  # Keyword/"both" matches still pass, so someone whose own words hit the
+  # announcement text is still told.
+  semantic_generic_guard:
+    enabled: true
+    demote_multiplier: 0.4
+    topicless_grant_patterns:
+      - '\bG13\b'
+      - 'scholarly works'
+      - '\b[RU]13\b'                      # conference / scientific meeting grants
+      - 'conference grant'
+      - 'scientific meetings?\b'
+      - 'administrative supplement'
+      - 'research supplements? to promote'
+      - 'diversity supplement'
+      - 'loan repayment'
+      - 'small business (?:innovation|technology transfer)|\bSBIR\b|\bSTTR\b'
+    ignore_evidence_prefixes:
+      - "correction to"
+      - "erratum"
+      - "corrigendum"
+      - "retraction"
+    generic_terms:
+      - "biomedical research"
+      - "research"
+      - "clinical research"
+      - "translational research"
+      - "clinical trials"
+      - "clinical trial"
+      - "clinical trials as topic"
+      - "clinical trial endpoints"
+      - "randomized controlled trials as topic"
+      - "medical education"
+      - "graduate medical education"
+      - "education"
+      - "teaching"
+      - "mentoring"
+      - "national institutes of health (u.s.)"
+      - "national institutes of health"
+      - "united states"
+      - "humans"
+      - "biotechnology"
+      - "science"
+      - "medicine"
+      - "health"
+      - "healthcare"
+      - "health care"
+      - "fellowships and scholarships"
+      - "faculty"
+      - "universities"
+      - "academic medical centers"
+      - "publishing"
+      - "writing"
+      - "manuscripts"
+
   semantic_concept_guard:
     enabled: true
     demote_multiplier: 0.4        # semantic-only match missing the concept evidence → conf ×0.4
