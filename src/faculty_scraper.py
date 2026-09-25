@@ -1678,12 +1678,39 @@ _ROLE_MAILBOX_LOCALPARTS = {
 }
 
 
+# Department / unit words that mark a shared mailbox when they appear as a
+# whole TOKEN of the local part (split on - . _): "peds-endocrinology",
+# "neurosurgery.research", "cardiology-office". Whole-token matching keeps
+# surnames that merely contain such a word ("medina", "labelle") personal.
+_ROLE_MAILBOX_TOKENS = {
+    "peds", "pediatrics", "endocrinology", "oncology", "radonc", "cardiology",
+    "neurology", "neurosurgery", "surgery", "medicine", "psychiatry", "radiology",
+    "anesthesiology", "anesthesia", "pathology", "dermatology", "ophthalmology",
+    "orthopaedics", "orthopedics", "urology", "obgyn", "epi", "epidemiology",
+    "pharmacology", "physiology", "microbiology", "immunology", "genetics",
+    "clinic", "clinics", "lab", "labs", "laboratory", "program", "programs",
+    "center", "centre", "division", "institute", "unit", "team", "residency",
+    "fellowship", "grants", "billing", "scheduling", "referrals",
+} | _ROLE_MAILBOX_LOCALPARTS
+
+
 def _is_role_mailbox(email: str) -> bool:
-    """True when an address is a shared/office mailbox rather than a person."""
+    """True when an address is a shared/office mailbox rather than a person.
+
+    Exact local parts ("info", "dept") were the original rule; 2026-09-25
+    added token matching after "Peds-Endocrinology@" survived a forced scrape
+    and kept a faculty member's digests going to a department inbox while
+    her own address sat in both directories."""
     em = (email or "").strip().lower()
     if not em or "@" not in em:
         return False
-    return em.split("@", 1)[0] in _ROLE_MAILBOX_LOCALPARTS
+    local = em.split("@", 1)[0]
+    if local in _ROLE_MAILBOX_LOCALPARTS:
+        return True
+    tokens = [t for t in re.split(r"[-._]+", local) if t]
+    if len(tokens) < 2:
+        return False                      # "medina", "surgery1" — treat as a person
+    return any(t in _ROLE_MAILBOX_TOKENS for t in tokens)
 
 
 def _merge_keywords(faculty: dict, new_keywords: list[str], source: str,
