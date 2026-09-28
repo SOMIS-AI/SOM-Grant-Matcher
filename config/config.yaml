@@ -504,6 +504,36 @@ matching:
     - "farmers"
     - "farmer"
     - "ranchers"
+    # ── 2026-09-28 additions (09-24..09-28 diag review) ─────────────────────
+    # Funding-announcement boilerplate. Eleven delivered rows on 09-26 rested
+    # on these: "investigators, technology" / "principal investigators" /
+    # "important considerations" / "major, risk" put 4 faculty on an NSF
+    # astronomy call; "therapeutic, therapeutics" / "applications, preliminary"
+    # / "findings, translation" / "drug, translation" put 4 non-vision faculty
+    # on an NEI eye-therapeutics call; "activities, factors" / "cancer,
+    # validation" / "cancer, design" padded the pancreatic-cancer calls. Each
+    # is a word every NOFO uses about itself (or every PI uses about their
+    # work), so it carries no topical signal. "technology" and "risk" were
+    # already listed; their partners were not, which is why the filter let
+    # the pair through. None came from the Eval App self-reported store.
+    - "investigators"
+    - "investigator"
+    - "principal investigators"
+    - "principal investigator"
+    - "important considerations"
+    - "considerations"
+    - "major"
+    - "applications"
+    - "application"
+    - "preliminary"
+    - "findings"
+    - "translation"
+    - "activities"
+    - "factors"
+    - "validation"
+    - "design"
+    - "therapeutic"
+    - "therapeutics"
 
   # ── Research track-record signal (Theme 2, 2026-06-23) ────────────────────
   # Weight a match by the faculty member's external publication/grant footprint,

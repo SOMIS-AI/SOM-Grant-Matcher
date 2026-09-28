@@ -69,6 +69,53 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-09-28 — Astronomy title terms; boilerplate words added to the context filter
+**Status:** live
+**Commit:** *(fill in after commit)*
+**Change:** two vocabulary additions, no threshold moved.
+(a) `_NONBIO_TITLE_TERMS` in `src/matcher.py` gains astronomical, astronomy,
+astrophysics, astrophysical, telescope — an unconditional title reject.
+(b) `matching.context_dependent_terms` gains 18 funding-announcement words:
+investigator(s), principal investigator(s), important considerations,
+considerations, major, application(s), preliminary, findings, translation,
+activities, factors, validation, design, therapeutic(s). A keyword match
+whose every term is on that list is dropped (existing Theme 3 rule).
+
+**Why:** the 09-26 digest.
+- NSF "Astronomical Sciences Technology and Instrumentation (ATI)" reached
+  4 faculty at 50-57%. Re-running the relevance filter on the page text
+  locally shows it passed the biomedical vocabulary scan on "imaging
+  detectors" and "Major Research Instrumentation (MRI)" — one hit is enough
+  for a non-allow-listed agency. Its sibling "Astro-Core" was skipped only
+  because its text lacked those two words. The title term is the cheap,
+  exact fix; qualifying bare "imaging"/"MRI" (as "screening" was on 08-07)
+  is the durable one and is deferred until a second non-astronomy case shows
+  which qualifier is right.
+- The same 4 rows, plus 4 on NEI "Translational Research Program for
+  Therapeutics" (R61/R33) and 3 on the Pancreatic Cancer Detection
+  Consortium calls, were anchored on boilerplate: "investigators, technology",
+  "principal investigators", "important considerations", "major, risk",
+  "therapeutic, therapeutics", "applications, preliminary", "findings,
+  translation", "drug, translation", "activities, factors", "cancer,
+  validation", "cancer, design". None of the four NEI recipients works in
+  vision. "technology" and "risk" were already context terms; the context
+  filter only fires when every matched term is listed, so each pair survived
+  on its unlisted partner. Checked `seed_data/eval_app_keywords.json`: none of
+  these words came from the 09-23 self-reported import — they are scraped or
+  publication-derived.
+- Not touched: "drug" and "cancer". Both are real topics for some faculty;
+  once their boilerplate partner is filtered they become single-keyword
+  matches (×0.85) and should fall under the 50% floor on off-topic calls.
+
+**Expected effect:** `skipped` gains any astronomy call; `context_filtered`
+rises by roughly the 11 rows above on a comparable day; `kw` (keyword-only
+deliveries) falls by the same. No change to `sem` or to genuine multi-term
+matches (a match keeps flowing as soon as one non-listed term fires).
+
+**Outcome:** *(fill in — watch the first NIH "Translational ... Therapeutics"
+or NSF instrumentation call after deploy)*
+**Verdict:** too early
+
 ### 2026-09-25 — Generic-evidence guard on semantic-only matches
 **Status:** live
 **Commit:** `2421151`

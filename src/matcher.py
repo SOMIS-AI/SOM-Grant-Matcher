@@ -548,6 +548,14 @@ _NONBIO_TITLE_TERMS = {
     "crop disease",
     "animal disease",
     "veterinary",
+    # Astronomy is not biomedicine. NSF "Astronomical Sciences Technology and
+    # Instrumentation" passed the vocabulary scan on "imaging detectors" and
+    # "Major Research Instrumentation (MRI)" and reached 4 faculty on 2026-09-26.
+    "astronomical",
+    "astronomy",
+    "astrophysics",
+    "astrophysical",
+    "telescope",
 }
 
 # Minimum vocabulary — at least one of these must appear in the grant text
