@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-17T00:07:26+00:00",
+  "updated_at": "2026-09-28T20:47:54+00:00",
   "sources": [
     {
       "filename": "Faculty Name and Email Export from Fac Eval App-04Sept2026.csv",
@@ -62,6 +62,20 @@
     {
       "filename": "missing_two_2026-09-16.csv",
       "imported_at": "2026-09-17T00:07:26+00:00",
+      "stats": {
+        "rows_total": 2,
+        "usable": 2,
+        "added": 2,
+        "updated": 0,
+        "unchanged": 0,
+        "skipped_no_email": 0,
+        "ambiguous": 0
+      },
+      "ambiguous_names": []
+    },
+    {
+      "filename": "missing_two_2026-09-28.csv",
+      "imported_at": "2026-09-28T20:47:54+00:00",
       "stats": {
         "rows_total": 2,
         "usable": 2,
@@ -10413,6 +10427,20 @@
       "department": "Neurosurgery",
       "source_file": "missing_two_2026-09-16.csv",
       "updated_at": "2026-09-17T00:07:26+00:00"
+    },
+    "suprit singh": {
+      "email": "suprit.singh@som.umaryland.edu",
+      "name": "Suprit Singh",
+      "department": "Diagnostic Radiology and Nuclear Medicine",
+      "source_file": "missing_two_2026-09-28.csv",
+      "updated_at": "2026-09-28T20:47:54+00:00"
+    },
+    "nicholas rizer": {
+      "email": "nrizer@som.umaryland.edu",
+      "name": "Nicholas Rizer",
+      "department": "Emergency Medicine",
+      "source_file": "missing_two_2026-09-28.csv",
+      "updated_at": "2026-09-28T20:47:54+00:00"
     }
   }
 }
