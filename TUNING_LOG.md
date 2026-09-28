@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-09-28 — Astronomy title terms; boilerplate words added to the context filter
 **Status:** live
-**Commit:** *(fill in after commit)*
+**Commit:** `b94dacc`
 **Change:** two vocabulary additions, no threshold moved.
 (a) `_NONBIO_TITLE_TERMS` in `src/matcher.py` gains astronomical, astronomy,
 astrophysics, astrophysical, telescope — an unconditional title reject.
