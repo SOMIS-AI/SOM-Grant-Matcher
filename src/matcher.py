@@ -507,6 +507,10 @@ _AGENCY_BLOCK = {
     "doe", "department of energy",          # exception: some bioenergy/biotech
     "usgs", "geological survey",
     "noaa", "national oceanic", "oceanic and atmospheric",
+    # 2026-09-30: FWS "Prescott Marine Mammal Rescue and Response" reached a
+    # Medicine faculty on "marine mammals"; the NOAA twin of the same program
+    # was blocked on 09-24 by "noaa" but FWS had no block term.
+    "fish and wildlife",
     "nasa",                                 # exception: rare life sciences
     "fema", "emergency management",
     "sba", "small business administration",
@@ -557,6 +561,7 @@ _NONBIO_TITLE_TERMS = {
     "astrophysics",
     "astrophysical",
     "telescope",
+    "marine mammal",
 }
 
 # Minimum vocabulary — at least one of these must appear in the grant text

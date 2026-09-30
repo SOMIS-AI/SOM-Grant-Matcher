@@ -69,6 +69,21 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-09-30 — Block Fish and Wildlife Service; reject marine-mammal titles
+**Status:** live
+**Commit:** *(fill in after commit)*
+**Change:** `_AGENCY_BLOCK` gains "fish and wildlife"; `_NONBIO_TITLE_TERMS`
+gains "marine mammal" (unconditional, so an NIH-funded marine-mammal call is
+rejected too — out of scope for a medical school either way).
+**Why:** the 09-30 daily delivered FWS "Prescott Marine Mammal Rescue and
+Response Grant Program" to one Medicine faculty at 53% on the keyword "marine
+mammals". Its NOAA twin was skipped on 09-24 by the "noaa" block term; FWS had
+no block term, and the text (treatment of stranded animals, disease) clears
+the vocabulary scan.
+**Expected effect:** every FWS call lands in `skipped_grants.irrelevant`.
+**Outcome:** *(fill in — next FWS or marine-mammal posting)*
+**Verdict:** too early
+
 ### 2026-09-30 — Weekly roundup re-matched under today's rules (was a replay)
 **Status:** live
 **Commit:** `7de4a1c`
