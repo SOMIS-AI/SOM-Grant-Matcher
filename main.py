@@ -34,7 +34,8 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from faculty_scraper import get_faculty_profiles, load_faculty_cache, _apply_title_exclusions
 from grants_poller import fetch_new_grants, fetch_all_sources, commit_seen_grants
-from matcher import find_matches, get_last_diagnostic, load_recent_matched_results
+from matcher import find_matches, get_last_diagnostic, load_recent_matched_results, build_weekly_roundup
+from grant_store import record_grants
 from emailer import (
     send_email,
     send_diagnostic_email,
@@ -50,6 +51,12 @@ from emailer import (
     send_failure_alert,
 )
 import subscriptions
+
+# Per-process state shared between the pipeline and the send phase (2026-09-30):
+# the match pool (faculty + staff) the last successful run matched against, so
+# the weekly roundup can be re-matched under today's rules, and the audit of
+# that rebuild for the diagnostic JSON.
+_RUN_STATE = {"match_pool": None, "weekly_audit": None}
 
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -259,6 +266,11 @@ def run_pipeline(config: dict, force_scrape: bool = False):
     except ImportError:
         pass  # embedder not installed — semantic matching will be disabled
 
+    # Staff join the pool here, after the embedding write-back above (see
+    # _add_staff_profiles). Stash the pool for the weekly re-match.
+    faculty = _add_staff_profiles(faculty, logger)
+    _RUN_STATE["match_pool"] = faculty
+
     # Step 2: Fetch new grants from ALL sources
     logger.info("Step 2/3 — Fetching new grants from all sources...")
     scraper_health = {}
@@ -304,36 +316,11 @@ def run_pipeline(config: dict, force_scrape: bool = False):
         }
         return [], empty_diag, scraper_health
     logger.info(f"  ✓ {len(new_grants)} new grants retrieved from all sources")
+    # Keep this run's grants with their full text so the weekly roundup can be
+    # re-matched under Tuesday's rules (grant_store; TUNING_LOG 2026-09-30).
+    record_grants(new_grants)
 
     # Step 3: Match grants to faculty keywords
-    # ── UMSOM staff (2026-09-03) ─────────────────────────────────────────
-    # Manually-entered staff profiles join the match pool here — AFTER the
-    # faculty embedding/cache write-back above, deliberately. Staff must never
-    # reach faculty_cache.json: that file is the scraped roster, and the
-    # roster-drop guard and inactive-marking diff both compare against it, so a
-    # handful of synthetic records in it would corrupt both.
-    #
-    # They are embedded separately, using the same embed_faculty_batch(), so
-    # their profile_text produces a real semantic vector rather than a zero one.
-    try:
-        import staff as _staff
-        staff_profiles = _staff.as_match_profiles()
-        if staff_profiles:
-            try:
-                from embedder import embed_faculty_batch, is_available
-                if is_available():
-                    embed_faculty_batch(staff_profiles)
-            except Exception as e:
-                # Non-fatal: staff still match on the keyword channel.
-                logger.warning(f"  Staff embedding failed (keyword matching unaffected): {e}")
-            faculty = faculty + staff_profiles
-            logger.info(f"  ✓ {len(staff_profiles)} staff profile(s) added to the match pool "
-                        f"({len(faculty)} people total)")
-    except Exception as e:
-        # A broken staff file must never take down the faculty run.
-        logger.error(f"Loading staff profiles failed — continuing with faculty only: {e}",
-                     exc_info=True)
-
     logger.info("Step 3/3 — Matching grants to faculty keywords...")
     matched_results = find_matches(new_grants, faculty, config=config)
     logger.info(f"  ✓ {len(matched_results)} grants with faculty matches")
@@ -451,7 +438,7 @@ def run_manual_digest(config: dict, recipients: list = None, days: int = 1):
         )
         return
 
-    results = load_recent_matched_results(days)
+    results = _weekly_roundup(config, days)
     if not results:
         logger.info(f"Manual digest: no matches found in the last {days} day(s) — nothing sent.")
         return
@@ -560,7 +547,7 @@ def personalized_dry_run(days: int = 7, cadence: str = "weekly") -> dict:
     number of times with no side effects at all.
     """
     cadence = (cadence or "weekly").strip().lower()
-    matched = load_recent_matched_results(days)
+    matched = _weekly_roundup(None, days)
     n_matches = sum(len(r.get("matches", [])) for r in matched)
 
     by_faculty: dict[str, int] = {}
@@ -611,7 +598,7 @@ def run_personalized_digests(config: dict, days: int = 7, cadence: str = "weekly
     logger = logging.getLogger("main")
     cadence = (cadence or "weekly").strip().lower()
 
-    matched = load_recent_matched_results(days)
+    matched = _weekly_roundup(config, days)
     if not matched:
         logger.info(f"No matches in the last {days} day(s) — nothing to send.")
         return
@@ -643,6 +630,68 @@ def run_personalized_digests(config: dict, days: int = 7, cadence: str = "weekly
         + ("  ⚠ budget exhausted" if stats["budget_exhausted"] else "")
     )
     _alert_partial_send_failures(config, stats, cadence)
+
+
+def _add_staff_profiles(faculty: list, logger) -> list:
+    """Append UMSOM staff match profiles to the faculty pool. Extracted from
+    run_pipeline (2026-09-30) so the weekly re-match can build the same pool
+    from the cached roster when the process has not run a pipeline yet."""
+    # ── UMSOM staff (2026-09-03) ─────────────────────────────────────────
+    # Manually-entered staff profiles join the match pool here — AFTER the
+    # faculty embedding/cache write-back above, deliberately. Staff must never
+    # reach faculty_cache.json: that file is the scraped roster, and the
+    # roster-drop guard and inactive-marking diff both compare against it, so a
+    # handful of synthetic records in it would corrupt both.
+    #
+    # They are embedded separately, using the same embed_faculty_batch(), so
+    # their profile_text produces a real semantic vector rather than a zero one.
+    try:
+        import staff as _staff
+        staff_profiles = _staff.as_match_profiles()
+        if staff_profiles:
+            try:
+                from embedder import embed_faculty_batch, is_available
+                if is_available():
+                    embed_faculty_batch(staff_profiles)
+            except Exception as e:
+                # Non-fatal: staff still match on the keyword channel.
+                logger.warning(f"  Staff embedding failed (keyword matching unaffected): {e}")
+            faculty = faculty + staff_profiles
+            logger.info(f"  ✓ {len(staff_profiles)} staff profile(s) added to the match pool "
+                        f"({len(faculty)} people total)")
+    except Exception as e:
+        # A broken staff file must never take down the faculty run.
+        logger.error(f"Loading staff profiles failed — continuing with faculty only: {e}",
+                     exc_info=True)
+    return faculty
+
+
+def _weekly_roundup(config: dict = None, days: int = 7) -> list:
+    """Roundup rows for the last `days` days, computed under TODAY's rules.
+
+    Grants with full text in the recent-grants store are re-matched against
+    the current pool (the last pipeline's faculty + staff, or the cached
+    roster); stored rows for anything else are re-filtered. Falls back to the
+    old replay of match_results.json only if the rebuild itself fails, and
+    says so in the diagnostic (`weekly_roundup.error`). See TUNING_LOG
+    2026-09-30 for why the replay was not good enough."""
+    logger = logging.getLogger("main")
+    try:
+        if config is None:
+            config = load_config()
+        pool = _RUN_STATE.get("match_pool")
+        if not pool:
+            pool = _cached_faculty_fallback(config)
+            if pool:
+                pool = _add_staff_profiles(pool, logger)
+                logger.info(f"  Weekly roundup: matching against the cached roster ({len(pool)} people)")
+        results, audit = build_weekly_roundup(config, pool, days=days)
+        _RUN_STATE["weekly_audit"] = audit
+        return results
+    except Exception as e:
+        logger.error(f"Weekly roundup rebuild failed — replaying stored matches: {e}", exc_info=True)
+        _RUN_STATE["weekly_audit"] = {"error": f"{type(e).__name__}: {e}", "mode": "replay"}
+        return load_recent_matched_results(days)
 
 
 def _cached_faculty_fallback(config: dict) -> list:
@@ -1066,6 +1115,7 @@ def _run_sends(config, fire_time, matched_results, matcher_diag,
     """All send targets for one scheduled fire (extracted from run_scheduler so
     the loop can wrap the entire send phase in a single watchdog try/except)."""
     logger = logging.getLogger("main")
+    _RUN_STATE["weekly_audit"] = None   # long-lived process: never carry last Tuesday's audit
 
     # ── Daily digest (every day) ─────────────────────────────────────────
     daily_recipients = get_daily_recipients()
@@ -1129,7 +1179,7 @@ def _run_sends(config, fire_time, matched_results, matcher_diag,
         if not weekly_recipients:
             logger.info("  Weekly roundup: no WEEKLY_RECIPIENTS configured — not sent.")
         else:
-            weekly_roundup_cache = load_recent_matched_results(7)
+            weekly_roundup_cache = _weekly_roundup(config, 7)
             if not weekly_roundup_cache:
                 logger.info("  Weekly roundup: no matches in the last 7 days — not sent.")
             else:
@@ -1146,7 +1196,7 @@ def _run_sends(config, fire_time, matched_results, matcher_diag,
         # weekly subs work independently of the admin weekly setting.
         try:
             if weekly_roundup_cache is None:
-                weekly_roundup_cache = load_recent_matched_results(7)
+                weekly_roundup_cache = _weekly_roundup(config, 7)
             if weekly_roundup_cache:
                 run_date_w = fire_time.strftime("%Y-%m-%d")
                 stats_w = _send_personalized_digests(
@@ -1197,6 +1247,10 @@ def _run_sends(config, fire_time, matched_results, matcher_diag,
             logger.error(f"Personalized weekly fan-out failed: {e}", exc_info=True)
 
     # ── Diagnostic (admin only, every run) ───────────────────────────────
+    # On weekly days, carry the roundup rebuild audit into the diagnostic JSON
+    # so the archive shows what the replay would have sent vs what went out.
+    if _RUN_STATE.get("weekly_audit") is not None and isinstance(matcher_diag, dict):
+        matcher_diag["weekly_roundup"] = _RUN_STATE["weekly_audit"]
     try:
         send_diagnostic_email(config, matcher_diag, scraper_health)
         logger.info("  ✓ Diagnostic email sent")

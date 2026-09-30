@@ -1440,7 +1440,7 @@ def api_send_personalized_send():
             return _json_err("no recipients — nothing to send")
         cfg = _load_config_for_send()
         stats = _main._send_personalized_digests(
-            cfg, _main.load_recent_matched_results(days),
+            cfg, _main._weekly_roundup(cfg, days),
             datetime.now().strftime("%Y-%m-%d"),
             cadence=cadence,
             digest_label="Weekly" if cadence == "weekly" else "Daily",

@@ -67,7 +67,8 @@ _DB_PATH    = os.getenv("MATCHER_DB_PATH",    "data/matcher.db")
 _run_start_time:   float = 0.0
 _raw_match_count:  int   = 0      # total faculty matches BEFORE confidence filter
 _faculty_count:    int   = 0      # active faculty processed this run
-_last_diagnostic:  dict  = {}     # diagnostic data from most recent run (read by main.py)
+_last_diagnostic: dict = {}
+_last_rematch_diagnostic: dict = {}   # last find_matches(persist=False) run (weekly re-match)     # diagnostic data from most recent run (read by main.py)
 
 DEFAULT_SEMANTIC_THRESHOLD  = 0.55   # Lowered from 0.65: MiniLM-L6-v2 cosine similarities for
                                      # related biomedical content typically range 0.3–0.65.
@@ -1249,11 +1250,17 @@ def _apply_per_faculty_cap(results, cap):
     return capped, info
 
 
-def find_matches(grants, faculty, config=None):
+def find_matches(grants, faculty, config=None, persist=True):
     """
     Hybrid matching: keyword regex + semantic embeddings.
     Produces IDF-weighted confidence scores (0-100) for each match.
     config is optional -- falls back to defaults if not provided.
+
+    persist=False (2026-09-30) runs the same matching but writes nothing:
+    match_results.json, run_stats and the daily diagnostic slot are left
+    alone, and the diagnostic goes to get_last_rematch_diagnostic() instead.
+    Used by build_weekly_roundup to re-match the week under today's rules
+    without double-counting on the dashboard.
     """
     global _run_start_time, _raw_match_count, _faculty_count
     _run_start_time  = time.time()
@@ -2051,10 +2058,11 @@ def find_matches(grants, faculty, config=None):
     print(f"{_raw_match_count} raw matches found")
     print(f"{total_matches} matches after filter")
 
-    _save_match_results(results, len(grants), sem_enabled, config=config)
+    if persist:
+        _save_match_results(results, len(grants), sem_enabled, config=config)
 
     # ── Store diagnostic data for main.py to access ──────────────────────────
-    global _last_diagnostic
+    global _last_diagnostic, _last_rematch_diagnostic
     _diag["summary"] = {
         "faculty_count": _faculty_count,
         "grants_checked": len(grants),
@@ -2089,7 +2097,10 @@ def find_matches(grants, faculty, config=None):
         "min_semantic_confidence": min_sem_conf,
         "run_duration_s": round(time.time() - _run_start_time, 1),
     }
-    _last_diagnostic = _diag
+    if persist:
+        _last_diagnostic = _diag
+    else:
+        _last_rematch_diagnostic = _diag
 
     return results
 
@@ -2097,6 +2108,11 @@ def find_matches(grants, faculty, config=None):
 def get_last_diagnostic() -> dict:
     """Return diagnostic data from the most recent find_matches() run."""
     return _last_diagnostic
+
+
+def get_last_rematch_diagnostic() -> dict:
+    """Diagnostic from the most recent find_matches(persist=False) run."""
+    return _last_rematch_diagnostic
 
 
 def load_recent_matched_results(days: int) -> list:
@@ -2193,6 +2209,210 @@ def load_recent_matched_results(days: int) -> list:
         f"({MATCHES_FILE})"
     )
     return results
+
+
+# ── Weekly roundup: re-match, else re-filter (2026-09-30) ────────────────────
+# The Tuesday roundup used to be a replay of match_results.json: every row
+# went out exactly as scored on the morning it was found, under whatever rules
+# were live that morning. A gate or term shipped on Wednesday could not reach
+# it, and most faculty only read the weekly. The 2026-09-29 weekly led with 40
+# DOJ rows recorded on 09-22 hours before the corroboration gate went live.
+#
+# Now: grants fetched in the window are kept with full text (grant_store) and
+# re-matched under today's config/roster/feedback. Stored rows whose grant has
+# no full text (the first week after deploy, or a store gap) are kept but
+# passed through the gates that need only what match_results.json holds.
+
+def _grant_blocked_outright(grant: dict) -> tuple[bool, str]:
+    """The unconditional parts of _is_biomedically_relevant only — non-bio
+    title terms and the agency block-list. The vocabulary requirement is NOT
+    applied: stored rows carry a 500-char synopsis, and a grant that passed on
+    a term deeper in its text must not be dropped for the truncation."""
+    agency = (grant.get("agency") or "").lower().strip()
+    title  = (grant.get("title")  or "").lower()
+    for term, pattern in _NONBIO_TITLE_RX:
+        if pattern.search(title):
+            return True, f"non-biomedical topic term: '{term}'"
+    for allowed, pattern in _AGENCY_ALLOW_RX:
+        if pattern.search(agency):
+            return False, ""
+    for blocked, pattern in _AGENCY_BLOCK_RX:
+        if pattern.search(agency):
+            return True, f"blocked agency term: '{blocked}'"
+        if blocked not in _AGENCY_ONLY_BLOCK and pattern.search(title):
+            return True, f"blocked title term: '{blocked}'"
+    return False, ""
+
+
+def refilter_stored_results(results: list, config: dict = None) -> tuple[list, dict]:
+    """Re-apply the cheap current gates to roundup rows rebuilt from
+    match_results.json: title/agency block terms, UMB-eligibility patterns,
+    faculty feedback suppression, the DOJ corroboration gate, the context
+    filter (keyword-only rows whose every term is generic) and the generic-
+    evidence guard on semantic-only rows. Scores are not recomputed.
+
+    Returns (results, audit). Rows are dicts as load_recent_matched_results
+    produces them."""
+    matching_cfg = (config or {}).get("matching", {})
+    ineligible_rx = _compile_ineligible_patterns(matching_cfg.get("ineligible_grant_patterns", []))
+    corroboration = [str(a).lower().strip()
+                     for a in (matching_cfg.get("corroboration_required_agencies") or [])
+                     if str(a).strip()]
+    context_terms = {normalize(t).strip() for t in matching_cfg.get("context_dependent_terms", [])}
+    guard = _compile_semantic_generic_guard(matching_cfg.get("semantic_generic_guard", {}))
+    min_conf = matching_cfg.get("min_confidence_score", 35)
+    min_sem_conf = matching_cfg.get("min_semantic_confidence", DEFAULT_MIN_SEMANTIC_CONFIDENCE)
+    if min_sem_conf is None:
+        min_sem_conf = min_conf
+    feedback_idx = None
+    try:
+        from feedback_store import load_feedback_index
+        feedback_idx = load_feedback_index(config)
+    except Exception as e:
+        logger.warning(f"Feedback store unavailable for re-filter: {e}")
+
+    dropped = {"blocked_grant": 0, "ineligible_grant": 0, "feedback": 0,
+               "corroboration": 0, "context": 0, "generic_evidence": 0}
+    grants_dropped = []
+    out = []
+    for r in results:
+        grant = r.get("grant", {}) or {}
+        title = grant.get("title", "")
+        blocked, why = _grant_blocked_outright(grant)
+        if blocked:
+            dropped["blocked_grant"] += len(r.get("matches", []))
+            grants_dropped.append(f"{title[:70]} ({why})")
+            continue
+        eligible, why = _is_institutionally_eligible(title, ineligible_rx)
+        if not eligible:
+            dropped["ineligible_grant"] += len(r.get("matches", []))
+            grants_dropped.append(f"{title[:70]} (ineligible: {why})")
+            continue
+
+        agency_lc = (grant.get("agency") or "").lower()
+        corroborate = any(a in agency_lc for a in corroboration)
+        gnum = (grant.get("number") or grant.get("id") or "").strip()
+        gtitle_n = feedback_idx["norm_title"](title) if feedback_idx else ""
+        topicless = _grant_is_topicless(grant, guard)
+
+        kept = []
+        for m in r.get("matches", []):
+            mt = m.get("match_type", "keyword")
+            kws = [str(k) for k in (m.get("matched_keywords") or [])]
+            em = (m.get("faculty_email") or "").lower()
+            if feedback_idx and em and (
+                    (em, gnum) in feedback_idx["suppress"]
+                    or (gtitle_n and (em, gtitle_n) in feedback_idx["suppress_titles"])):
+                dropped["feedback"] += 1
+                continue
+            if corroborate and mt == "keyword":
+                dropped["corroboration"] += 1
+                continue
+            if mt == "keyword" and context_terms and kws and all(
+                    normalize(k).strip() in context_terms for k in kws):
+                dropped["context"] += 1
+                continue
+            if mt == "semantic" and guard:
+                evidence = [k[1:].strip() for k in kws if k.startswith("\u2248")]
+                if topicless or (evidence and _evidence_is_generic(evidence, guard)):
+                    new_conf = max(int(round(m.get("confidence_score", 0) * guard["demote"])), 0)
+                    if new_conf < min_sem_conf:
+                        dropped["generic_evidence"] += 1
+                        continue
+                    m = dict(m, confidence_score=new_conf)
+            kept.append(m)
+        if kept:
+            kept.sort(key=lambda m: -m.get("confidence_score", 0))
+            out.append({"grant": grant, "matches": kept})
+        else:
+            grants_dropped.append(f"{title[:70]} (every row gated)")
+
+    audit = {"rows_dropped": dropped, "grants_dropped": grants_dropped[:20]}
+    return out, audit
+
+
+def build_weekly_roundup(config: dict, faculty: list, days: int = 7) -> tuple[list, dict]:
+    """The weekly roundup, computed fresh.
+
+    1. Grants recorded in the last `days` days with full text are re-matched
+       against `faculty` under the current config (find_matches, persist=False).
+       A grant that re-matches to nobody is gone from the roundup — it was
+       re-evaluated and rejected, so its stored rows are NOT used.
+    2. Stored rows for grants the store does not cover are kept after
+       refilter_stored_results.
+    3. Both halves are merged as plain dicts (the shape the fan-outs already
+       handle) and ordered by each grant's best confidence.
+
+    Returns (results, audit). The audit is written into the diagnostic JSON
+    as `weekly_roundup` so the first Tuesdays can be checked against the
+    archive: what the replay would have sent versus what went out."""
+    from grant_store import load_recent_grants, grant_key
+
+    stored = load_recent_matched_results(days)
+    stored_by_key = {grant_key(r["grant"]): r for r in stored}
+    grants = load_recent_grants(days)
+    audit = {
+        "days": days,
+        "stored_grants": len(stored),
+        "stored_rows": sum(len(r["matches"]) for r in stored),
+        "store_grants_in_window": len(grants),
+        "rematched_grants": 0, "rematched_rows": 0,
+        "replaced_stored_grants": 0, "replaced_stored_rows": 0,
+        "fallback_grants_before": 0, "fallback_rows_before": 0,
+        "fallback_grants_after": 0, "fallback_rows_after": 0,
+        "rematch_dropped_grants": [], "rematch_error": "",
+    }
+
+    rematched: list = []
+    covered: set = set()
+    if grants and faculty:
+        try:
+            import copy as _copy
+            work = [_copy.deepcopy(g) for g in grants]
+            for g in work:
+                g.pop("recorded_at", None)
+            res = find_matches(work, faculty, config=config, persist=False)
+            covered = {grant_key(g) for g in grants}
+            for r in res:
+                rows = [m._asdict() if hasattr(m, "_asdict") else dict(m) for m in r["matches"]]
+                rows.sort(key=lambda m: -m.get("confidence_score", 0))
+                rematched.append({"grant": r["grant"], "matches": rows})
+            audit["rematched_grants"] = len(rematched)
+            audit["rematched_rows"] = sum(len(r["matches"]) for r in rematched)
+            hit = [k for k in covered if k in stored_by_key]
+            audit["replaced_stored_grants"] = len(hit)
+            audit["replaced_stored_rows"] = sum(len(stored_by_key[k]["matches"]) for k in hit)
+            got = {grant_key(r["grant"]) for r in rematched}
+            audit["rematch_dropped_grants"] = [
+                stored_by_key[k]["grant"].get("title", "")[:70]
+                + f" ({len(stored_by_key[k]['matches'])} stored row(s))"
+                for k in hit if k not in got][:20]
+        except Exception as e:
+            logger.error(f"Weekly re-match failed — falling back to stored rows: {e}", exc_info=True)
+            audit["rematch_error"] = f"{type(e).__name__}: {e}"
+            rematched, covered = [], set()
+
+    fallback = [r for k, r in stored_by_key.items() if k not in covered]
+    audit["fallback_grants_before"] = len(fallback)
+    audit["fallback_rows_before"] = sum(len(r["matches"]) for r in fallback)
+    fallback, fa = refilter_stored_results(fallback, config)
+    audit.update({f"fallback_{k}": v for k, v in fa.items()})
+    audit["fallback_grants_after"] = len(fallback)
+    audit["fallback_rows_after"] = sum(len(r["matches"]) for r in fallback)
+
+    results = rematched + fallback
+    results.sort(key=lambda r: -(r["matches"][0].get("confidence_score", 0) if r["matches"] else 0))
+    audit["final_grants"] = len(results)
+    audit["final_rows"] = sum(len(r["matches"]) for r in results)
+    logger.info(
+        f"Weekly roundup: {audit['final_grants']} grant(s) / {audit['final_rows']} row(s) — "
+        f"re-matched {audit['rematched_grants']} grant(s) from {audit['store_grants_in_window']} stored "
+        f"(replacing {audit['replaced_stored_rows']} stored row(s)); "
+        f"fallback {audit['fallback_grants_before']}->{audit['fallback_grants_after']} grant(s), "
+        f"{audit['fallback_rows_before']}->{audit['fallback_rows_after']} row(s); "
+        f"replay would have sent {audit['stored_rows']} row(s)"
+    )
+    return results, audit
 
 
 # -- Persistence --------------------------------------------------------------

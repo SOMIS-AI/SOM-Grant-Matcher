@@ -69,6 +69,50 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-09-30 — Weekly roundup re-matched under today's rules (was a replay)
+**Status:** live
+**Commit:** *(fill in after commit)*
+**Change:** the Tuesday roundup is no longer a replay of `match_results.json`.
+(a) `src/grant_store.py`: every grant the daily fetch returns is kept with its
+FULL text in `data/recent_grants.json` for 14 days. (b) `matcher.build_weekly_roundup`:
+grants in the 7-day window with stored text are re-matched with
+`find_matches(persist=False)` — same code path as the daily run, current
+config, current roster, current feedback verdicts — and their stored rows are
+discarded, including when the re-match now matches nobody. (c) Stored rows for
+grants without stored text (the first week after deploy, or a store gap) go
+through `matcher.refilter_stored_results`: non-bio title terms and the agency
+block-list, UMB-ineligibility patterns, feedback suppression, the DOJ
+corroboration gate, the context filter on keyword-only rows, and the
+generic-evidence guard on semantic-only rows. Scores are not recomputed there,
+and the vocabulary test is deliberately NOT re-applied (stored rows carry a
+500-char synopsis). (d) `main._weekly_roundup` wraps it for the scheduler, the
+manual `--send-digest` / `--send-personalized` paths, the dry run and the
+dashboard send, falling back to the old replay only if the rebuild itself
+raises — and saying so. (e) The diagnostic JSON on weekly days carries a
+`weekly_roundup` block: stored vs re-matched vs fallback counts, rows dropped
+by which gate, and the grants the re-match dropped entirely.
+
+**Why:** most faculty only read the weekly, and it could not see any fix made
+after a row was recorded. The 2026-09-29 weekly led with "BJA FY 2026 National
+Center for Veterans Justice", 40 rows at 79%, recorded on 09-22 hours before
+the DOJ corroboration gate went live; the gate would have dropped every row.
+The same digest re-sent the 09-26 astronomy and boilerplate rows that the
+09-28 fixes had already addressed. A mid-week 👎 had the same problem:
+suppression lives in the matcher, and the replay never ran it.
+
+**Expected effect:** on weekly days, `weekly_roundup.stored_rows` (what the
+replay would have sent) exceeds `final_rows` whenever a fix shipped during the
+week; `fallback_grants_before` shrinks to 0 once the store covers a full
+window (first fully re-matched weekly: 2026-10-13; 2026-10-06 is re-matched
+from deploy day onward, re-filtered before). Daily digests are unchanged.
+Tuesday runs take about a minute longer (≈100 grants × 1307 people, faculty
+embeddings cached). `match_results.json` and `run_stats.json` are untouched by
+the re-match, so dashboard counts do not double.
+
+**Outcome:** *(fill in — compare `weekly_roundup` in the 10-06 and 10-13
+diagnostics against the Weekly workbooks and the stored week)*
+**Verdict:** too early
+
 ### 2026-09-28 — Astronomy title terms; boilerplate words added to the context filter
 **Status:** live
 **Commit:** `b94dacc`
