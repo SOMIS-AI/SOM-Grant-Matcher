@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-09-30 — Block Fish and Wildlife Service; reject marine-mammal titles
 **Status:** live
-**Commit:** *(fill in after commit)*
+**Commit:** `8b0bc03`
 **Change:** `_AGENCY_BLOCK` gains "fish and wildlife"; `_NONBIO_TITLE_TERMS`
 gains "marine mammal" (unconditional, so an NIH-funded marine-mammal call is
 rejected too — out of scope for a medical school either way).
