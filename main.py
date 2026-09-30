@@ -967,8 +967,11 @@ def _send_personalized_digests(config: dict, matched_results: list,
     already = subscriptions.sent_recipients(run_date)
     enrolled = subscriptions.faculty_subs_for_cadence(cadence)
     # 2026-09-23: a faculty member who clicked the digest's opt-out link is
-    # skipped here even if still enrolled — the subscription edit is manual,
-    # the click is not. Logged loudly so the enrolment gets cleaned up.
+    # skipped here even if still enrolled. 2026-09-30: and their subscription
+    # is tombstoned (cadence "off") on the spot, whatever cadence they were on,
+    # so the dashboard's Opt-Outs panel shows them and nobody has to notice a
+    # log line. Before this, the Form opt-out and the dashboard were two
+    # separate records and only the fan-out knew about the first.
     optout = set()
     try:
         from feedback_store import load_feedback_index
@@ -977,10 +980,7 @@ def _send_personalized_digests(config: dict, matched_results: list,
     except Exception as e:
         logging.getLogger("main").warning(f"feedback opt-outs unavailable: {e}")
     opted = sorted(e for e in enrolled if e in optout)
-    if opted:
-        logging.getLogger("main").warning(
-            f"{len(opted)} enrolled faculty clicked opt-out and are skipped — "
-            f"unenrol them in the dashboard: {', '.join(opted[:20])}")
+    _tombstone_form_optouts(optout)
     stats["faculty_skipped_optout"] = len(opted)
     faculty_todo = [(email, sub) for email, sub in enrolled.items()
                     if by_faculty.get(email) and email not in optout]
@@ -1082,6 +1082,29 @@ def _send_personalized_digests(config: dict, matched_results: list,
             f"SendGrid daily cap reached — {stats['dept_admin_deferred']} dept-admin digest(s) "
             f"deferred. Re-run the personalized send for {run_date}; sent recipients are skipped.")
     return stats
+
+
+def _tombstone_form_optouts(optout: set) -> list:
+    """Set cadence "off" on every ACTIVE faculty subscription whose address
+    clicked the digest's opt-out link (feedback store). Returns the addresses
+    tombstoned this call; already-off records are left alone, so this is
+    idempotent and quiet on later runs. Never raises — the fan-out must go on."""
+    logger = logging.getLogger("main")
+    done = []
+    if not optout:
+        return done
+    try:
+        active = {e for e, r in subscriptions.load_faculty_subs().items()
+                  if (r.get("cadence") or "") not in ("", "off")}
+        for email in sorted(active & set(optout)):
+            if subscriptions.remove_faculty_sub(email):
+                done.append(email)
+        if done:
+            logger.info(f"  {len(done)} faculty opted out via the digest link — subscription set "
+                        f"to off (visible in the dashboard Opt-Outs panel): {', '.join(done[:20])}")
+    except Exception as e:
+        logger.warning(f"Could not tombstone Form opt-outs (they are still skipped): {e}")
+    return done
 
 
 def _alert_partial_send_failures(config, stats, label):
