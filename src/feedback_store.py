@@ -144,14 +144,31 @@ def _archive_lookup(archive_dir: Optional[Path]) -> dict:
     return idx
 
 
+def _read_export_rows(path: Path) -> list:
+    """Rows (header first) from a Form export, .xlsx or .csv. Forms exports
+    arrive in either format depending on how they were downloaded (2026-09-30:
+    the second export came as CSV)."""
+    if path.suffix.lower() == ".csv":
+        import csv
+        with open(path, encoding="utf-8-sig", newline="") as f:
+            return [tuple(r) for r in csv.reader(f)]
+    import openpyxl
+    wb = openpyxl.load_workbook(path, read_only=True)
+    return list(wb.worksheets[0].iter_rows(values_only=True))
+
+
 def import_export(xlsx_path: Path, store: dict, archive_dir: Optional[Path] = None) -> dict:
     """Merge one Form export into `store`. Rows are keyed by the Form's Id so a
-    re-imported export never duplicates a verdict. Returns stats."""
-    import openpyxl
+    re-imported export never duplicates a verdict. Returns stats.
+
+    Exports are CUMULATIVE — every download carries every response since the
+    form went live — and Form Ids are stable, so a row is a duplicate when its
+    Id is already in the store from ANY earlier file, not just this one. Until
+    2026-09-30 the check was per filename, which would have re-added the first
+    twelve verdicts on the second export."""
     stats = {"rows_total": 0, "added": 0, "duplicate": 0, "unparseable": 0,
              "keywords_resolved": 0}
-    wb = openpyxl.load_workbook(xlsx_path, read_only=True)
-    rows = list(wb.worksheets[0].iter_rows(values_only=True))
+    rows = _read_export_rows(xlsx_path)
     if not rows:
         return stats
     hdr = [str(c) for c in rows[0]]
@@ -162,14 +179,14 @@ def import_export(xlsx_path: Path, store: dict, archive_dir: Optional[Path] = No
     comment_col = next((i for h, i in col.items() if h.lower().startswith("any additional")), None)
     time_col = col.get("Start time")
 
-    known = {(v.get("source_file"), v.get("form_id")) for v in store["verdicts"]}
+    known = {str(v.get("form_id")) for v in store["verdicts"]}
     archive = _archive_lookup(archive_dir)
     for r in rows[1:]:
         if not r or r[col["Id"]] is None:
             continue
         stats["rows_total"] += 1
         form_id = str(r[col["Id"]])
-        if (xlsx_path.name, form_id) in known:
+        if form_id in known:
             stats["duplicate"] += 1
             continue
         rec = parse_match_record(r[col["Match record"]])
@@ -199,7 +216,7 @@ def import_export(xlsx_path: Path, store: dict, archive_dir: Optional[Path] = No
             entry["keywords"] = hit["keywords"]
             stats["keywords_resolved"] += 1
         store["verdicts"].append(entry)
-        known.add((xlsx_path.name, form_id))
+        known.add(form_id)
         stats["added"] += 1
     store["sources"].append({
         "filename": xlsx_path.name,
@@ -308,7 +325,7 @@ def _cli(argv: list[str]) -> int:
         archive = Path(args[i + 1])
         del args[i:i + 2]
     if not args:
-        print("Usage: python -m src.feedback_store <xlsx> [<xlsx>...] [--archive <dir>]")
+        print("Usage: python -m src.feedback_store <export.xlsx|.csv> [...] [--archive <dir>]")
         return 2
     store = load_store()
     for arg in args:

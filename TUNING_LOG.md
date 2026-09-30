@@ -126,6 +126,11 @@ the re-match, so dashboard counts do not double.
 
 **Outcome:** *(fill in — compare `weekly_roundup` in the 10-06 and 10-13
 diagnostics against the Weekly workbooks and the stored week)*
+Supporting evidence from the 30Sept2026 feedback export, same day: four
+faculty rejected BJA rows from the 09-29 weekly (Veterans Justice ×2,
+Veterans Treatment Court, Adult Treatment Court) — every one a 09-22 pre-gate
+row the replay re-sent; one of them had already rejected the same row from
+the 09-22 daily. That is the failure this change removes.
 **Verdict:** too early
 
 ### 2026-09-28 — Astronomy title terms; boilerplate words added to the context filter
@@ -173,6 +178,10 @@ matches (a match keeps flowing as soon as one non-listed term fires).
 
 **Outcome:** *(fill in — watch the first NIH "Translational ... Therapeutics"
 or NSF instrumentation call after deploy)*
+2026-09-30: the Surgery faculty member matched to the NEI call on
+"applications, preliminary" rated it Not relevant in the 30Sept2026 feedback
+export — the row this entry was written about. The 09-30 daily already shows
+the context filter dropping "applications" and "activities" on a later call.
 **Verdict:** too early
 
 ### 2026-09-25 — Generic-evidence guard on semantic-only matches

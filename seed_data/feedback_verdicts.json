@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-09-23T20:02:13+00:00",
+ "updated_at": "2026-09-30T18:52:39+00:00",
  "sources": [
   {
    "filename": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
@@ -10,6 +10,17 @@
     "duplicate": 0,
     "unparseable": 1,
     "keywords_resolved": 11
+   }
+  },
+  {
+   "filename": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-30Sept2026.csv",
+   "imported_at": "2026-09-30T18:52:39+00:00",
+   "stats": {
+    "rows_total": 21,
+    "added": 9,
+    "duplicate": 11,
+    "unparseable": 1,
+    "keywords_resolved": 8
    }
   }
  ],
@@ -208,6 +219,160 @@
     "brain",
     "brain injury",
     "traumatic brain",
+    "traumatic brain injury"
+   ]
+  },
+  {
+   "form_id": "13",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-30Sept2026.csv",
+   "responded_at": "9/29/2026 6:23",
+   "verdict": "not_relevant",
+   "email": "bpolster@som.umaryland.edu",
+   "grant": "O-BJA-2026-172760",
+   "run_date": "2026-09-29",
+   "confidence": 59,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "BJA FY 2026 National Center for Veterans Justice",
+   "keywords": [
+    "brain",
+    "traumatic brain injury"
+   ]
+  },
+  {
+   "form_id": "14",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-30Sept2026.csv",
+   "responded_at": "9/29/2026 6:44",
+   "verdict": "not_relevant",
+   "email": "mcloeren@som.umaryland.edu",
+   "grant": "O-BJA-2026-172714",
+   "run_date": "2026-09-29",
+   "confidence": 98,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "BJA FY 2026 Veterans Treatment Court Program",
+   "keywords": [
+    "high risk",
+    "substance use",
+    "veterans"
+   ]
+  },
+  {
+   "form_id": "15",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-30Sept2026.csv",
+   "responded_at": "9/29/2026 7:01",
+   "verdict": "optout",
+   "email": "droche@som.umaryland.edu",
+   "grant": "OPTOUT",
+   "run_date": "2026-09-29",
+   "confidence": null,
+   "match_type": "-",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "",
+   "keywords": []
+  },
+  {
+   "form_id": "16",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-30Sept2026.csv",
+   "responded_at": "9/29/2026 8:02",
+   "verdict": "good",
+   "email": "acreanga@som.umaryland.edu",
+   "grant": "CDC-RFA-DP-27-0063",
+   "run_date": "2026-09-29",
+   "confidence": 55,
+   "match_type": "semantic",
+   "rater": "self",
+   "comment": "This is great -- thank you. There are similar forecasted opportunities with CDC -- for example:https://www.grants.gov/search-results-detail/363313",
+   "grant_title": "National Breastfeeding Support, Implementation, and Hospital Quality Improvement Initiative",
+   "keywords": []
+  },
+  {
+   "form_id": "17",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-30Sept2026.csv",
+   "responded_at": "9/29/2026 8:23",
+   "verdict": "not_relevant",
+   "email": "cferrer@som.umaryland.edu",
+   "grant": "PAR-28-057",
+   "run_date": "2026-09-29",
+   "confidence": 78,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "Pancreatic Cancer Detection Consortium: Management and Data Coordination Unit (U24 Clinical Trial Not Allowed)",
+   "keywords": [
+    "adenocarcinoma",
+    "pancreatic cancer"
+   ]
+  },
+  {
+   "form_id": "18",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-30Sept2026.csv",
+   "responded_at": "9/29/2026 8:28",
+   "verdict": "good",
+   "email": "cclaassen@ihv.umaryland.edu",
+   "grant": "RFA-AI-28-015",
+   "run_date": "2026-09-29",
+   "confidence": 70,
+   "match_type": "semantic",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "LeverAging StraTegies to Maximize ImpLementation and Effectiveness for HIV (LAST MILE)",
+   "keywords": []
+  },
+  {
+   "form_id": "19",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-30Sept2026.csv",
+   "responded_at": "9/29/2026 10:51",
+   "verdict": "not_relevant",
+   "email": "skavic@smail.umaryland.edu",
+   "grant": "PAR-28-072",
+   "run_date": "2026-09-29",
+   "confidence": 55,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "NEI Translational Research Program for Therapeutics (R61/R33 Clinical Trial Not Allowed)",
+   "keywords": [
+    "applications",
+    "preliminary"
+   ]
+  },
+  {
+   "form_id": "20",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-30Sept2026.csv",
+   "responded_at": "9/29/2026 12:04",
+   "verdict": "not_relevant",
+   "email": "cgreene@peds.umaryland.edu",
+   "grant": "O-BJA-2026-172721",
+   "run_date": "2026-09-29",
+   "confidence": 59,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "BJA FY 2026 Adult Treatment Court Program",
+   "keywords": [
+    "justice",
+    "risk"
+   ]
+  },
+  {
+   "form_id": "21",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-30Sept2026.csv",
+   "responded_at": "9/29/2026 17:27",
+   "verdict": "not_relevant",
+   "email": "junfang.wu@som.umaryland.edu",
+   "grant": "O-BJA-2026-172760",
+   "run_date": "2026-09-29",
+   "confidence": 59,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "BJA FY 2026 National Center for Veterans Justice",
+   "keywords": [
+    "brain",
     "traumatic brain injury"
    ]
   }
