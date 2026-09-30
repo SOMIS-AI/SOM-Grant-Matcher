@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-09-30 — Weekly roundup re-matched under today's rules (was a replay)
 **Status:** live
-**Commit:** *(fill in after commit)*
+**Commit:** `7de4a1c`
 **Change:** the Tuesday roundup is no longer a replay of `match_results.json`.
 (a) `src/grant_store.py`: every grant the daily fetch returns is kept with its
 FULL text in `data/recent_grants.json` for 14 days. (b) `matcher.build_weekly_roundup`:
