@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-10-01 — NIJ back in the corroboration gate; second wave of context terms; student scholarships ineligible
 **Status:** live
-**Commit:** *(fill in after commit)*
+**Commit:** `3279b66`
 **Change:** three config edits from the 10-01 diagnostic review.
 (a) `corroboration_required_agencies` += "national institute of justice"
 (reverses the 09-23 removal). (b) `context_dependent_terms` += 22 words:
