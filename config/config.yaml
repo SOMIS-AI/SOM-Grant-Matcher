@@ -273,11 +273,15 @@ matching:
   corroboration_required_agencies:
     - "bureau of justice assistance"
     - "office of juvenile justice"
-    # NIJ deliberately NOT listed (removed 2026-09-23). It is DOJ's research
-    # arm, not a programme office: the one confirmed "Good match" in the first
-    # faculty feedback (Connors, NIJ Adolescent Brain Cognitive Development,
-    # keyword-only 99%) would have been gated, and the 09-18 NIJ call had
-    # semantic support on half its deliveries. BJA/OJJDP stay gated.
+    # NIJ: removed 2026-09-23 (DOJ's research arm; one confirmed Good match,
+    # Connors on the ABCD call, was keyword-only at 99%). RE-ADDED 2026-10-01:
+    # the 10-01 run had four NIJ calls — three were forensic/standards work
+    # (firearm 3D algorithms, gunshot residue, ISO biometrics secretariat) and
+    # delivered 6 keyword-only rows on "algorithms, cost effective", "software,
+    # standards" etc.; the one real research call (novel psychoactive
+    # substances) had semantic support on all 13 rows, so the gate costs it
+    # nothing. The Connors-type case is the known price. See TUNING_LOG.
+    - "national institute of justice"
     - "office for victims of crime"
     - "office on violence against women"
     - "community oriented policing"
@@ -534,6 +538,40 @@ matching:
     - "design"
     - "therapeutic"
     - "therapeutics"
+    # ── 2026-10-01 additions (10-01 diag review) ────────────────────────────
+    # Second wave of the same bug. 21 of 40 delivered rows rested on these:
+    # "algorithms, cost effective" / "efficiency, impact" / "software,
+    # standards" put 6 faculty on three NIJ forensic/standards calls;
+    # "experiences, opportunities" ×3 and "function, species" ×2 put five on a
+    # BRAIN Initiative invasive-recording call; "civilian, construction",
+    # "infrastructure, technology", "students, undergraduate", "employment,
+    # engineering" put four on a DoD student scholarship; "experimental
+    # validation" and "molecular mechanisms" topped an NIMH call at 92%/90%.
+    # Method, outcome and workplace words — no topic in any of them. Left
+    # alone on purpose: "firearm" (firearm-injury research is real) and
+    # "therapeutic targets" (specific enough for a pharmacologist).
+    - "experiences"
+    - "experience"
+    - "efficiency"
+    - "impact"
+    - "cost effective"
+    - "cost-effective"
+    - "cost effectiveness"
+    - "algorithms"
+    - "algorithm"
+    - "software"
+    - "standards"
+    - "standards development"
+    - "civilian"
+    - "construction"
+    - "infrastructure"
+    - "employment"
+    - "undergraduate"
+    - "function"
+    - "species"
+    - "experimental validation"
+    - "molecular mechanisms"
+    - "molecular mechanism"
 
   # ── Research track-record signal (Theme 2, 2026-06-23) ────────────────────
   # Weight a match by the faculty member's external publication/grant footprint,
@@ -731,6 +769,17 @@ matching:
       reason:  'PI: small grant for current K-awardees only'
     - pattern: 'fellowship for audiologists|research fellowship for.*students'
       reason:  'PI: trainee fellowship'
+    # Student scholarship programs (added 2026-10-01). The DoD SMART
+    # "Scholarship for Service" put 4 faculty on a digest at 50-53% on
+    # "students, undergraduate" and "employment, engineering" — the recipient
+    # is a student, never a faculty PI. Whole-word "scholarship(s)" only:
+    # scanned against 1,612 archived titles it hits exactly four, all student
+    # programs (SMART, HRSA Scholarships for Disadvantaged Students, 1890
+    # Scholarships, an English Access scholarship). "Scholar" alone is NOT
+    # safe — Scholar Awards, K12 Rigor Scholar and the Lasker Clinical
+    # Research Scholar are faculty mechanisms.
+    - pattern: '\bscholarships?\b'
+      reason:  'PI: student scholarship program (recipient is a student, not a faculty PI)'
     # ── ACL / community-services & capacity grants ────────────────────────────
     # Administration for Community Living (ACL) and similar awards that pass the
     # biomedical pre-filter on aging/dementia/disability vocabulary but are

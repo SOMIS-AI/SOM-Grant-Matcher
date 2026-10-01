@@ -69,6 +69,51 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-10-01 — NIJ back in the corroboration gate; second wave of context terms; student scholarships ineligible
+**Status:** live
+**Commit:** *(fill in after commit)*
+**Change:** three config edits from the 10-01 diagnostic review.
+(a) `corroboration_required_agencies` += "national institute of justice"
+(reverses the 09-23 removal). (b) `context_dependent_terms` += 22 words:
+experience(s), efficiency, impact, cost effective / cost-effective / cost
+effectiveness, algorithm(s), software, standards, standards development,
+civilian, construction, infrastructure, employment, undergraduate, function,
+species, experimental validation, molecular mechanism(s). (c)
+`ineligible_grant_patterns` += whole-word `scholarship(s)` (student
+scholarship programs).
+
+**Why:** 21 of the 40 rows delivered on 10-01 were wrong, in three groups.
+- NIJ: four calls. Three were forensic/standards work — firearm 3D
+  identification algorithms (4 rows: "algorithms, cost effective",
+  "efficiency, impact"), gunshot-residue spectroscopy (1 row: "cost
+  effective"), the ISO/IEC biometrics secretariat (1 row: "software,
+  standards") — six keyword-only rows, zero semantic support. The one
+  research call (Novel Psychoactive Substances) delivered 13 rows to the
+  opioid group with semantic support on every row, so the gate would have
+  removed the six junk rows and none of the good ones. The 09-23 removal
+  rested on a single keyword-only Good match (Connors, ABCD, 99%); that case
+  is the accepted price.
+- BRAIN Initiative invasive neural recording: 5 of 7 rows on "experiences,
+  opportunities" (×3) and "function, species" (×2, two microbiome
+  researchers). Only the two "neurons" rows with semantic agreement belong.
+- DoD SMART Scholarship for Service: 4 rows on "civilian, construction",
+  "infrastructure, technology", "students, undergraduate", "employment,
+  engineering". A student scholarship; no faculty PI. Nothing in the
+  ineligibility list covered scholarships (dissertation/F-series/K32 only).
+- NIMH Treatable Traits: top two rows at 92% and 90% on "experimental
+  validation, in vitro" and "molecular mechanisms, therapeutic targets" —
+  method words. "therapeutic targets" and "firearm" deliberately left as
+  valid anchors.
+
+**Expected effect:** on NIJ calls, keyword-only rows vanish and
+`corroboration_gated` counts them; `context_filtered` rises by roughly the
+11 rows above on a comparable day; any scholarship call lands in
+`skipped_grants.ineligible`. The psychoactive-substance style of NIJ call is
+unaffected (all `both`/`semantic`).
+
+**Outcome:** *(fill in — next NIJ batch; next BRAIN Initiative call)*
+**Verdict:** too early
+
 ### 2026-09-30 — Block Fish and Wildlife Service; reject marine-mammal titles
 **Status:** live
 **Commit:** `8b0bc03`
