@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-10-02 — USDA-NIFA blocked (allow-list override); tech-transfer words in the context filter
 **Status:** live
-**Commit:** *(fill in after commit)*
+**Commit:** `73a81a6`
 **Change:** (a) `src/matcher.py`: new `_AGENCY_ALLOW_OVERRIDES` — "national
 institute of food and agriculture" and "national institute of standards and
 technology" — checked BEFORE the agency allow-list in both the relevance
