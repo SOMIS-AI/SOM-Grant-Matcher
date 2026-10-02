@@ -69,6 +69,29 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-10-02 — USDA-NIFA blocked (allow-list override); tech-transfer words in the context filter
+**Status:** live
+**Commit:** *(fill in after commit)*
+**Change:** (a) `src/matcher.py`: new `_AGENCY_ALLOW_OVERRIDES` — "national
+institute of food and agriculture" and "national institute of standards and
+technology" — checked BEFORE the agency allow-list in both the relevance
+filter and the weekly re-filter; "food and agriculture" / "nifa" also added
+to `_AGENCY_BLOCK`. (b) `context_dependent_terms` += universities,
+university, transfer, technology transfer, private sector, commercialization.
+**Why:** the 10-02 run delivered USDA-NIFA "SBIR/STTR Phase II" to 3 faculty
+on "Technology, universities", "transfer, universities", "private sector".
+Adding NIFA to the block-list alone did nothing: the allow-list contains the
+generic term "national institute" (meant for NIH institutes) and is consulted
+first, so NIFA was being accepted as a trusted agency. Found while verifying
+the block-list change rather than assuming it worked. NIJ is deliberately not
+overridden — it funds research; the corroboration gate handles it.
+**Expected effect:** every NIFA call lands in `skipped_grants.irrelevant`
+with reason "blocked agency term: 'national institute of food and
+agriculture'". SBIR/STTR calls from NIH stay eligible (STTR needs a research-
+institution partner; the 09-25 topic-less guard demotes semantic rows there).
+**Outcome:** *(fill in — next NIFA posting)*
+**Verdict:** too early
+
 ### 2026-10-01 — NIJ back in the corroboration gate; second wave of context terms; student scholarships ineligible
 **Status:** live
 **Commit:** `3279b66`

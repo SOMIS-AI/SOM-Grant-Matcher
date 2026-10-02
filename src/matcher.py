@@ -500,6 +500,10 @@ _AGENCY_ALLOW = {
 _AGENCY_BLOCK = {
     "epa", "environmental protection",
     "usda", "department of agriculture", "agricultural",
+    # 2026-10-02: USDA-NIFA SBIR/STTR Phase II reached 3 faculty on
+    # "universities" / "private sector"; the agency field reads "National
+    # Institute of Food and Agriculture", which none of the terms above hit.
+    "national institute of food and agriculture", "food and agriculture", "nifa",
     "natural resources conservation", "nrcs", "conservation service",
     "farm service agency", "forest service", "rural business",
     "dot", "department of transportation", "federal highway", "federal transit",
@@ -665,6 +669,23 @@ _NONBIO_TITLE_RX = [
     for term in _NONBIO_TITLE_TERMS
 ]
 
+# Agencies the allow-list admits by accident (2026-10-02). "national institute"
+# is allow-listed for the NIH institutes (NIMH, NIAID, ...), but it also matches
+# USDA's National Institute of Food and Agriculture, whose SBIR/STTR Phase II
+# reached 3 faculty on "universities" / "private sector" — and because the
+# allow-list is consulted before the block-list, no block term could stop it.
+# Checked BEFORE the allow-list. NIJ (National Institute of Justice) is NOT
+# here on purpose: it funds real research and is handled by the corroboration
+# gate instead.
+_AGENCY_ALLOW_OVERRIDES = {
+    "national institute of food and agriculture",
+    "national institute of standards and technology",
+}
+_AGENCY_ALLOW_OVERRIDE_RX = [
+    (term, re.compile(r"\b" + re.escape(term) + r"\b", re.IGNORECASE))
+    for term in _AGENCY_ALLOW_OVERRIDES
+]
+
 # Block terms that are ordinary English words. They identify an agency reliably
 # but are meaningless — and actively harmful — when matched against a TITLE:
 #   'education' rejected "Urban Indian Health Program - Education & Research"
@@ -700,6 +721,11 @@ def _is_biomedically_relevant(grant: dict, min_vocab_hits: int = 1) -> tuple[boo
             return False, f"non-biomedical topic term: '{term}'"
 
     # 2. Agency allow-list — fast accept (trusted agencies bypass the block-list).
+    #    Except the few non-biomedical "National Institute of ..." agencies the
+    #    generic allow term would otherwise admit (2026-10-02).
+    for term, pattern in _AGENCY_ALLOW_OVERRIDE_RX:
+        if pattern.search(agency):
+            return False, f"blocked agency term: '{term}'"
     #    Reordered 2026-06-17: previously the block-list ran first, so SAMHSA
     #    "Preventing Youth Overdose: Treatment, Recovery, Education, Awareness"
     #    got rejected by the 'education' block term even though SAMHSA is
@@ -2238,6 +2264,9 @@ def _grant_blocked_outright(grant: dict) -> tuple[bool, str]:
     for term, pattern in _NONBIO_TITLE_RX:
         if pattern.search(title):
             return True, f"non-biomedical topic term: '{term}'"
+    for term, pattern in _AGENCY_ALLOW_OVERRIDE_RX:
+        if pattern.search(agency):
+            return True, f"blocked agency term: '{term}'"
     for allowed, pattern in _AGENCY_ALLOW_RX:
         if pattern.search(agency):
             return False, ""

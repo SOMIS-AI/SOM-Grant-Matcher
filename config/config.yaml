@@ -572,6 +572,17 @@ matching:
     - "experimental validation"
     - "molecular mechanisms"
     - "molecular mechanism"
+    # ── 2026-10-02 additions (10-02 diag review) ────────────────────────────
+    # USDA-NIFA SBIR/STTR Phase II: "Technology, universities", "transfer,
+    # universities", "private sector" carried 3 rows after the context filter
+    # had already removed 11 on "technology" alone. Institution and
+    # tech-transfer words, no topic.
+    - "universities"
+    - "university"
+    - "transfer"
+    - "technology transfer"
+    - "private sector"
+    - "commercialization"
 
   # ── Research track-record signal (Theme 2, 2026-06-23) ────────────────────
   # Weight a match by the faculty member's external publication/grant footprint,
