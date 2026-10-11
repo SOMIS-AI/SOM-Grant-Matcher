@@ -583,6 +583,52 @@ matching:
     - "technology transfer"
     - "private sector"
     - "commercialization"
+    # ── 2026-10-11 additions (10-03..10-11 week review) ────────────────────
+    # Third wave. HEAL IMPOWR (10-07) delivered rows on "institutes of health,
+    # national institutes", "qualitative", "stakeholders", "sustainability",
+    # "attitudes" paired with "public health" / "pain management"; four
+    # genomics and senescence calls (10-10) delivered "computational modeling"
+    # alone five times, plus "cell, function", "cellular, molecular",
+    # "phenotype, the effects", "association, impact"; "pilot projects,
+    # utilization" (Human Virome), "Interdisciplinary, simulation" (NSF
+    # materials), "outcome measures" / "outcome -" (NIAMS P30). Method,
+    # setting and funder-name words. "computational" and "modeling" were
+    # listed separately since 08-22; the phrase survived as its own keyword.
+    - "qualitative"
+    - "stakeholders"
+    - "stakeholder"
+    - "sustainability"
+    - "attitudes"
+    - "improvements"
+    - "the intersection"
+    - "phase i"
+    - "public health"
+    - "national institutes"
+    - "the national institutes"
+    - "institutes of health"
+    - "national institutes of health"
+    - "cell"
+    - "cells"
+    - "cellular"
+    - "molecular"
+    - "association"
+    - "phenotype"
+    - "phenotypes"
+    - "effects"
+    - "the effects"
+    - "outcome"
+    - "outcomes"
+    - "outcome measures"
+    - "interdisciplinary"
+    - "computational modeling"
+    - "computational modelling"
+    - "variety"
+    - "pilot projects"
+    - "pilot project"
+    - "utilization"
+    - "serve"
+    - "disorders"
+    - "substance"
 
   # ── Research track-record signal (Theme 2, 2026-06-23) ────────────────────
   # Weight a match by the faculty member's external publication/grant footprint,

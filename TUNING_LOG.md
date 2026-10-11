@@ -69,6 +69,54 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-10-11 — Third wave of context terms (10-03..10-11 week review)
+**Status:** live
+**Commit:** *(fill in after commit)*
+**Change:** `context_dependent_terms` += 35 entries (incl. plural/phrase
+variants): qualitative, stakeholder(s), sustainability, attitudes,
+improvements, the intersection, phase i, public health, national institutes
+(+ "the national institutes", "institutes of health", "national institutes
+of health"), cell(s), cellular, molecular, association, phenotype(s),
+effects / the effects, outcome(s), outcome measures, interdisciplinary,
+computational modeling/modelling, variety, pilot project(s), utilization,
+serve, disorders, substance. No thresholds moved.
+
+**Why:** 214 rows delivered 10-03..10-10; about 25 rested only on these.
+- HEAL IMPOWR, two announcements with one title (RFA-DA-28-011/-012), 59
+  rows on 10-07. Top of each list right (Bergeria, Dunn, Weintraub,
+  Kleykamp). Tail: one row at 60% on "institutes of health, national
+  institutes, the national institutes" (the funder's own name as keywords),
+  six at 51-57% on "qualitative" / "stakeholders" / "sustainability" /
+  "attitudes" paired with "public health" or "pain management".
+- Four genomics/senescence calls on 10-10: "computational modeling" alone
+  carried five rows at 51% ("computational" and "modeling" were listed
+  separately since 08-22; the phrase survived as its own keyword); "cell,
+  function", "cellular, molecular", "phenotype, the effects", "association,
+  impact" carried six more.
+- "pilot projects, utilization" (Human Virome R03), "Interdisciplinary,
+  simulation" (NSF Materials Innovation Platforms), "outcome measures" /
+  "outcome -" (NIAMS P30), "disorders, substance" (NExUS).
+Checked against the week's good rows: "opioid use disorder, public health",
+"chronic pain, qualitative", "metadata, senescence", "craving, neurons",
+"genome wide association, gwas", "carcinogens", "school safety, violence"
+all keep a specific anchor and still deliver.
+
+**Context for the week (no change needed):** the 10-06 weekly was the first
+re-matched roundup — replay would have sent 67 rows / 15 grants, it sent
+56 / 9, removing exactly the 10-01/10-02 junk (three NIJ forensic calls,
+SMART scholarship, USDA SBIR) plus the marine-mammal fallback row;
+`rematch_error` empty. The corroboration gate with NIJ gated 64 keyword-only
+rows across ten DOJ calls 10-08..10-10 and let no keyword-only DOJ row
+through. CHAMP carcinogen monographs drew 19 semantic rows to cancer
+biologists (literature-based hazard assessment; only the two "carcinogens"
+rows fit) — left alone, rare call type.
+
+**Expected effect:** `context_filtered` up by ~25 on a comparable week;
+`kw` (keyword-only deliveries) down by the same; no change to `both` or
+`sem`.
+**Outcome:** *(fill in — next HEAL/genomics-style batch)*
+**Verdict:** too early
+
 ### 2026-10-02 — USDA-NIFA blocked (allow-list override); tech-transfer words in the context filter
 **Status:** live
 **Commit:** `73a81a6`
