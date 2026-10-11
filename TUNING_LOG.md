@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-10-11 — Third wave of context terms (10-03..10-11 week review)
 **Status:** live
-**Commit:** *(fill in after commit)*
+**Commit:** `228e6c5`
 **Change:** `context_dependent_terms` += 35 entries (incl. plural/phrase
 variants): qualitative, stakeholder(s), sustainability, attitudes,
 improvements, the intersection, phase i, public health, national institutes
