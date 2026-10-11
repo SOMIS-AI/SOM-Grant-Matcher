@@ -1126,6 +1126,16 @@ def _partial_path(cache_file: str) -> str:
     return f"{cache_file}.partial"
 
 
+def _beat(stage: str) -> None:
+    """Keep the scheduler heartbeat alive during a long scrape (throttled; see
+    src/heartbeat.py). Best-effort — never lets a heartbeat problem touch the scrape."""
+    try:
+        import heartbeat
+        heartbeat.beat(stage)
+    except Exception:
+        pass
+
+
 def _save_partial(cache_file: str, all_faculty: list, completed_pass: int, started_at: str) -> None:
     try:
         from atomic_io import atomic_write_json
@@ -1289,6 +1299,7 @@ def get_faculty_profiles(config: dict, force: bool = False) -> list[dict]:
         # ── Pass 1: department listing pages ──────────────────────────────────────
         logger.info(f"Pass 1/9: Scraping {total} UMSOM department pages...")
         for i, path in enumerate(dept_paths, 1):
+            _beat(f"scrape pass 1/9 dept {i}/{total}")
             url = urljoin(BASE_URL, path)
             logger.info(f"  Dept {i}/{total}: {url}")
             fac = scrape_department_page(session, url)
@@ -1741,6 +1752,7 @@ def _merge_keywords(faculty: dict, new_keywords: list[str], source: str,
     Keywords already present keep their existing position — only genuinely new
     ones move to the front — so this never reshuffles an established list.
     """
+    _beat(f"scrape enrich {source}")
     # Filter boilerplate up-front so per-source records stay clean.
     contributed = [k for k in (new_keywords or []) if not _is_boilerplate_kw(k)]
 

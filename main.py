@@ -51,6 +51,7 @@ from emailer import (
     send_failure_alert,
 )
 import subscriptions
+import heartbeat
 
 # Per-process state shared between the pipeline and the send phase (2026-09-30):
 # the match pool (faculty + staff) the last successful run matched against, so
@@ -136,6 +137,18 @@ def setup_logging(config: dict):
 # ── Core Run Cycle ────────────────────────────────────────────────────────────
 
 def run_pipeline(config: dict, force_scrape: bool = False):
+    """Run the pipeline once, keeping the scheduler heartbeat alive while it
+    works (2026-10-11): a scrape-day run takes ~1h45, and a heartbeat written
+    only from the idle loop made /health report the scheduler dead and let
+    Azure Health Check replace the instance. See src/heartbeat.py."""
+    heartbeat.start_run("pipeline")
+    try:
+        return _run_pipeline_inner(config, force_scrape)
+    finally:
+        heartbeat.end_run()
+
+
+def _run_pipeline_inner(config: dict, force_scrape: bool = False):
     """
     Execute the data pipeline: scrape (if needed) → fetch grants → match.
     Does NOT send any email — the caller decides what to send and to whom.
@@ -166,6 +179,7 @@ def run_pipeline(config: dict, force_scrape: bool = False):
         pass
 
     logger.info("Step 1/3 — Loading faculty profiles...")
+    heartbeat.beat("step 1/3 faculty", force=True)
     if force_scrape:
         logger.info("  FORCE_SCRAPE: ignoring cache age — fresh scrape (cache retained for the roster guard)")
     try:
@@ -273,6 +287,7 @@ def run_pipeline(config: dict, force_scrape: bool = False):
 
     # Step 2: Fetch new grants from ALL sources
     logger.info("Step 2/3 — Fetching new grants from all sources...")
+    heartbeat.beat("step 2/3 fetch", force=True)
     scraper_health = {}
     try:
         # defer_seen_save: grants are NOT marked seen at fetch time. The commit
@@ -322,6 +337,7 @@ def run_pipeline(config: dict, force_scrape: bool = False):
 
     # Step 3: Match grants to faculty keywords
     logger.info("Step 3/3 — Matching grants to faculty keywords...")
+    heartbeat.beat("step 3/3 match", force=True)
     matched_results = find_matches(new_grants, faculty, config=config)
     logger.info(f"  ✓ {len(matched_results)} grants with faculty matches")
 
@@ -1285,15 +1301,7 @@ def _write_heartbeat(fire_at=None):
     """Stamp data/scheduler_heartbeat.json so /health can detect a dead or
     wedged scheduler thread. Written at least every 15 min (each sleep-chunk
     wake) — the dashboard's /health flags the heartbeat stale past 45 min."""
-    try:
-        from datetime import timezone as _tz
-        from atomic_io import atomic_write_json
-        atomic_write_json("data/scheduler_heartbeat.json", {
-            "beat": datetime.now(_tz.utc).isoformat(),
-            "next_fire": fire_at.isoformat() if fire_at else None,
-        })
-    except Exception:
-        pass  # heartbeat is best-effort; never disturb the scheduler
+    heartbeat.beat("idle", next_fire=fire_at, force=True)   # see src/heartbeat.py
 
 
 def run_scheduler(config: dict):

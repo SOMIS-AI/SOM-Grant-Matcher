@@ -1105,19 +1105,16 @@ def health():
     if _matcher_thread is not None and not _matcher_thread.is_alive():
         problems.append("matcher_thread_dead")
     hb = load_json(DATA_DIR / "scheduler_heartbeat.json", {})
-    beat = hb.get("beat")
-    if beat:
-        try:
-            beat_dt = datetime.fromisoformat(beat)
-            if beat_dt.tzinfo is None:
-                beat_dt = beat_dt.replace(tzinfo=timezone.utc)
-            age = (datetime.now(timezone.utc) - beat_dt).total_seconds()
-            if age > _HEARTBEAT_STALE_SECS:
-                problems.append("scheduler_heartbeat_stale")
-        except (ValueError, TypeError):
-            pass
-    # No heartbeat file at all is fine on first boot (written within 15 min);
-    # only an EXISTING-but-stale beat or a dead thread degrades health.
+    # Staleness is decided by heartbeat.assess (2026-10-11): a beat older than
+    # 45 min is fine while a pipeline run is in progress and younger than its
+    # grace window — a scrape-day run is not a dead scheduler. No heartbeat
+    # file at all is fine on first boot; a stale beat with no run, or a dead
+    # thread, degrades health.
+    try:
+        import heartbeat as _hb
+        problems.extend(_hb.assess(hb, stale_secs=_HEARTBEAT_STALE_SECS))
+    except Exception:
+        pass
     if problems:
         return jsonify({"status": "degraded", "problems": problems}), 500
     return jsonify({"status": "ok"}), 200
