@@ -150,8 +150,15 @@ def _read_export_rows(path: Path) -> list:
     the second export came as CSV)."""
     if path.suffix.lower() == ".csv":
         import csv
-        with open(path, encoding="utf-8-sig", newline="") as f:
-            return [tuple(r) for r in csv.reader(f)]
+        # Forms CSVs arrive as UTF-8 (with BOM) or, when saved through Excel,
+        # as Windows-1252 — the 11Oct2026 export had a curly apostrophe (0x92)
+        # in a comment and failed to decode as UTF-8.
+        raw = path.read_bytes()
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = raw.decode("cp1252")
+        return [tuple(r) for r in csv.reader(text.splitlines())]
     import openpyxl
     wb = openpyxl.load_workbook(path, read_only=True)
     return list(wb.worksheets[0].iter_rows(values_only=True))

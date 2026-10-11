@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-09-30T18:52:39+00:00",
+ "updated_at": "2026-10-11T22:35:32+00:00",
  "sources": [
   {
    "filename": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
@@ -21,6 +21,17 @@
     "duplicate": 11,
     "unparseable": 1,
     "keywords_resolved": 8
+   }
+  },
+  {
+   "filename": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-11October2026.csv",
+   "imported_at": "2026-10-11T22:35:32+00:00",
+   "stats": {
+    "rows_total": 29,
+    "added": 8,
+    "duplicate": 20,
+    "unparseable": 1,
+    "keywords_resolved": 6
    }
   }
  ],
@@ -375,6 +386,131 @@
     "brain",
     "traumatic brain injury"
    ]
+  },
+  {
+   "form_id": "22",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-11October2026.csv",
+   "responded_at": "10/1/2026 9:49",
+   "verdict": "not_relevant",
+   "email": "lschriml@som.umaryland.edu",
+   "grant": "PAR-28-056",
+   "run_date": "2026-09-29",
+   "confidence": 53,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "Pancreatic Cancer Detection Consortium: Research Units (U01 Clinical Trial Optional)",
+   "keywords": [
+    "cancer",
+    "validation"
+   ]
+  },
+  {
+   "form_id": "23",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-11October2026.csv",
+   "responded_at": "10/6/2026 8:38",
+   "verdict": "not_relevant",
+   "email": "sadebamowo@som.umaryland.edu",
+   "grant": "RFA-MH-27-125",
+   "run_date": "2026-10-06",
+   "confidence": 53,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "Mechanistic Evaluation of Therapeutic Targets derived from Treatable Traits to Improve CNS Outcomes in People with HIV (R21/R33 Clinical Trial Not Allowed)",
+   "keywords": [
+    "human immunodeficiency virus (hiv)"
+   ]
+  },
+  {
+   "form_id": "24",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-11October2026.csv",
+   "responded_at": "10/6/2026 9:04",
+   "verdict": "optout",
+   "email": "glewis@ihv.umaryland.edu",
+   "grant": "OPTOUT",
+   "run_date": "2026-10-06",
+   "confidence": null,
+   "match_type": "-",
+   "rater": "self",
+   "comment": "I don\u2019t want these emails.",
+   "grant_title": "",
+   "keywords": []
+  },
+  {
+   "form_id": "25",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-11October2026.csv",
+   "responded_at": "10/6/2026 11:34",
+   "verdict": "not_relevant",
+   "email": "etraver@ihv.umaryland.edu",
+   "grant": "PAS-28-073",
+   "run_date": "2026-10-06",
+   "confidence": 50,
+   "match_type": "semantic",
+   "rater": "self",
+   "comment": "not interested in alcohol-focused topics",
+   "grant_title": "HIV Prevention and Alcohol (R61/R33 Clinical Trials Optional)",
+   "keywords": []
+  },
+  {
+   "form_id": "26",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-11October2026.csv",
+   "responded_at": "10/6/2026 11:48",
+   "verdict": "not_relevant",
+   "email": "aamoroso@ihv.umaryland.edu",
+   "grant": "RFA-AI-28-031",
+   "run_date": "2026-10-06",
+   "confidence": 52,
+   "match_type": "semantic",
+   "rater": "self",
+   "comment": "looking for HIV related care grants",
+   "grant_title": "Centers for Structural Biology of HIV and Other Infectious Diseases (U54 Clinical Trial Not Allowed)",
+   "keywords": []
+  },
+  {
+   "form_id": "27",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-11October2026.csv",
+   "responded_at": "10/6/2026 16:29",
+   "verdict": "not_relevant",
+   "email": "tfaw@som.umaryland.edu",
+   "grant": "RFA-MH-27-125",
+   "run_date": "2026-10-06",
+   "confidence": 50,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "",
+   "keywords": []
+  },
+  {
+   "form_id": "28",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-11October2026.csv",
+   "responded_at": "10/6/2026 18:13",
+   "verdict": "not_relevant",
+   "email": "mgiglio@som.umaryland.edu",
+   "grant": "RFA-AI-28-031",
+   "run_date": "2026-10-06",
+   "confidence": 65,
+   "match_type": "semantic",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "Centers for Structural Biology of HIV and Other Infectious Diseases (U54 Clinical Trial Not Allowed)",
+   "keywords": []
+  },
+  {
+   "form_id": "29",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-11October2026.csv",
+   "responded_at": "10/6/2026 18:13",
+   "verdict": "not_relevant",
+   "email": "mgiglio@som.umaryland.edu",
+   "grant": "RFA-MH-27-125",
+   "run_date": "2026-10-06",
+   "confidence": 54,
+   "match_type": "semantic",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "Mechanistic Evaluation of Therapeutic Targets derived from Treatable Traits to Improve CNS Outcomes in People with HIV (R21/R33 Clinical Trial Not Allowed)",
+   "keywords": []
   }
  ]
 }

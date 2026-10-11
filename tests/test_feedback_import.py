@@ -57,5 +57,18 @@ def test_csv_import_and_cross_file_dedupe():
         assert ("a@som.umaryland.edu", "O-BJA-1") in idx["suppress"]
 
 
+def test_csv_import_tolerates_windows_1252():
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "Form-11Oct2026.csv"
+        line = ",".join(['"7"', '"10/8/2026 9:00"', '"10/8/2026 9:01"', '"anonymous"', '""',
+                         '"d@som.umaryland.edu|RFA-2|2026-10-07|60|keyword|self"', '"Not relevant"',
+                         '"I don’t work on this"'])
+        p.write_bytes((",".join(HDR) + "\r\n" + line + "\r\n").encode("cp1252"))
+        store = fs.load_store(Path(tmp) / "none.json")
+        s = fs.import_export(p, store)
+        assert (s["added"], s["unparseable"]) == (1, 0)
+        assert store["verdicts"][0]["comment"] == "I don’t work on this"
+
+
 if __name__ == "__main__":
     test_csv_import_and_cross_file_dedupe(); print("PASS")
