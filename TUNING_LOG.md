@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-10-14 — Fourth wave of context terms (10-11..10-14 review)
 **Status:** live
-**Commit:** `pending`
+**Commit:** `9ef97d9`
 **Change:** `context_dependent_terms` += 8 entries (5 terms with spelling
 variants): next-generation / next generation, health security, spectrum
 disorders, multi-site / multi site / multisite, documentation. No thresholds
