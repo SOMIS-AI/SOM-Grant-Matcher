@@ -629,6 +629,23 @@ matching:
     - "serve"
     - "disorders"
     - "substance"
+    # ── 2026-10-14 additions (10-11..10-14 review) ──────────────────────────
+    # "next-generation" alone put a movement-disorders neurologist on the
+    # malaria vaccine R61/R33 (62%); "health security, public health" put an
+    # HIV researcher on the same call; "spectrum disorders" is a sub-phrase of
+    # "fetal alcohol spectrum disorders" (CIFASD, 62%); "multi‐site" alone put
+    # a radiation physicist on the HIV implementation-science call — the
+    # source spells it with a U+2010 hyphen, which normalize() turns into a
+    # space, hence the three spellings; "documentation" (SenNet DCIC, paired
+    # with "metadata", which stays a real topic for the IGS bioinformaticians).
+    - "next-generation"
+    - "next generation"
+    - "health security"
+    - "spectrum disorders"
+    - "multi-site"
+    - "multi site"
+    - "multisite"
+    - "documentation"
 
   # ── Research track-record signal (Theme 2, 2026-06-23) ────────────────────
   # Weight a match by the faculty member's external publication/grant footprint,

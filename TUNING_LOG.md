@@ -69,6 +69,47 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-10-14 — Fourth wave of context terms (10-11..10-14 review)
+**Status:** live
+**Commit:** `pending`
+**Change:** `context_dependent_terms` += 8 entries (5 terms with spelling
+variants): next-generation / next generation, health security, spectrum
+disorders, multi-site / multi site / multisite, documentation. No thresholds
+moved. 151 terms total.
+
+**Why:** 10-11..10-13 brought zero new Grants.gov postings (holiday lull);
+the 10-13 weekly re-matched 22 grants into 161 rows and the 10-14 daily
+delivered 17 on two NIH calls. Reconciled against the audit log: 107 unique
+faculty = 91 digests sent + 11 not enrolled + 1 opt-out + 4 roster rows with
+no email. Of the 62 keyword-only rows across both reports, four rested only
+on method/setting words:
+- "next-generation" alone put a movement-disorders neurologist on the
+  malaria vaccine R61/R33 at 62%.
+- "health security, public health" put an HIV researcher on the same call
+  at 54% ("public health" was already listed; the partner was not).
+- "spectrum disorders" matched a sub-phrase of "fetal alcohol spectrum
+  disorders" and put a psychiatrist on CIFASD at 62%.
+- "multi‐site" alone put a radiation physicist on the HIV implementation-
+  science R61/R33 at 56%. The source spells it with a U+2010 hyphen, which
+  `normalize()` turns into a space, hence the three spellings.
+- "documentation, metadata" (SenNet DCIC, 60%) keeps delivering: "metadata"
+  is the real topic for the IGS bioinformaticians (Giglio, Schriml, White,
+  Mahurkar) and stays unlisted. Only the generic partner was added.
+
+Replayed the filter rule on the real keyword lists before committing: the
+four target rows drop; "protection, vaccines", "malaria, public health",
+"fetal alcohol spectrum disorders", "generation vaccines", "data
+coordination, metadata, outreach" all keep an anchor. 19 tests pass.
+
+Pairs like "impact, pain", "activities, genomic", "genome, structure" were
+left alone on purpose: one listed word plus one topic word is the design,
+and those rows sit at 51-59%.
+
+The weekly re-match also dropped two stored grants from 10-10 — "Systematic
+Characterization of Genomic Variation" (5 rows on "cellular, molecular" /
+"cell, function" / "phenotype, the effects") and NSF Materials Innovation
+Platforms — exactly what the 10-11 wave was meant to do.
+
 ### 2026-10-11 — Third wave of context terms (10-03..10-11 week review)
 **Status:** live
 **Commit:** `228e6c5`
