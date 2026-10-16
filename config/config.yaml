@@ -646,6 +646,22 @@ matching:
     - "multi site"
     - "multisite"
     - "documentation"
+    # ── 2026-10-16 additions (10-15..10-16 review) ──────────────────────────
+    # "incidence, risk, young adults" put a stroke neurologist on Early-Onset
+    # Cancers at 90% and a colleague at 65% ("risk" and "young adults" were
+    # already listed); "biological mechanisms, the etiology" put a third
+    # faculty member on the same call at 60%; "contribute" alone (SPORE, 52%)
+    # and "Mentorship, contribute" (Alcohol P50, 63%) carried the same person
+    # twice; "large scale" alone put a data scientist on a mind-body trials
+    # call at 52%. Epidemiology-method, career and scale words — no topic.
+    - "incidence"
+    - "etiology"
+    - "the etiology"
+    - "biological mechanisms"
+    - "contribute"
+    - "mentorship"
+    - "large scale"
+    - "large-scale"
 
   # ── Research track-record signal (Theme 2, 2026-06-23) ────────────────────
   # Weight a match by the faculty member's external publication/grant footprint,
