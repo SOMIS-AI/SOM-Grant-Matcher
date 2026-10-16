@@ -69,6 +69,42 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-10-16 — Fifth wave of context terms (10-15..10-16 review)
+**Status:** live
+**Commit:** `87c867e`
+**Change:** `context_dependent_terms` += 8 entries (7 words with one spelling
+variant): incidence, etiology / the etiology, biological mechanisms,
+contribute, mentorship, large scale / large-scale. No thresholds moved.
+158 distinct terms after normalisation.
+
+**Why:** 10-15 was the busiest day in weeks (32 grants checked, 18 from
+Grants.gov and 14 from a Simons scraper that had been quiet since 09-02);
+10-16 checked 10. The two days delivered 43 rows, 20 of them keyword-only.
+Six rested only on method, career or scale words:
+- "incidence, risk, young adults" put a stroke-in-young-adults neurologist
+  on Early-Onset Cancers (RP1) at 90% and a colleague at 65%. "risk" and
+  "young adults" were already listed; "incidence" was the survivor.
+- "biological mechanisms, the etiology" put a third faculty member on the
+  same call at 60%.
+- "contribute" alone (SPORE, 52%) and "Mentorship, contribute" (Alcohol
+  P50, 63%) carried the same person onto two calls.
+- "large scale" alone put an anesthesiology data scientist on the mind-body
+  multi-site trials call at 52%.
+The 10-14 wave was not yet live on these runs (no restart after the 17:18
+UTC build), which is why "multi‐site" still delivered twice on 10-16.
+
+Replayed the filter rule on the real keyword lists before committing: the
+six target rows drop; "biobank, cancer, human biospecimens", "Alcohol,
+alcoholism", "palliative care", "neuroscience, software", "cancer,
+experimental therapeutics", "alcohol use disorder, alcoholism", "diagnosis"
+all keep an anchor. 19 tests pass.
+
+Noted, not built: "Limited Competition:" titles (NCI NCTN Biospecimen
+Banks, 10 rows) are not caught by the sole-source ineligible pattern; the
+Simons scraper re-found the Scientific Software Research Faculty Award
+under a reworded title and re-delivered it to the same three faculty the
+next day (title-keyed dedupe).
+
 ### 2026-10-14 — Fourth wave of context terms (10-11..10-14 review)
 **Status:** live
 **Commit:** `9ef97d9`
