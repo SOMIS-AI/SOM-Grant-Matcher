@@ -888,10 +888,18 @@ def _compile_clinical_basic(cfg: dict):
             clinical_required.append(re.compile(pat, re.IGNORECASE))
         except re.error as e:
             logger.warning(f"Bad clinical_required_patterns regex {pat!r}: {e}")
+    # Report-only probe (2026-10-16): center-type calls. Audited, never dropped.
+    probe = []
+    for pat in cfg.get("clinical_required_report_only_patterns", []):
+        try:
+            probe.append(re.compile(pat, re.IGNORECASE))
+        except re.error as e:
+            logger.warning(f"Bad clinical_required_report_only_patterns regex {pat!r}: {e}")
 
     return {
         "report_only":       bool(cfg.get("report_only", False)),
         "clinical_required": clinical_required,
+        "clinical_probe":    probe,
         "basic_rx":          _terms_rx(cfg.get("basic_science_terms")),
         "clinical_rx":       _terms_rx(cfg.get("clinical_science_terms")),
         "min_basic":         int(cfg.get("min_basic_signals", 1)),
@@ -904,6 +912,18 @@ def _grant_is_clinical_required(grant: dict, cb) -> bool:
         return False
     hay = normalize(f"{grant.get('title','')} {grant.get('searchable_text','')}")
     return any(rx.search(hay) for rx in cb["clinical_required"])
+
+
+def _grant_clinical_probe_hit(grant: dict, cb):
+    """The first report-only probe pattern that matches the grant text, or
+    None. Probe hits are audited in the diagnostic but never drop a match."""
+    if not cb or not cb.get("clinical_probe"):
+        return None
+    hay = normalize(f"{grant.get('title','')} {grant.get('searchable_text','')}")
+    for rx in cb["clinical_probe"]:
+        if rx.search(hay):
+            return rx.pattern
+    return None
 
 
 def _faculty_is_basic_only(faculty: dict, cb) -> bool:
@@ -1524,6 +1544,7 @@ def find_matches(grants, faculty, config=None, persist=True):
     _sem_lost_total = 0             # ...but were dropped by that floor
     _sem_lost_45_49 = 0             # of those, the band a floor of 45 would recover
     clinical_basic_suppressed_total = 0   # Theme 1: basic-only faculty off clinical grants
+    clinical_basic_probe_total = 0        # report-only center-type probe hits (never dropped)
 
     skipped_irrelevant = 0
     skipped_admin = 0
@@ -1824,21 +1845,33 @@ def find_matches(grants, faculty, config=None, persist=True):
         # When the grant requires human-subjects/clinical/registry/services work,
         # drop matches from faculty classified purely basic-science. report_only
         # logs the would-be drops without removing them (validation mode).
-        if all_matches and cb_filter and basic_only_names \
-                and _grant_is_clinical_required(grant, cb_filter):
-            suppressed_here = [m.faculty_name for m in all_matches
-                               if m.faculty_name in basic_only_names]
-            if suppressed_here:
-                if not cb_filter["report_only"]:
-                    all_matches = [m for m in all_matches
-                                   if m.faculty_name not in basic_only_names]
-                clinical_basic_suppressed_total += len(suppressed_here)
-                _diag["clinical_basic_suppressed"].append({
-                    "grant_title": grant["title"][:80],
-                    "report_only": cb_filter["report_only"],
-                    "count":       len(suppressed_here),
-                    "sample":      suppressed_here[:8],
-                })
+        # 2026-10-16: a second, REPORT-ONLY pattern group (center-type calls:
+        # coordinating / engagement / outreach centers) audits the same
+        # basic-only faculty without dropping them. The live patterns win
+        # when both match. Entries carry probe=<pattern> so the two are
+        # distinguishable in the diagnostic.
+        if all_matches and cb_filter and basic_only_names:
+            live_hit = _grant_is_clinical_required(grant, cb_filter)
+            probe_hit = None if live_hit else _grant_clinical_probe_hit(grant, cb_filter)
+            if live_hit or probe_hit:
+                suppressed_here = [m.faculty_name for m in all_matches
+                                   if m.faculty_name in basic_only_names]
+                if suppressed_here:
+                    drop = live_hit and not cb_filter["report_only"]
+                    if drop:
+                        all_matches = [m for m in all_matches
+                                       if m.faculty_name not in basic_only_names]
+                    if live_hit:
+                        clinical_basic_suppressed_total += len(suppressed_here)
+                    else:
+                        clinical_basic_probe_total += len(suppressed_here)
+                    _diag["clinical_basic_suppressed"].append({
+                        "grant_title": grant["title"][:80],
+                        "report_only": not drop,
+                        "probe":       probe_hit,
+                        "count":       len(suppressed_here),
+                        "sample":      suppressed_here[:8],
+                    })
 
         # ── Semantic distinctive-concept guard ───────────────────────────────
         # Demote SEMANTIC-ONLY matches when the grant is about a distinctive
@@ -2072,6 +2105,8 @@ def find_matches(grants, faculty, config=None, persist=True):
     if clinical_basic_suppressed_total:
         _ro = " (report-only)" if (cb_filter and cb_filter["report_only"]) else ""
         logger.info(f"  {clinical_basic_suppressed_total} matches suppressed — basic-only faculty on clinical-required grant{_ro}")
+    if clinical_basic_probe_total:
+        logger.info(f"  {clinical_basic_probe_total} matches flagged (report-only) — basic-only faculty on center-type call")
     if concept_guarded_total:
         logger.info(f"  {concept_guarded_total} semantic matches demoted — distinctive-concept guard (e.g. kidney-disease vs cancer)")
     if corroboration_gated_total:
@@ -2108,6 +2143,7 @@ def find_matches(grants, faculty, config=None, persist=True):
         "context_filtered": context_filtered_total,
         "track_record_gated": track_record_gated_total,
         "clinical_basic_suppressed": clinical_basic_suppressed_total,
+        "clinical_basic_probe": clinical_basic_probe_total,
         "semantic_concept_guarded": concept_guarded_total,
         "corroboration_gated": corroboration_gated_total,
         "faculty_capped": faculty_capped_total,

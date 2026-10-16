@@ -69,6 +69,37 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-10-16 — Center-type probe on the clinical/basic filter (REPORT-ONLY)
+**Status:** live, report-only (never drops a match)
+**Commit:** `pending`
+**Change:** `clinical_basic_filter.clinical_required_report_only_patterns`, a
+second pattern group next to `clinical_required_patterns`: coordinating
+center, engagement ... center, outreach ... center, capacity-building,
+"building engagement". When one of these matches a grant and a faculty
+member classifies basic-only (basic signals, zero clinical signals), the
+match is KEPT and logged in the diagnostic's `clinical_basic_suppressed`
+with `report_only: true` and `probe: <pattern>`; `summary.clinical_basic_probe`
+counts them. The live group is untouched and still drops. New test file
+`tests/test_clinical_probe.py` (4 tests); 23 pass.
+
+**Why:** two faculty rejected center-type calls that the live filter cannot
+see because they are "Clinical Trial Not Allowed":
+- Ferrer (09-29) on a U24 coordinating center.
+- Keller (10-13) on HEAL IMPOWR BEACON U2C RFA-DA-28-012 ("human studies
+  not relevant to me"). The SAME filter had correctly suppressed him and 25
+  other basic scientists from the sibling RM1 -011 on 10-07, which says
+  "Clinical Trial Required". The gap is the call type, not the classifier.
+Two data points is thin for a rule, so the patterns audit first.
+
+Checked against real titles: BEACON, IGVF DCC, SenNet DCIC and the Pepper
+OAIC Coordinating Center hit the probe; NExUS, the malaria R61/R33 and the
+RM1 do not. The IGS informatics people (Giglio, Schriml, White, Mahurkar)
+carry no basic signal, so they would survive even if promoted.
+
+**Promote when:** a few weeks of diagnostics show the probe naming only
+people who should not have been delivered. Then move the pattern(s) into
+`clinical_required_patterns`.
+
 ### 2026-10-16 — Fifth wave of context terms (10-15..10-16 review)
 **Status:** live
 **Commit:** `87c867e`

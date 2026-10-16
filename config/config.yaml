@@ -751,6 +751,21 @@ matching:
       # (basic-only). Validated 2026-06-25: "P30 Clinical Trial Optional" had
       # over-fired this rule and report-only-suppressed basic scientists.
       - 'clinical trials?\s+required'
+    # ── Center-type probe (REPORT-ONLY, 2026-10-16) ────────────────────────
+    # Coordinating / engagement / outreach / capacity-building centers are
+    # human-facing work with no trial, so none of the patterns above fire,
+    # yet basic scientists keep landing on them: Ferrer on a U24 coordinating
+    # center (09-29), Keller on HEAL IMPOWR BEACON U2C (10-13, "human studies
+    # not relevant to me"). These patterns NEVER drop a match. A hit is logged
+    # in the diagnostic's clinical_basic_suppressed with report_only=true and
+    # probe=<pattern>, so we can see who would have been removed before
+    # promoting any of them into clinical_required_patterns.
+    clinical_required_report_only_patterns:
+      - '\bcoordinat\w*\b.{0,30}\bcent(?:er|re)s?\b'     # coordinating center, data coordination and integration center
+      - '\bengagement\b.{0,60}\bcent(?:er|re)s?\b'
+      - '\boutreach\b.{0,60}\bcent(?:er|re)s?\b'
+      - '\bcapacity[- ]building\b'
+      - '\bbuilding engagement\b'
     # Faculty basic-science signals (matched word-boundary against keyword pool).
     basic_science_terms:
       - mice
