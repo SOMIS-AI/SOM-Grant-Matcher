@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-10-16 — Center-type probe on the clinical/basic filter (REPORT-ONLY)
 **Status:** live, report-only (never drops a match)
-**Commit:** `pending`
+**Commit:** `f86c888`
 **Change:** `clinical_basic_filter.clinical_required_report_only_patterns`, a
 second pattern group next to `clinical_required_patterns`: coordinating
 center, engagement ... center, outreach ... center, capacity-building,
