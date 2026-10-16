@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-10-11T22:35:32+00:00",
+ "updated_at": "2026-10-16T13:37:22+00:00",
  "sources": [
   {
    "filename": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
@@ -32,6 +32,17 @@
     "duplicate": 20,
     "unparseable": 1,
     "keywords_resolved": 6
+   }
+  },
+  {
+   "filename": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16October2026.csv",
+   "imported_at": "2026-10-16T13:37:22+00:00",
+   "stats": {
+    "rows_total": 40,
+    "added": 11,
+    "duplicate": 28,
+    "unparseable": 1,
+    "keywords_resolved": 11
    }
   }
  ],
@@ -511,6 +522,194 @@
    "comment": "",
    "grant_title": "Mechanistic Evaluation of Therapeutic Targets derived from Treatable Traits to Improve CNS Outcomes in People with HIV (R21/R33 Clinical Trial Not Allowed)",
    "keywords": []
+  },
+  {
+   "form_id": "30",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16October2026.csv",
+   "responded_at": "10/12/2026 18:52",
+   "verdict": "not_relevant",
+   "email": "sadebamowo@som.umaryland.edu",
+   "grant": "PAR-28-027",
+   "run_date": "2026-09-29",
+   "confidence": 50,
+   "match_type": "semantic",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "NLM Grants for Scholarly Works in Biomedicine and Health (G13 Clinical Trial Not Allowed)",
+   "keywords": []
+  },
+  {
+   "form_id": "31",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16October2026.csv",
+   "responded_at": "10/13/2026 7:08",
+   "verdict": "good",
+   "email": "amahurkar@som.umaryland.edu",
+   "grant": "RFA-RM-27-016",
+   "run_date": "2026-10-13",
+   "confidence": 64,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "Cellular Senescence Network (SenNet): Discovery, Validation Centers (UM1 Clinical Trials Not Allowed)",
+   "keywords": [
+    "metadata",
+    "senescence"
+   ]
+  },
+  {
+   "form_id": "32",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16October2026.csv",
+   "responded_at": "10/13/2026 7:36",
+   "verdict": "not_relevant",
+   "email": "akeller@som.umaryland.edu",
+   "grant": "RFA-DA-28-012",
+   "run_date": "2026-10-13",
+   "confidence": 57,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "human studies not relevant to me",
+   "grant_title": "HEAL Initiative: Integrative Management of chronic Pain and OUD for Whole Recovery (IMPOWR) - Building Engagement, Assistance, Capacity, Outreach, and Networks (BEACON) Center (U2C Clinical Trial Not Allowed)",
+   "keywords": [
+    "chronic pain",
+    "opioid"
+   ]
+  },
+  {
+   "form_id": "33",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16October2026.csv",
+   "responded_at": "10/13/2026 7:36",
+   "verdict": "good",
+   "email": "akeller@som.umaryland.edu",
+   "grant": "RFA-DA-28-013",
+   "run_date": "2026-10-13",
+   "confidence": 69,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "Neural Ensembles & Used Substances (NExUS) Collaboratory: Building a Multimodal Inventory of Cell Ensembles Encoding the Effects of Addictive Substances (U01 Clinical Trial Not Allowed)",
+   "keywords": [
+    "drug abuse",
+    "neurons"
+   ]
+  },
+  {
+   "form_id": "34",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16October2026.csv",
+   "responded_at": "10/13/2026 8:21",
+   "verdict": "good",
+   "email": "dcalu@som.umaryland.edu",
+   "grant": "RFA-DA-28-013",
+   "run_date": "2026-10-13",
+   "confidence": 66,
+   "match_type": "semantic",
+   "rater": "self",
+   "comment": "methodologically and conceptual alignment- very high match- 95% (user value) not 66% (AI value)",
+   "grant_title": "Neural Ensembles & Used Substances (NExUS) Collaboratory: Building a Multimodal Inventory of Cell Ensembles Encoding the Effects of Addictive Substances (U01 Clinical Trial Not Allowed)",
+   "keywords": []
+  },
+  {
+   "form_id": "35",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16October2026.csv",
+   "responded_at": "10/13/2026 8:43",
+   "verdict": "good",
+   "email": "amedina@som.umaryland.edu",
+   "grant": "RFA-AA-28-002",
+   "run_date": "2026-10-13",
+   "confidence": 85,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "Collaborative Initiative on Fetal Alcohol Spectrum Disorders (CIFASD), Research Program (U19 Clinical Trial Optional)",
+   "keywords": [
+    "fetal alcohol spectrum disorders"
+   ]
+  },
+  {
+   "form_id": "36",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16October2026.csv",
+   "responded_at": "10/13/2026 10:45",
+   "verdict": "not_relevant",
+   "email": "meagan.fitzpatrick@som.umaryland.edu",
+   "grant": "RFA-HG-27-010",
+   "run_date": "2026-10-13",
+   "confidence": 60,
+   "match_type": "semantic",
+   "rater": "self",
+   "comment": "no genomic work",
+   "grant_title": "Computational Modeling and Analysis of the Impact of Genomic Variation on Function (UM1, Clinical Trial Not Allowed)",
+   "keywords": [
+    "chloroplast"
+   ]
+  },
+  {
+   "form_id": "37",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16October2026.csv",
+   "responded_at": "10/13/2026 11:20",
+   "verdict": "not_relevant",
+   "email": "kalecarter@som.umaryland.edu",
+   "grant": "RFA-AI-28-020",
+   "run_date": "2026-10-13",
+   "confidence": 65,
+   "match_type": "semantic",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "Centers for Research on Neglected Infectious Diseases",
+   "keywords": []
+  },
+  {
+   "form_id": "38",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16October2026.csv",
+   "responded_at": "10/13/2026 11:36",
+   "verdict": "good",
+   "email": "lschriml@som.umaryland.edu",
+   "grant": "RFA-RM-27-025",
+   "run_date": "2026-10-13",
+   "confidence": 85,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "Cellular Senescence Network (SenNet): SenNet Data Coordination and Integration Center (SenNet DCIC) (UM1 Clinical Trials Not Allowed)",
+   "keywords": [
+    "metadata",
+    "reuse",
+    "standards"
+   ]
+  },
+  {
+   "form_id": "39",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16October2026.csv",
+   "responded_at": "10/13/2026 15:13",
+   "verdict": "not_relevant",
+   "email": "jbaghdadi@som.umaryland.edu",
+   "grant": "RFA-AI-28-020",
+   "run_date": "2026-10-13",
+   "confidence": 52,
+   "match_type": "semantic",
+   "rater": "self",
+   "comment": "do not do international research or studies involving neglected/rare diseases",
+   "grant_title": "Centers for Research on Neglected Infectious Diseases",
+   "keywords": [
+    "bacterial"
+   ]
+  },
+  {
+   "form_id": "40",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16October2026.csv",
+   "responded_at": "10/13/2026 21:47",
+   "verdict": "good",
+   "email": "robynne.braun@umm.edu",
+   "grant": "RFA-HG-27-009",
+   "run_date": "2026-10-13",
+   "confidence": 99,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "NHGRI is not always the best institute for my work, more often NINDS or NICHD/NCMRR. But open to consideration.",
+   "grant_title": "Genomic Variant Interactions With Other Variants Or The Environment (UM1 Clinical Trials Not Allowed)",
+   "keywords": [
+    "genome wide association",
+    "genome-wide association",
+    "gwas"
+   ]
   }
  ]
 }
