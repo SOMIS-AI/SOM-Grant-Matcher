@@ -22,6 +22,7 @@ always appear first (highest trust). Sources are tracked per faculty member.
 """
 
 import html
+import html as _htmlmod   # the listing parser shadows html with the page text
 import json
 import logging
 import re
@@ -238,59 +239,95 @@ def scrape_department_page(session: requests.Session, url: str) -> list[dict]:
                             department, flags=re.I).strip()
         department = re.sub(r"\s*\|\s*University of Maryland.*$", "", department, flags=re.I).strip()
 
-    # Structured faculty blocks, in document order. Each <li> carries the
-    # employment classification used by the page's "Volunteer"/"Part Time" tabs
-    # (data-salary-desc) and faculty-vs-fellow type (data-emp-type), followed by
-    # the profile name + link. Capturing them together in one per-block regex
-    # keeps salary/type aligned to the right person (validated: exact 1:1 parity
-    # with the prior name/link parse across all departments).
-    blocks = re.findall(
-        r'<li\s+data-salary-desc="([^"]*)"\s+data-emp-type="([^"]*)"[^>]*?>'
-        r'.*?class="data-profile-name"[^>]*>(.*?)</strong>'
-        r'.*?class="data-profile-link"\s+href="([^"]+)"',
-        html, re.S,
-    )
-
-    # Safety net: if the employment-aware parse under-captures (e.g. the page
-    # markup drifts and some <li> lose data-salary-desc), fall back to the proven
-    # name+link parse with empty employment fields so we never silently DROP
-    # faculty — they just won't carry an employment signal (graceful, like the
-    # pre-rescrape cache). Exclusions degrade off; matching is unaffected.
-    n_names = len(re.findall(r'class="data-profile-name"[^>]*>(.*?)</strong>', html, re.S))
-    if len(blocks) < n_names:
-        logger.warning(
-            f"  {department or url}: employment parse captured {len(blocks)}/{n_names} "
-            f"faculty — falling back to name/link parse (no employment data this run)"
-        )
-        names = re.findall(r'class="data-profile-name"[^>]*>(.*?)</strong>', html, re.S)
-        links = re.findall(r'class="data-profile-link"\s+href="([^"]+)"', html)
-        blocks = [("", "", nm, lk) for nm, lk in zip(names, links)]
-
+    # One record per <li>, parsed INSIDE the block (2026-10-23). The previous
+    # single regex ran from one <li>'s salary/emp-type attributes through
+    # `.*?` to the NEXT <li>'s name and link whenever an entry had a name but
+    # no profile link. The live Microbiology listing carries a stale "Singh,
+    # Nevil, Post Doc Fellow" block without a link immediately before the real
+    # "Singh, Nevil J., Associate Professor" block: the postdoc's name and
+    # FELLOW type were stapled onto the professor's link, the professor was
+    # swallowed, and the cached professor was marked inactive. The old
+    # `zip(names, links)` fallback shifted every later entry by one instead;
+    # Grace Lin got David Loane's profile link (and, in Pass 2, his email) that
+    # way. Splitting on the <li> boundary makes a mis-pairing impossible.
+    #
+    # The redesigned listing also carries, per block, data-academic-title, a
+    # live mailto (the HTML-commented copy is stripped first) and a
+    # "Keywords: ..." div, so email and curated keywords are seeded here and
+    # Pass 2 no longer has to guess an address off the profile page.
+    li_blocks = re.split(r'(?=<li\s+data-salary-desc=)', html)[1:]
     faculty = []
     seen = set()
-    for salary_desc, emp_type, raw_name, href in blocks:
-        raw_name = clean_text(re.sub(r"<[^>]+>", " ", raw_name))
+    skipped_no_link = 0
+    for raw_block in li_blocks:
+        block = raw_block.split("</li>", 1)[0]
+        block = re.sub(r"<!--.*?-->", " ", block, flags=re.S)
+        m_li = re.match(r'<li\s+([^>]*)>', block)
+        attr_s = m_li.group(1) if m_li else ""
+
+        def _attr(key, _a=attr_s):
+            m = re.search(key + r'="([^"]*)"', _a)
+            return _htmlmod.unescape(m.group(1)).strip() if m else ""
+
+        nm = re.search(r'class="data-profile-name"[^>]*>(.*?)</strong>', block, re.S)
+        if not nm:
+            continue
+        raw_name = clean_text(re.sub(r"<[^>]+>", " ", nm.group(1)))
         name = _normalize_profile_name(raw_name)
-        profile_url = urljoin(BASE_URL, href.strip())
-        if not name or profile_url in seen:
+        if not name:
+            continue
+        lk = re.search(r'class="data-profile-link"\s+href="([^"]+)"', block)
+        if not lk:
+            skipped_no_link += 1
+            logger.info(f"  {department or url}: listing entry {raw_name!r} has no profile link — skipped")
+            continue
+        profile_url = urljoin(BASE_URL, lk.group(1).strip())
+        if profile_url in seen:
             continue
         seen.add(profile_url)
-        faculty.append({
+
+        em = re.search(r"mailto:([^'\"?<>\s]+)", block)
+        email = _htmlmod.unescape(em.group(1)).strip() if em else ""
+        listing_contact = ""
+        if email and not _email_matches_name(email, name):
+            # The site lists a coordinator's or assistant's address as some
+            # faculty members' contact (R. Frank Henn -> cfox@, Robert O'Toole
+            # -> ethomas@, Jonathan Packer -> evalentin@, Maria Martino-Gomez
+            # -> mcardona@ on the live Orthopaedics/Pediatrics listings,
+            # 2026-10-23). A digest or feedback link sent there goes to the
+            # wrong person, so it is kept for audit only and the address is
+            # left for the Pass 8b directory backfill.
+            listing_contact, email = email, ""
+        kw_div = re.search(r"Keywords:\s*(.*?)</div>", block, re.S | re.I)
+        listing_kws = []
+        if kw_div:
+            listing_kws = _split_curated_keywords(
+                clean_text(re.sub(r"<[^>]+>", " ", kw_div.group(1))))
+
+        rec = {
             "name": name,
             "raw_profile_name": raw_name,    # full "Last, First, creds, title" string
-            "title": _extract_title(raw_name),  # academic rank ("Assistant Professor", "Adjunct Professor", "Professor Emeritus", …)
-            "employment_status": (salary_desc or "").strip().upper(),  # VOLUNTEER | PART TIME | FULL TIME | GEOGRAPHIC FULL TIME
-            "emp_type": (emp_type or "").strip().upper(),              # FACULTY | FELLOW
+            "title": _attr("data-academic-title") or _extract_title(raw_name),
+            "employment_status": _attr("data-salary-desc").upper(),  # VOLUNTEER | PART TIME | FULL TIME | GEOGRAPHIC FULL TIME
+            "emp_type": _attr("data-emp-type").upper(),              # FACULTY | FELLOW
             "url": profile_url,
             "profile_url": profile_url,
             "department": department,
-            "email": "",                 # captured from the profile page in Pass 2
-            "keywords": [],              # extracted from the profile page in Pass 2
+            "email": email,                  # listing mailto when it looks like this person, else Pass 2 / Pass 8b
+            "email_source": "umsom_listing" if email else "",
+            "listing_contact_email": listing_contact,   # a non-matching mailto the site shows for this person (audit only)
+            "keywords": [],
             "keyword_source": "",
             "scraped_at": datetime.utcnow().isoformat(),
-        })
+        }
+        if listing_kws:
+            _merge_keywords(rec, listing_kws, "umsom_keywords")
+        faculty.append(rec)
 
-    logger.info(f"  {department or url}: {len(faculty)} faculty")
+    msg = f"  {department or url}: {len(faculty)} faculty"
+    if skipped_no_link:
+        msg += f" ({skipped_no_link} listing entr{'y' if skipped_no_link == 1 else 'ies'} without a profile link skipped)"
+    logger.info(msg)
     return faculty
 
 
@@ -542,6 +579,26 @@ def _extract_list_items(tag) -> list:
     return parts if len(parts) >= 2 else []
 
 
+def _split_curated_keywords(kw_text: str) -> list[str]:
+    """Turn a faculty member's curated "Research/Clinical Keywords" text into
+    keyword phrases. A clean comma/semicolon list gives their exact terms; prose
+    ("I diagnose and treat patients with ...") goes through the phrase extractor
+    so the sentence preamble never becomes a giant first keyword. Shared by the
+    department listing (2026-10-23) and the individual profile page."""
+    kw_text = (kw_text or "").strip()
+    if not kw_text:
+        return []
+    parts = [k.strip() for k in re.split(r"[,;]", kw_text) if k.strip()]
+    looks_prose = (
+        any(len(p) > 60 for p in parts)
+        or (len(parts) < 3 and len(kw_text) > 80)
+        or bool(re.search(r"\b(i|we|my|our|the)\s+\w", kw_text, re.I))
+    )
+    if looks_prose:
+        return _extract_phrases_from_text(kw_text, max_phrases=30)
+    return [p.lower() for p in parts if 2 < len(p) < 80]
+
+
 def scrape_individual_profile(session: requests.Session, faculty: dict) -> dict:
     """
     Visit the faculty member's individual UMSOM profile and extract Research
@@ -587,9 +644,26 @@ def scrape_individual_profile(session: requests.Session, faculty: dict) -> dict:
     # New dept listing pages carry an empty mailto, so capture the email here
     # from the profile page if we don't already have one.
     if not faculty.get("email"):
-        em = re.search(r"[\w.+-]+@[\w.-]*(?:umaryland|umm)\.edu", html)
-        if em:
-            faculty["email"] = em.group(0)
+        # Only an address that looks like THIS person. Profile pages often show
+        # a coordinator's or assistant's address and nothing else (R. Frank
+        # Henn's page carries only cfox@, twice), and "first email on the page"
+        # put cfox@ on Henn, evalentin@ on Packer, ethomas@ on O'Toole,
+        # mcardona@ on Martino-Gomez. Found 2026-10-23. A non-matching page is
+        # left blank so Pass 8b fills it from the directory instead.
+        page_wo_comments = re.sub(r"<!--.*?-->", " ", html, flags=re.S)
+        candidates = []
+        for em in re.findall(r"[\w.+-]+@[\w.-]*(?:umaryland|umm)\.edu", page_wo_comments):
+            if em.lower() not in {c.lower() for c in candidates}:
+                candidates.append(em)
+        own = next((c for c in candidates if _email_matches_name(c, faculty.get("name", ""))), "")
+        if own:
+            faculty["email"] = own
+            faculty["email_source"] = "umsom_profile"
+        elif candidates:
+            logger.info(
+                f"  Pass 2: {faculty.get('name','?')}: page shows only "
+                f"{', '.join(candidates[:3])} — not this person's address, left blank"
+            )
 
     kw_keywords = []   # faculty-curated "Research/Clinical Keywords" (primary)
     ri_keywords = []   # phrases mined from the "Research Interests" prose
@@ -603,16 +677,7 @@ def scrape_individual_profile(session: requests.Session, faculty: dict) -> dict:
         # sentence preamble as a giant first "keyword". Detect prose by either a
         # very long segment (>60 chars) or sentence-style punctuation, and fall
         # back to the same phrase extractor we use on the Research Interests prose.
-        parts = [k.strip() for k in re.split(r"[,;]", kw_text) if k.strip()]
-        looks_prose = (
-            any(len(p) > 60 for p in parts)
-            or (len(parts) < 3 and len(kw_text) > 80)
-            or bool(re.search(r"\b(i|we|my|our|the)\s+\w", kw_text, re.I))
-        )
-        if looks_prose:
-            kw_keywords = _extract_phrases_from_text(kw_text, max_phrases=30)
-        else:
-            kw_keywords = [p.lower() for p in parts if 2 < len(p) < 80]
+        kw_keywords = _split_curated_keywords(kw_text)
 
     ri_text = _strip_heading(_section_text("<!-- Research Interests Details -->"))
     if ri_text and len(ri_text) > 20:
@@ -1582,6 +1647,21 @@ def get_faculty_profiles(config: dict, force: bool = False) -> list[dict]:
     except Exception as e:
         logger.warning(f"Pass 8b (faculty self-reported keywords) failed: {e}")
 
+    # ── Pass 8c: carry forward from the previous cache (2026-10-23) ──────────
+    # Runs after every enrichment source has had its turn and before the
+    # embeddings, so a person whose sources all came back empty this time is
+    # embedded and matched on what we knew last week instead of on nothing.
+    if cache:
+        try:
+            carried = _carry_forward_from_cache(active_faculty, cache.get("faculty", []))
+            logger.info(
+                f"Pass 8c: carried forward {carried['keywords']} keyword set(s) and "
+                f"{carried['emails']} email(s) from the previous cache for active faculty "
+                f"the fresh scrape left empty"
+            )
+        except Exception as e:
+            logger.warning(f"Pass 8c (carry forward from cache) failed: {e}")
+
     # ── Pass 9: Generate semantic embeddings ──────────────────────────────────
     if embed_faculty_batch and embeddings_available():
         logger.info(f"Pass 9/9: Generating semantic embeddings for {len(active_faculty)} active faculty...")
@@ -1703,6 +1783,79 @@ _ROLE_MAILBOX_TOKENS = {
     "center", "centre", "division", "institute", "unit", "team", "residency",
     "fellowship", "grants", "billing", "scheduling", "referrals",
 } | _ROLE_MAILBOX_LOCALPARTS
+
+
+_NAME_NOISE = {"jr", "sr", "ii", "iii", "iv", "md", "phd", "do", "mph", "ms", "rn", "dr"}
+
+
+def _email_matches_name(email: str, name: str) -> bool:
+    """Does the local part of `email` plausibly belong to `name`?
+
+    Accepts kevin.jones@ / kjones@ / jonesk@ / kevinj@ for "Kevin A. Jones",
+    yfouche@ for "LaRita Y. Fouche-Weber", cxu@ for "Claire M. Xu"; rejects
+    cfox@ for "R. Frank Henn". Conservative on purpose — a false negative only
+    defers to the Pass 8b directory backfill, a false positive mis-addresses
+    every digest and feedback verdict for that person (2026-10-23)."""
+    lp = (email or "").split("@", 1)[0].lower()
+    lp = re.sub(r"[^a-z]", "", lp)
+    toks = [t for t in re.split(r"[^a-z]+", (name or "").lower()) if t and t not in _NAME_NOISE]
+    if not lp or not toks:
+        return False
+    first = toks[0]
+    surnames = [t for t in toks[1:] if len(t) >= 2] or toks[1:]
+    for last in surnames:
+        if len(last) >= 4 and last[:4] in lp:
+            return True
+        if len(last) < 4 and last in lp and (lp.startswith(first[0]) or first in lp):
+            return True
+        if first and lp.startswith(first[0] + last[:3]):
+            return True
+    if len(first) >= 4 and first in lp:
+        return True
+    return False
+
+
+def _carry_forward_from_cache(active_faculty: list, prev_faculty: list) -> dict:
+    """When a fresh scrape yields no keywords (or no email) for a person the
+    previous cache knew, carry the previous values forward, tagged.
+
+    Pass 1 rebuilds every active profile from an empty record and the
+    enrichment passes swallow their request errors, so one bad PubMed/ORCID
+    day erased a Center director's keywords and his 99% match until the next
+    weekly re-scrape (Kappe, 2026-10-18). Matching on week-old keywords is
+    strictly better than matching on none; `carried_from_cache` records the
+    previous scrape time so the dashboard can show the staleness."""
+    by_url, by_name = {}, {}
+    for prev in prev_faculty or []:
+        u = (prev.get("profile_url") or prev.get("url") or "").strip().lower()
+        n = (prev.get("name") or "").strip().lower()
+        if u:
+            by_url.setdefault(u, prev)
+        if n:
+            by_name.setdefault(n, prev)
+    counts = {"keywords": 0, "emails": 0}
+    for fac in active_faculty or []:
+        u = (fac.get("profile_url") or fac.get("url") or "").strip().lower()
+        n = (fac.get("name") or "").strip().lower()
+        prev = by_url.get(u) or by_name.get(n)
+        if not prev:
+            continue
+        if not fac.get("keywords") and prev.get("keywords"):
+            fac["keywords"] = list(prev["keywords"])
+            fac["keywords_by_source"] = json.loads(json.dumps(prev.get("keywords_by_source") or {}))
+            fac["keyword_sources"] = list(prev.get("keyword_sources") or [])
+            fac["keyword_source"] = prev.get("keyword_source") or ""
+            if prev.get("evidence_titles") and not fac.get("evidence_titles"):
+                fac["evidence_titles"] = list(prev["evidence_titles"])
+            fac["carried_from_cache"] = prev.get("scraped_at") or ""
+            counts["keywords"] += 1
+        prev_email = (prev.get("email") or "").strip()
+        if not (fac.get("email") or "").strip() and prev_email and not _is_role_mailbox(prev_email):
+            fac["email"] = prev_email
+            fac["email_source"] = "carried_from_cache"
+            fac["carried_from_cache"] = fac.get("carried_from_cache") or (prev.get("scraped_at") or "")
+            counts["emails"] += 1
+    return counts
 
 
 def _is_role_mailbox(email: str) -> bool:
