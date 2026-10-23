@@ -2401,6 +2401,105 @@ def refilter_stored_results(results: list, config: dict = None) -> tuple[list, d
     return out, audit
 
 
+_REMATCH_GATE_KEYS = ("track_record_gated", "context_filtered", "corroboration_gated",
+                      "feedback_suppressed", "clinical_basic_suppressed", "faculty_capped",
+                      "semantic_generic_guarded", "semantic_concept_guarded", "grants_capped")
+
+
+def _rematch_diag_excerpt(rd: dict) -> dict:
+    """The part of the weekly re-match diagnostic worth keeping in the archive:
+    the summary counters and the gate samples (capped per gate)."""
+    out = {"summary": dict(rd.get("summary") or {})}
+    for k in _REMATCH_GATE_KEYS:
+        out[k] = list(rd.get(k) or [])[:40]
+    return out
+
+
+def _attribute_rematch_rows(stored_by_key: dict, rematched_by_key: dict, covered: set,
+                            faculty: list, rd: dict) -> tuple[list, list]:
+    """Line the stored rows up against the re-matched rows, grant by grant, and
+    say why each stored row did not come back (2026-10-23).
+
+    The 10-20 weekly dropped 27 stored rows and the audit could only report the
+    totals; a 99% match that vanished turned out to be a profile that had lost
+    its keywords and email on the Sunday re-scrape, which took a day to find by
+    hand. The reason is the best the diagnostic can give: not in today's pool,
+    no keywords on the roster, the gate whose sample names the person, or (when
+    no gate recorded a sample) re-scored below the floor."""
+    def _ident(m):
+        get = (m.get if isinstance(m, dict) else (lambda k: getattr(m, k, None)))
+        em = (get("faculty_email") or "").strip().lower()
+        return em or (get("faculty_name") or "").strip().lower()
+
+    pool_by_email, pool_by_name = {}, {}
+    for f in faculty or []:
+        em = (f.get("email") or "").strip().lower()
+        nm = (f.get("name") or "").strip().lower()
+        if em:
+            pool_by_email[em] = f
+        if nm:
+            pool_by_name[nm] = f
+
+    # (title[:60], faculty name) -> gate, from the samples each gate recorded.
+    # Samples are strings ("Name" or "Name (90%)") or {"faculty": ...} dicts;
+    # the per-faculty cap records the dropped grants under the faculty instead.
+    gate_of: dict = {}
+    def _clean(name):
+        return re.sub(r"\s*\(\d+%\)\s*$", "", str(name or "")).strip().lower()
+    for gate in _REMATCH_GATE_KEYS:
+        for entry in rd.get(gate) or []:
+            if gate == "faculty_capped":
+                nm = _clean(entry.get("faculty"))
+                for dg in entry.get("dropped_grants") or []:
+                    gate_of.setdefault((_clean(dg)[:60], nm), gate)
+                continue
+            t = (entry.get("grant_title") or "")[:60]
+            for s in entry.get("sample") or []:
+                nm = _clean(s.get("faculty") if isinstance(s, dict) else s)
+                gate_of.setdefault((t, nm), gate)
+
+    dropped, added = [], []
+    for k, sr in stored_by_key.items():
+        if k not in covered:
+            continue
+        rr = rematched_by_key.get(k)
+        new_rows = rr["matches"] if rr else []
+        new_ids = {_ident(m) for m in new_rows}
+        old_ids = {_ident(m) for m in sr["matches"]}
+        title = sr["grant"].get("title") or ""
+        for m in sr["matches"]:
+            if _ident(m) in new_ids:
+                continue
+            name = (m.get("faculty_name") or "").strip()
+            em = (m.get("faculty_email") or "").strip().lower()
+            fac = pool_by_email.get(em) or pool_by_name.get(name.lower())
+            if fac is None:
+                reason = "not in pool (inactive, excluded or no roster email)"
+            elif not fac.get("keywords"):
+                reason = "no keywords on roster"
+            elif rr is None:
+                reason = "grant re-matched to nobody"
+            else:
+                reason = gate_of.get((title[:60], name.lower()),
+                                     "did not re-match today (below floor or re-scored; no gate sample)")
+            dropped.append({
+                "grant": title[:70], "faculty": name,
+                "stored_confidence": m.get("confidence_score"),
+                "match_type": m.get("match_type"),
+                "keywords": list(m.get("matched_keywords") or [])[:4],
+                "reason": reason,
+            })
+        for m in new_rows:
+            if _ident(m) in old_ids:
+                continue
+            added.append({"grant": title[:70], "faculty": m.get("faculty_name"),
+                          "confidence": m.get("confidence_score"),
+                          "match_type": m.get("match_type")})
+    dropped.sort(key=lambda d: -(d["stored_confidence"] or 0))
+    added.sort(key=lambda d: -(d["confidence"] or 0))
+    return dropped[:80], added[:80]
+
+
 def build_weekly_roundup(config: dict, faculty: list, days: int = 7) -> tuple[list, dict]:
     """The weekly roundup, computed fresh.
 
@@ -2452,11 +2551,19 @@ def build_weekly_roundup(config: dict, faculty: list, days: int = 7) -> tuple[li
             hit = [k for k in covered if k in stored_by_key]
             audit["replaced_stored_grants"] = len(hit)
             audit["replaced_stored_rows"] = sum(len(stored_by_key[k]["matches"]) for k in hit)
-            got = {grant_key(r["grant"]) for r in rematched}
+            rematched_by_key = {grant_key(r["grant"]): r for r in rematched}
+            got = set(rematched_by_key)
             audit["rematch_dropped_grants"] = [
                 stored_by_key[k]["grant"].get("title", "")[:70]
                 + f" ({len(stored_by_key[k]['matches'])} stored row(s))"
                 for k in hit if k not in got][:20]
+            # Row-level attribution (2026-10-23): the re-match's own diagnostic
+            # excerpt plus, for every stored row that did not come back, the
+            # best reason the gates can give. See _attribute_rematch_rows.
+            rd = get_last_rematch_diagnostic() or {}
+            audit["rematch_diagnostic"] = _rematch_diag_excerpt(rd)
+            audit["rows_dropped"], audit["rows_added"] = _attribute_rematch_rows(
+                stored_by_key, rematched_by_key, covered, faculty, rd)
         except Exception as e:
             logger.error(f"Weekly re-match failed — falling back to stored rows: {e}", exc_info=True)
             audit["rematch_error"] = f"{type(e).__name__}: {e}"

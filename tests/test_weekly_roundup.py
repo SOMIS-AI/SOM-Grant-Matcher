@@ -146,6 +146,9 @@ def test_roundup_rematches_stored_grants_and_refilters_the_rest():
         stored = [
             _stored_row(pdac, "Pan Creas", "pc@x.edu", ["pancreatic cancer", "early detection"], conf=80),
             _stored_row(pdac, "Tech Only", "to@x.edu", ["technology", "design"], conf=53),
+            # matched earlier in the week, no longer in today's pool (re-scrape
+            # dropped the profile) — the 10-20 Kappe case
+            _stored_row(pdac, "Gone Away", "ga@x.edu", ["pancreatic cancer"], conf=99),
             _stored_row(bja, "Key Only", "ko@x.edu", ["traumatic brain injury"], conf=95),
             _stored_row(hiv, "Aitch Vee", "hv@x.edu", ["hiv care"], conf=70),
         ]
@@ -170,11 +173,26 @@ def test_roundup_rematches_stored_grants_and_refilters_the_rest():
         assert all(isinstance(m, dict) for r in results for m in r["matches"]), "fan-out shape"
 
         assert audit["store_grants_in_window"] == 1 and audit["rematched_grants"] == 1
-        assert audit["replaced_stored_rows"] == 2 and audit["rematched_rows"] == 2
+        assert audit["replaced_stored_rows"] == 3 and audit["rematched_rows"] == 2
         assert audit["fallback_grants_before"] == 2 and audit["fallback_grants_after"] == 1
         assert audit["fallback_rows_dropped"]["corroboration"] == 1
-        assert audit["stored_rows"] == 4 and audit["final_rows"] == 3
+        assert audit["stored_rows"] == 5 and audit["final_rows"] == 3
         assert audit["rematch_error"] == ""
+
+        # Row-level attribution (2026-10-23): every stored row the re-match did
+        # not return is listed with the reason the diagnostic can give.
+        dropped = {d["faculty"]: d for d in audit["rows_dropped"]}
+        assert set(dropped) == {"Tech Only", "Gone Away"}, dropped
+        # "technology"/"design" are not in the PDAC text at all, so Tech Only is
+        # not a raw match today and no gate records a sample for him
+        assert dropped["Tech Only"]["reason"].startswith("did not re-match today")
+        assert dropped["Tech Only"]["keywords"] == ["technology", "design"]
+        assert dropped["Gone Away"]["reason"].startswith("not in pool")
+        assert dropped["Gone Away"]["stored_confidence"] == 99
+        assert [a["faculty"] for a in audit["rows_added"]] == ["New Comer"]
+        assert audit["rematch_diagnostic"]["summary"]["grants_checked"] == 1
+        assert isinstance(audit["rematch_diagnostic"]["context_filtered"], list)
+        assert set(audit["rematch_diagnostic"]) >= {"summary", "track_record_gated", "faculty_capped"}
 
         # persist=False: the daily results file and stats are untouched
         assert Path("data/match_results.json").read_text(encoding="utf-8") == before

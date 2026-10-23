@@ -662,6 +662,24 @@ matching:
     - "mentorship"
     - "large scale"
     - "large-scale"
+    # ── Sixth wave (2026-10-23, 10-17..10-23 review) ────────────────────────
+    # Replayed on the 91 keyword/both rows delivered 10-17..10-21 (incl. the
+    # 10-20 weekly): removes 14 rows, touches none that were legitimate.
+    # "biomedical research" sits in generic_terms (semantic guard) but was not
+    # here, so it rescued 9 NLM T15 rows anchored on "artificial intelligence,
+    # biomedical research" (Moore 68%, Adebamowo x2, Ambulos, Giglio).
+    # "intelligence" (Yiran Li, "intelligence, machine learning"), "detection"
+    # (Davis, "detection, incidence" on Early-Onset Cancers), "well-being"
+    # (Marks alone on the Multi-site R33). "feasibility studies" + "recovery"
+    # only bite together (Braun on the SU/HIV R34); "pain" and bare
+    # "feasibility" deliberately NOT added (Dunn/Bergeria/Kleykamp legit).
+    - "biomedical research"
+    - "intelligence"
+    - "detection"
+    - "well-being"
+    - "well being"
+    - "feasibility studies"
+    - "recovery"
 
   # ── Research track-record signal (Theme 2, 2026-06-23) ────────────────────
   # Weight a match by the faculty member's external publication/grant footprint,

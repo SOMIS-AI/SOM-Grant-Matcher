@@ -69,6 +69,42 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-10-23 — Sixth wave of context terms (10-17..10-23 review)
+**Status:** live
+**Commit:** *(fill in)*
+**Change:** `context_dependent_terms` += 7 entries (6 terms, one spelling
+variant): biomedical research, intelligence, detection, well-being / well being,
+feasibility studies, recovery. No thresholds moved. 164 distinct terms after
+normalisation. Same push also writes row-level drop attribution into the weekly
+`weekly_roundup` audit (`rows_dropped` / `rows_added` / `rematch_diagnostic`) —
+diagnostic infrastructure, logged in the commit, not here.
+
+**Why:** the week's delivered rows, judged by keyword pair:
+- NLM T15 (RFA-LM-28-001, 10-17 and the 10-20 weekly): 9 rows anchored on
+  "artificial intelligence, biomedical research" (Moore 68%, C. and S.
+  Adebamowo 54%, Ambulos 54%, Giglio 52% alone on "biomedical research").
+  "artificial intelligence" has been a context term since 08-22; "biomedical
+  research" is in `generic_terms` (the semantic guard list) but was never a
+  context term, so it rescued every one of them. Yiran Li 50% on
+  "intelligence, machine learning" is the same pair with the bare word.
+- Early-Onset Cancers (PAR-28-014, 10-20 weekly): Esa Davis 54% on
+  "detection, incidence" — "incidence" was added 10-16, "detection" rescued it.
+- Multi-site Mind-and-Body R33 (PAR-28-091): Marks 54% on "well-being" alone.
+- SU/HIV Pilot R34 (PAR-28-093, 10-20): Braun 58% on "feasibility studies,
+  recovery" (Neurology stroke recovery). "pain" is NOT added: Dunn 99%,
+  Bergeria 99%, Kleykamp 71% are real substance-use matches that carry it.
+
+Replayed the filter rule (every matched keyword in the list -> drop) over all
+91 keyword/both rows delivered 10-17..10-21 with the new terms: 14 rows go,
+all listed above, none of the 77 others move. "feasibility studies" and
+"recovery" alone each drop 0 rows; together they drop Braun.
+
+**Expected effect:** `context_filtered` rises on informatics / AI calls and
+on method-word calls; NLM T15-type training announcements stop reaching
+faculty whose only evidence is AI vocabulary. Nothing else should move.
+**Outcome:** *(fill in after a week of diagnostics)*
+**Verdict:** too early
+
 ### 2026-10-16 — Center-type probe on the clinical/basic filter (REPORT-ONLY)
 **Status:** live, report-only (never drops a match)
 **Commit:** `f86c888`
