@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-10-16T13:37:22+00:00",
+ "updated_at": "2026-10-23T18:09:44+00:00",
  "sources": [
   {
    "filename": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
@@ -43,6 +43,17 @@
     "duplicate": 28,
     "unparseable": 1,
     "keywords_resolved": 11
+   }
+  },
+  {
+   "filename": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23October2026.csv",
+   "imported_at": "2026-10-23T18:09:44+00:00",
+   "stats": {
+    "rows_total": 47,
+    "added": 7,
+    "duplicate": 39,
+    "unparseable": 1,
+    "keywords_resolved": 7
    }
   }
  ],
@@ -709,6 +720,131 @@
     "genome wide association",
     "genome-wide association",
     "gwas"
+   ]
+  },
+  {
+   "form_id": "41",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23October2026.csv",
+   "responded_at": "10/20/2026 8:19",
+   "verdict": "not_relevant",
+   "email": "rkozar@som.umaryland.edu",
+   "grant": "HHS-2027-ACL-AOA-INNU-0014",
+   "run_date": "2026-10-20",
+   "confidence": 73,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "Nothing community based",
+   "grant_title": "Evaluating Innovative Community Based Nutrition Models that Improve Health Outcomes for Older Adults in Senior Nutrition Programs",
+   "keywords": [
+    "nutrition",
+    "older adults"
+   ]
+  },
+  {
+   "form_id": "42",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23October2026.csv",
+   "responded_at": "10/20/2026 9:49",
+   "verdict": "good",
+   "email": "aberry@som.umaryland.edu",
+   "grant": "RFA-AI-28-024",
+   "run_date": "2026-10-20",
+   "confidence": 99,
+   "match_type": "both",
+   "rater": "self",
+   "comment": "this is amazing! did i sign up for this, or is it offered to everyone? this is what AI is for! thank you.",
+   "grant_title": "Accelerating Research and Development of Next Generation Vaccines against Malaria - a Model for Mosquito-Borne Diseases (R61/R33 Clinical Trial Not Allowed)",
+   "keywords": [
+    "malaria",
+    "vaccines"
+   ]
+  },
+  {
+   "form_id": "43",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23October2026.csv",
+   "responded_at": "10/20/2026 10:44",
+   "verdict": "not_relevant",
+   "email": "robynne.braun@umm.edu",
+   "grant": "PAR-28-093",
+   "run_date": "2026-10-20",
+   "confidence": 58,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "Too much HIV focus",
+   "grant_title": "Pilot and Feasibility Studies in Preparation for Substance Use and HIV Prevention Intervention and Services Research Trials (R34 Clinical Trial Optional)",
+   "keywords": [
+    "feasibility studies",
+    "recovery"
+   ]
+  },
+  {
+   "form_id": "44",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23October2026.csv",
+   "responded_at": "10/20/2026 10:47",
+   "verdict": "not_relevant",
+   "email": "pciryam@som.umaryland.edu",
+   "grant": "PAR-28-093",
+   "run_date": "2026-10-20",
+   "confidence": 51,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "Pilot and Feasibility Studies in Preparation for Substance Use and HIV Prevention Intervention and Services Research Trials (R34 Clinical Trial Optional)",
+   "keywords": [
+    "feasibility studies",
+    "pain"
+   ]
+  },
+  {
+   "form_id": "45",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23October2026.csv",
+   "responded_at": "10/20/2026 11:18",
+   "verdict": "not_relevant",
+   "email": "sadebamowo@som.umaryland.edu",
+   "grant": "RFA-LM-28-001",
+   "run_date": "2026-10-20",
+   "confidence": 54,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "NLM Institutional Grants for Research Training in Biomedical Informatics, Data Science, and AI (T15 Independent Clinical Trial Not Allowed)",
+   "keywords": [
+    "artificial intelligence",
+    "biomedical research"
+   ]
+  },
+  {
+   "form_id": "46",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23October2026.csv",
+   "responded_at": "10/20/2026 11:41",
+   "verdict": "good",
+   "email": "jcsilva@som.umaryland.edu",
+   "grant": "RFA-AI-28-024",
+   "run_date": "2026-10-20",
+   "confidence": 53,
+   "match_type": "both",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "Accelerating Research and Development of Next Generation Vaccines against Malaria - a Model for Mosquito-Borne Diseases (R61/R33 Clinical Trial Not Allowed)",
+   "keywords": [
+    "malaria",
+    "vaccines"
+   ]
+  },
+  {
+   "form_id": "47",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23October2026.csv",
+   "responded_at": "10/20/2026 12:26",
+   "verdict": "good",
+   "email": "miroslaw.janowski@som.umaryland.edu",
+   "grant": "PAR-28-084",
+   "run_date": "2026-10-20",
+   "confidence": 64,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "Testing Centers for Evaluation of Somatic Cell Genome Editing Approaches for Translational Applications (U42 Clinical Trial Not Allowed)",
+   "keywords": [
+    "Genome Editing"
    ]
   }
  ]
