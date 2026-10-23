@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-10-23 — Sixth wave of context terms (10-17..10-23 review)
 **Status:** live
-**Commit:** *(fill in)*
+**Commit:** `68dbb28`
 **Change:** `context_dependent_terms` += 7 entries (6 terms, one spelling
 variant): biomedical research, intelligence, detection, well-being / well being,
 feasibility studies, recovery. No thresholds moved. 164 distinct terms after
