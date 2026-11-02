@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-11-02 — Agency blocks, ACL services patterns, seventh wave of context terms
 **Status:** live
-**Commit:** *(fill in)*
+**Commit:** `20ac4f5` (+ `5bc95b9` attribution fix)
 **Change:** `_AGENCY_BLOCK` += "bureau of human resources", "department of
 state", "food and nutrition service". `ineligible_grant_patterns` += Centers
 for Independent Living, direct care workforce (ACL services family).
