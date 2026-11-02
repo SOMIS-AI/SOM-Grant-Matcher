@@ -680,6 +680,18 @@ matching:
     - "well being"
     - "feasibility studies"
     - "recovery"
+    # ── Seventh wave (2026-11-02, 10-24..10-31 review) ──────────────────────
+    # Replayed on the 39 keyword/both rows delivered 10-24..10-31 (incl. the
+    # 10-27 weekly): removes 7 rows, all on the State Department fellowship
+    # administration grants and the USDA school-lunch equipment call that the
+    # agency block now rejects outright — kept here as insurance for the next
+    # funder that lists "professional development" or "schools" as a goal.
+    # Lever/Knox/Beason "schools, students" (52%), Kattakuzhy "rural, serve",
+    # E. Gupta "Mentorship, essential", Giglio "outreach, professional development".
+    - "professional development"
+    - "essential"
+    - "schools"
+    - "rural"
 
   # ── Research track-record signal (Theme 2, 2026-06-23) ────────────────────
   # Weight a match by the faculty member's external publication/grant footprint,
@@ -931,6 +943,15 @@ matching:
       reason:  'services: AAC peer-support demonstration grant (ACL services, not research)'
     - pattern: '\bfinancial literacy\b'
       reason:  'services: financial-literacy / ABLE-awareness program (not biomedical research)'
+    # 2026-11-02: three more ACL services/TA programmes reached faculty on
+    # 10-27 (Desikan, Surgery, on "independent living" for the Centers for
+    # Independent Living competitions — one of them for Guam; Millstein on the
+    # Direct Care Workforce TA initiative). Kozar's 10-20 "nothing community
+    # based" rejection of the ACL nutrition call is the same family.
+    - pattern: '\bcenters? for independent living\b'
+      reason:  'services: ACL Centers for Independent Living (community services, not research)'
+    - pattern: '\bdirect care workforce\b'
+      reason:  'services: ACL direct-care workforce technical assistance / capacity building'
 
   # ── Static stop words ─────────────────────────────────────────────────────
   # These are always excluded regardless of IDF score.

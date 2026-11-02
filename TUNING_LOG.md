@@ -69,6 +69,40 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-11-02 — Agency blocks, ACL services patterns, seventh wave of context terms
+**Status:** live
+**Commit:** *(fill in)*
+**Change:** `_AGENCY_BLOCK` += "bureau of human resources", "department of
+state", "food and nutrition service". `ineligible_grant_patterns` += Centers
+for Independent Living, direct care workforce (ACL services family).
+`context_dependent_terms` += professional development, essential, schools,
+rural (168 distinct). No thresholds moved. Same push corrects the weekly
+attribution so a report-only probe entry is never given as a drop reason.
+
+**Why:** the 10-24..10-31 review. 10-28: three State Department fellowship
+programme ADMINISTRATION grants (Rangel, Pickering, Payne; agency "Bureau of
+Human Resources") passed the relevance filter on vocabulary and reached 6
+faculty on "Mentorship, essential", "mentors, professional development",
+"professional development, students" (x2), "outreach, professional
+development", "description, objectives". 10-29: USDA Food and Nutrition
+Service "National School Lunch Program Equipment Assistance" reached 5
+school-mental-health faculty on "schools, students" / "rural, serve" /
+"resilience, schools, students" (79%). 10-27: ACL "Centers for Independent
+Living" (two postings, one for Guam) and "Strengthening the Direct Care
+Workforce" TA initiative reached Desikan (Surgery) and Millstein.
+
+Verified by running `_is_biomedically_relevant` on the real agency strings
+(both now rejected as blocked agency terms) and the compiled ineligible
+patterns on the real ACL titles; context replay over the 39 delivered
+keyword rows of the week: 7 rows go, none of the others move. "brain" (8
+rows on the NIBIB NextTech devices R18) was considered and rejected by
+Scott — it would blind every neuro call.
+
+**Expected effect:** `skipped` rises on State/USDA-FNS/ACL postings; no
+change to NIH matching.
+**Outcome:** *(fill in after a week)*
+**Verdict:** too early
+
 ### 2026-10-23 — Sixth wave of context terms (10-17..10-23 review)
 **Status:** live
 **Commit:** `68dbb28`

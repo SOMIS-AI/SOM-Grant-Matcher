@@ -287,9 +287,15 @@ def scrape_department_page(session: requests.Session, url: str) -> list[dict]:
         seen.add(profile_url)
 
         em = re.search(r"mailto:([^'\"?<>\s]+)", block)
-        email = _htmlmod.unescape(em.group(1)).strip() if em else ""
+        email = _htmlmod.unescape(em.group(1)).strip().rstrip(";,.") if em else ""
         listing_contact = ""
-        if email and not _email_matches_name(email, name):
+        if email and not _is_umaryland_email(email):
+            # The 11-01 scrape took "ewickwire" (no @), "KTsoyi@som.umarylan.edu"
+            # (typo domain), "pdakum@ihv.umaryland.edu;" and two @va.gov
+            # addresses straight off the listing; the fan-out keys on this
+            # field, so each one silently broke that person's digest.
+            listing_contact, email = email, ""
+        elif email and not _email_matches_name(email, name):
             # The site lists a coordinator's or assistant's address as some
             # faculty members' contact (R. Frank Henn -> cfox@, Robert O'Toole
             # -> ethomas@, Jonathan Packer -> evalentin@, Maria Martino-Gomez
@@ -1786,6 +1792,16 @@ _ROLE_MAILBOX_TOKENS = {
 
 
 _NAME_NOISE = {"jr", "sr", "ii", "iii", "iv", "md", "phd", "do", "mph", "ms", "rn", "dr"}
+
+
+_UM_EMAIL_RX = re.compile(r"^[\w.+-]+@(?:[\w-]+\.)*(?:umaryland|umm)\.edu$", re.I)
+
+
+def _is_umaryland_email(email: str) -> bool:
+    """A well-formed address on a University of Maryland domain (any subdomain
+    of umaryland.edu or umm.edu). Rejects malformed strings, typo domains and
+    outside addresses (VA, gmail) that the listing sometimes publishes."""
+    return bool(_UM_EMAIL_RX.match((email or "").strip()))
 
 
 def _email_matches_name(email: str, name: str) -> bool:

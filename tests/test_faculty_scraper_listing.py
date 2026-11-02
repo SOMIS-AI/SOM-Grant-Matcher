@@ -63,6 +63,42 @@ LISTING = """<html><head><title>Microbiology and Immunology - All Faculty</title
   </strong>
 <div><a href='mailto:cfox@som.umaryland.edu'>cfox@som.umaryland.edu</a></div>
 <a class="data-profile-link" href="/profiles/henn-r-frank/">View full profile</a>
+</li><li data-salary-desc="FULL TIME" data-emp-type="FACULTY" data-academic-title="Professor" data-gender="M">
+  <strong class="data-profile-name">
+    Dakum,
+    Patrick S.,
+    MD,
+    Professor
+  </strong>
+<div><a href='mailto:pdakum@ihv.umaryland.edu;'>pdakum@ihv.umaryland.edu;</a></div>
+<a class="data-profile-link" href="/profiles/dakum-patrick/">View full profile</a>
+</li><li data-salary-desc="FULL TIME" data-emp-type="FACULTY" data-academic-title="Professor" data-gender="M">
+  <strong class="data-profile-name">
+    Wickwire,
+    Emerson M.,
+    PhD,
+    Professor
+  </strong>
+<div><a href='mailto:ewickwire'>ewickwire</a></div>
+<a class="data-profile-link" href="/profiles/wickwire-emerson/">View full profile</a>
+</li><li data-salary-desc="FULL TIME" data-emp-type="FACULTY" data-academic-title="Assistant Professor" data-gender="M">
+  <strong class="data-profile-name">
+    Tsoyi,
+    Konstantin,
+    PhD,
+    Assistant Professor
+  </strong>
+<div><a href='mailto:KTsoyi@som.umarylan.edu'>KTsoyi@som.umarylan.edu</a></div>
+<a class="data-profile-link" href="/profiles/tsoyi-konstantin/">View full profile</a>
+</li><li data-salary-desc="FULL TIME" data-emp-type="FACULTY" data-academic-title="Professor" data-gender="M">
+  <strong class="data-profile-name">
+    Uhl,
+    George R.,
+    MD, PhD,
+    Professor
+  </strong>
+<div><a href='mailto:george.uhl@va.gov'>george.uhl@va.gov</a></div>
+<a class="data-profile-link" href="/profiles/uhl-george/">View full profile</a>
 </li></ul></body></html>"""
 
 
@@ -85,7 +121,8 @@ class _Session:
 def test_listing_parses_each_li_on_its_own():
     fac = fs.scrape_department_page(_Session(LISTING), "https://x/profiles/micro---all-faculty/")
     names = [f["name"] for f in fac]
-    assert names == ["David J. Silverman", "Nevil J. Singh", "Ciaran Skerry", "R. Frank Henn"], names
+    assert names == ["David J. Silverman", "Nevil J. Singh", "Ciaran Skerry", "R. Frank Henn",
+                     "Patrick S. Dakum", "Emerson M. Wickwire", "Konstantin Tsoyi", "George R. Uhl"], names
     assert all(f["emp_type"] != "FELLOW" for f in fac), \
         "the linkless postdoc block is skipped, not stapled onto the next link"
     singh = fac[1]
@@ -105,6 +142,18 @@ def test_listing_parses_each_li_on_its_own():
         "the site lists a coordinator's address for Henn — not seeded as his"
     assert henn["listing_contact_email"] == "cfox@som.umaryland.edu"
     assert singh["listing_contact_email"] == ""
+    dakum, wick, tsoyi, uhl = fac[4], fac[5], fac[6], fac[7]
+    assert dakum["email"] == "pdakum@ihv.umaryland.edu", "trailing punctuation stripped"
+    assert wick["email"] == "" and wick["listing_contact_email"] == "ewickwire", "no @ is not an address"
+    assert tsoyi["email"] == "" and tsoyi["listing_contact_email"] == "KTsoyi@som.umarylan.edu", "typo domain rejected"
+    assert uhl["email"] == "" and uhl["listing_contact_email"] == "george.uhl@va.gov", "outside domain rejected"
+
+
+def test_is_umaryland_email():
+    for ok in ["nsingh@som.umaryland.edu", "a.b@umm.edu", "x@ihv.umaryland.edu", "VRUS@UMARYLAND.EDU", "k-l@medicine.umaryland.edu"]:
+        assert fs._is_umaryland_email(ok), ok
+    for bad in ["ewickwire", "KTsoyi@som.umarylan.edu", "george.uhl@va.gov", "nathanmd@gmail.com", "pdakum@ihv.umaryland.edu;", "", "no"]:
+        assert not fs._is_umaryland_email(bad), bad
 
 
 def test_email_matches_name():
@@ -198,6 +247,7 @@ def test_split_curated_keywords():
 
 if __name__ == "__main__":
     test_listing_parses_each_li_on_its_own()
+    test_is_umaryland_email()
     test_email_matches_name()
     test_profile_page_email_guard_leaves_a_strangers_address_blank()
     test_carry_forward_fills_only_what_the_fresh_scrape_left_empty()

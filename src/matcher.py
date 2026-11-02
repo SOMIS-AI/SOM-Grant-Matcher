@@ -527,6 +527,14 @@ _AGENCY_BLOCK = {
     "rural development", "rural utilities",
     "arts", "national endowment for the arts",
     "humanities", "national endowment for the humanities",
+    # 2026-11-02: State Department fellowship-programme ADMINISTRATION grants
+    # (Rangel, Pickering, Payne — agency "Bureau of Human Resources") reached 6
+    # faculty on "mentorship, essential" / "professional development, students";
+    # USDA Food and Nutrition Service "National School Lunch Program Equipment
+    # Assistance" reached 5 school-mental-health faculty on "schools, students".
+    # Neither agency funds biomedical research.
+    "bureau of human resources", "department of state",
+    "food and nutrition service",
 }
 
 # Specific non-biomedical topic phrases that occasionally slip past the agency
@@ -1664,7 +1672,7 @@ def find_matches(grants, faculty, config=None, persist=True):
             _diag["context_filtered"].append({
                 "grant_title": grant["title"][:80],
                 "count":       len(context_dropped),
-                "sample":      context_dropped[:5],
+                "sample":      context_dropped[:40],
             })
 
         # ── Semantic pass: one cosine-similarity vector for ALL faculty ──────
@@ -1794,7 +1802,7 @@ def find_matches(grants, faculty, config=None, persist=True):
                 _diag["feedback_suppressed"].append({
                     "grant_title": grant["title"][:80],
                     "count":       len(dropped),
-                    "sample":      [m.faculty_name for m in dropped[:8]],
+                    "sample":      [m.faculty_name for m in dropped[:40]],
                 })
 
         # ── Theme 2: research track-record weighting + hard gate ─────────────
@@ -1838,7 +1846,7 @@ def find_matches(grants, faculty, config=None, persist=True):
                     "grant_title": grant["title"][:80],
                     "reason":      gate_reason,
                     "count":       len(gated_here),
-                    "sample":      gated_here[:5],
+                    "sample":      gated_here[:40],
                 })
 
         # ── Theme 1: clinical-required grant × basic-only faculty suppression ─
@@ -1870,7 +1878,7 @@ def find_matches(grants, faculty, config=None, persist=True):
                         "report_only": not drop,
                         "probe":       probe_hit,
                         "count":       len(suppressed_here),
-                        "sample":      suppressed_here[:8],
+                        "sample":      suppressed_here[:40],
                     })
 
         # ── Semantic distinctive-concept guard ───────────────────────────────
@@ -1907,7 +1915,7 @@ def find_matches(grants, faculty, config=None, persist=True):
                         "grant_title": grant["title"][:80],
                         "groups":      sorted({g for _, gs in guarded_here for g in gs}),
                         "count":       len(guarded_here),
-                        "sample":      [n for n, _ in guarded_here[:8]],
+                        "sample":      [n for n, _ in guarded_here[:40]],
                     })
 
         # ── Confidence histogram (before filtering) ──────────────────────────
@@ -1977,7 +1985,7 @@ def find_matches(grants, faculty, config=None, persist=True):
                         "count":       len(gated),
                         "kept":        len(all_matches),
                         "sample":      [f"{m.faculty_name} ({m.confidence_score}%)"
-                                        for m in gated[:8]],
+                                        for m in gated[:40]],
                     })
                     logger.info(
                         f"  Corroboration gate: dropped {len(gated)} keyword-only match(es) on "
@@ -2019,7 +2027,7 @@ def find_matches(grants, faculty, config=None, persist=True):
                         "reason":      "topic-less mechanism" if topicless else "generic evidence",
                         "count":       len(guarded_here),
                         "sample":      [f"{n} ({c}%: {', '.join(ev[:3])})"
-                                        for n, c, ev in guarded_here[:8]],
+                                        for n, c, ev in guarded_here[:40]],
                     })
             except Exception as e:
                 logger.warning(f"semantic evidence generation failed: {e}")
