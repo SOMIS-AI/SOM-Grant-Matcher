@@ -201,6 +201,30 @@ def test_roundup_rematches_stored_grants_and_refilters_the_rest():
         assert matcher.get_last_diagnostic() == {} or "weekly" not in matcher.get_last_diagnostic()
 
 
+def test_attribution_ignores_report_only_probe_entries():
+    """A report-only probe entry names people it did NOT drop; the reason for a
+    missing row must come from a real gate or fall through to the default."""
+    grant = {"id": "CC", "title": "Coordinating Center for Hearing Research", "link": "http://x/CC"}
+    stored_by_key = {"CC": {"grant": grant, "matches": [
+        {"faculty_name": "Saima R", "faculty_email": "sr@x.edu", "confidence_score": 51,
+         "match_type": "semantic", "matched_keywords": ["≈ inner ear"]},
+        {"faculty_name": "Gated G", "faculty_email": "gg@x.edu", "confidence_score": 60,
+         "match_type": "keyword", "matched_keywords": ["registry"]},
+    ]}}
+    rematched_by_key = {"CC": {"grant": grant, "matches": []}}
+    faculty = [{"name": "Saima R", "email": "sr@x.edu", "keywords": ["inner ear"]},
+               {"name": "Gated G", "email": "gg@x.edu", "keywords": ["registry"]}]
+    rd = {"clinical_basic_suppressed": [
+        {"grant_title": grant["title"][:80], "report_only": True, "probe": "coordinat", "count": 1, "sample": ["Saima R"]},
+        {"grant_title": grant["title"][:80], "report_only": False, "probe": None, "count": 1, "sample": ["Gated G"]},
+    ]}
+    dropped, added = matcher._attribute_rematch_rows(stored_by_key, rematched_by_key, {"CC"}, faculty, rd)
+    by = {d["faculty"]: d["reason"] for d in dropped}
+    assert by["Gated G"] == "clinical_basic_suppressed"
+    assert by["Saima R"].startswith("did not re-match today"), by
+    assert added == []
+
+
 def test_roundup_with_empty_store_is_a_refiltered_replay():
     cfg = _config()
     with tempfile.TemporaryDirectory() as tmp, _cwd(tmp):
@@ -220,4 +244,5 @@ if __name__ == "__main__":
     test_refilter_applies_current_gates_to_stored_rows()
     test_roundup_rematches_stored_grants_and_refilters_the_rest()
     test_roundup_with_empty_store_is_a_refiltered_replay()
+    test_attribution_ignores_report_only_probe_entries()
     print("PASS")

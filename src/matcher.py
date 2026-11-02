@@ -2448,6 +2448,11 @@ def _attribute_rematch_rows(stored_by_key: dict, rematched_by_key: dict, covered
         return re.sub(r"\s*\(\d+%\)\s*$", "", str(name or "")).strip().lower()
     for gate in _REMATCH_GATE_KEYS:
         for entry in rd.get(gate) or []:
+            if entry.get("report_only"):
+                # the center-type probe logs who it WOULD have dropped and
+                # keeps the row, so it can never be the reason a row is gone
+                # (10-27 weekly: Riazuddin's 51% row was mislabelled by it)
+                continue
             if gate == "faculty_capped":
                 nm = _clean(entry.get("faculty"))
                 for dg in entry.get("dropped_grants") or []:
