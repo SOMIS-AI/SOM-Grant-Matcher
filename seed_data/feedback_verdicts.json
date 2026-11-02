@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-10-23T18:09:44+00:00",
+ "updated_at": "2026-11-02T12:52:53+00:00",
  "sources": [
   {
    "filename": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
@@ -54,6 +54,17 @@
     "duplicate": 39,
     "unparseable": 1,
     "keywords_resolved": 7
+   }
+  },
+  {
+   "filename": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-02November2026.csv",
+   "imported_at": "2026-11-02T12:52:53+00:00",
+   "stats": {
+    "rows_total": 48,
+    "added": 1,
+    "duplicate": 46,
+    "unparseable": 1,
+    "keywords_resolved": 1
    }
   }
  ],
@@ -846,6 +857,21 @@
    "keywords": [
     "Genome Editing"
    ]
+  },
+  {
+   "form_id": "48",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-02November2026.csv",
+   "responded_at": "10/27/2026 9:59",
+   "verdict": "not_relevant",
+   "email": "lzilliox@som.umaryland.edu",
+   "grant": "RFA-EB-28-004",
+   "run_date": "2026-10-27",
+   "confidence": 57,
+   "match_type": "semantic",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "NextTech: Translational Development of Next-Generation Diagnostic and Therapeutic Devices (R18 Clinical Trial Not Allowed)",
+   "keywords": []
   }
  ]
 }
