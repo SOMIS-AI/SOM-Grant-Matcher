@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-11-09 — Eighth wave of context terms (11-03..11-09 review)
 **Status:** live
-**Commit:** *(fill in)*
+**Commit:** `9d63c80`
 **Change:** `context_dependent_terms` += participate, therapeutic targets,
 target engagement, core, utilization, safety, pharmacokinetics, pharmacology
 (175 distinct). No thresholds moved.
