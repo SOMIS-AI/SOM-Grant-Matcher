@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-23T19:29:00+00:00",
+  "updated_at": "2026-11-09T18:30:00+00:00",
   "sources": [
     {
       "filename": "Faculty Research Keywords-15June2026.xlsx",
@@ -13164,6 +13164,16 @@
       ],
       "source_file": "Faculty Research Keywords-23Sept2026.xlsx",
       "updated_at": "2026-09-23T19:29:00+00:00"
+    },
+    "ssmartin@som.umaryland.edu": {
+      "name": "Stuart Martin",
+      "department": "",
+      "keywords": [
+        "metastasis",
+        "bioengineering"
+      ],
+      "source_file": "Feedback form row 49 (2026-11-04): 'metastasis, bioengineering as additional keywords'",
+      "updated_at": "2026-11-09T18:30:00+00:00"
     }
   }
 }

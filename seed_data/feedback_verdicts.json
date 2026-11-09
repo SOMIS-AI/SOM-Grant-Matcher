@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-02T12:52:53+00:00",
+ "updated_at": "2026-11-09T18:21:06+00:00",
  "sources": [
   {
    "filename": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
@@ -63,6 +63,17 @@
     "rows_total": 48,
     "added": 1,
     "duplicate": 46,
+    "unparseable": 1,
+    "keywords_resolved": 1
+   }
+  },
+  {
+   "filename": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-09Nov2026.csv",
+   "imported_at": "2026-11-09T18:21:06+00:00",
+   "stats": {
+    "rows_total": 49,
+    "added": 1,
+    "duplicate": 47,
     "unparseable": 1,
     "keywords_resolved": 1
    }
@@ -872,6 +883,23 @@
    "comment": "",
    "grant_title": "NextTech: Translational Development of Next-Generation Diagnostic and Therapeutic Devices (R18 Clinical Trial Not Allowed)",
    "keywords": []
+  },
+  {
+   "form_id": "49",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-09Nov2026.csv",
+   "responded_at": "11/4/2026 12:33",
+   "verdict": "good",
+   "email": "ssmartin@som.umaryland.edu",
+   "grant": "RFA-CA-28-013",
+   "run_date": "2026-10-13",
+   "confidence": 55,
+   "match_type": "both",
+   "rater": "self",
+   "comment": "metastasis, bioengineering as additional keywords",
+   "grant_title": "Carcinogen Hazard Assessment Monographs Program (CHAMP) (R01 Clinical Trial Not Allowed)",
+   "keywords": [
+    "cancer"
+   ]
   }
  ]
 }
