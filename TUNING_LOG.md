@@ -72,7 +72,7 @@ comparable across those boundaries; ratios like `keep%` are.
 ### 2026-11-09 — Name dropped from the embedding sentence; Research Interests extractor stops leaking filler
 **Status:** live (embeddings regenerate on the first run after restart; the
 extractor change needs a scrape — next regular re-scrape ~11-10)
-**Commit:** *(fill in)*
+**Commit:** `d844f0b`
 **Change:** `embedder.faculty_to_text` opens with the department only
 (EMBEDDING_VERSION 6 -> 7). `faculty_scraper._BIO_STOP` += "the", prose verbs
 (identify / combine / contribute / see / please) and heading words
