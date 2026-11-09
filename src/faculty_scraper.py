@@ -379,6 +379,16 @@ _RI_LABELS = re.compile(
 # preamble words ("I diagnose and treat patients with…") that otherwise pollute
 # the keyword pool when a faculty member writes prose in a "keywords" field.
 _BIO_STOP = {
+    # 2026-11-09: "the" was missing, so "identify the" / "the etiology" / "the
+    # behavioral" / "please see the" reached a Psychiatry profile as keywords
+    # and anchored a 99% match on an unrelated NIDDK consortium. Section
+    # headings and prose verbs from the same profile added alongside.
+    "the", "please", "see", "below", "above", "here", "etc",
+    "identify", "identifies", "identified", "identifying",
+    "combine", "combines", "combined", "combining",
+    "contribute", "contributes", "contributed", "contributing",
+    "description", "descriptions", "objective", "objectives", "overview",
+    "summary", "background", "details", "detail",
     # articles/conjunctions/prepositions/auxiliaries
     "a", "an", "and", "or", "but", "nor", "for", "to", "of", "in", "on", "at",
     "by", "with", "from", "as", "if", "so", "than", "then", "that", "this",
@@ -525,8 +535,10 @@ def _extract_phrases_from_text(text: str, max_phrases: int = 40) -> list:
 
     # Segment on punctuation so n-grams stay within a single keyword/clause.
     for seg in re.split(r"[.!?;,()/]+", text):
+        seg     = re.sub(r"[\u2019']s\b", "", seg)          # "Roche's" -> "Roche", never "roche s"
         cleaned = re.sub(r"[^A-Za-z0-9\- ]", " ", seg)
-        tokens  = [t.lower() for t in cleaned.split() if t]
+        tokens  = [t.lower().strip("-") for t in cleaned.split() if t]
+        tokens  = [t for t in tokens if len(t) > 1]            # drop "s", "-" fragments
         # 1-grams
         for t in tokens:
             if (t in _BIO_STOP or t in _SINGLE_NOISE
@@ -689,6 +701,9 @@ def scrape_individual_profile(session: requests.Session, faculty: dict) -> dict:
     if ri_text and len(ri_text) > 20:
         # Bounded phrase extraction — never dump the whole narrative as keywords
         ri_keywords = _extract_phrases_from_text(ri_text, max_phrases=20)
+        # ... and never the person's own name ("roche s", "dr roche", 2026-11-09)
+        name_toks = {t for t in re.split(r"[^a-z]+", (faculty.get("name") or "").lower()) if len(t) >= 3}
+        ri_keywords = [k for k in ri_keywords if not (set(k.split()) & name_toks)]
 
     merged = []
     seen   = set()

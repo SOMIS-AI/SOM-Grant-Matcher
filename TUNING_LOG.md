@@ -69,6 +69,31 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-11-09 — Name dropped from the embedding sentence; Research Interests extractor stops leaking filler
+**Status:** live (embeddings regenerate on the first run after restart; the
+extractor change needs a scrape — next regular re-scrape ~11-10)
+**Commit:** *(fill in)*
+**Change:** `embedder.faculty_to_text` opens with the department only
+(EMBEDDING_VERSION 6 -> 7). `faculty_scraper._BIO_STOP` += "the", prose verbs
+(identify / combine / contribute / see / please) and heading words
+(description / objectives / overview / summary / background / details);
+`_extract_phrases_from_text` strips "'s" and one-character tokens; Pass 2
+drops any Research Interests phrase containing the person's own name.
+**Why:** (1) "Gabriella M. Miller is a researcher in Emergency Medicine"
+matched the "Gabriella Miller Kids First Training and Outreach Core" U24 at
+70% (10-30 daily, 11-03 weekly) — the name was the only overlap. (2) Daniel
+Roche (Psychiatry) matched the NIDDK Disorders of Gastrointestinal
+Interoception Consortium at 99% on "biomarkers, gastrointestinal, identify
+the, objectives" (11-04, both postings); his UMSOM (Interests) bucket held
+"identify the", "the etiology", "the behavioral", "please see the", "roche s",
+"description", "objectives" — the same fragments behind the fifth-wave terms
+"the etiology" / "biological mechanisms" / "contribute" on 10-16.
+**Expected effect:** semantic rows no longer driven by a name; fewer
+keyword-only rows anchored on prose filler after the next scrape. Keyword
+counts on prose-heavy profiles drop slightly.
+**Outcome:** *(fill in after the 11-10 scrape and a week of diagnostics)*
+**Verdict:** too early
+
 ### 2026-11-02 — Agency blocks, ACL services patterns, seventh wave of context terms
 **Status:** live
 **Commit:** `20ac4f5` (+ `5bc95b9` attribution fix)

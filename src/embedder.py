@@ -117,7 +117,7 @@ def is_available() -> bool:
 # Embedding format version — bump this when faculty_to_text() changes so that
 # stale embeddings (generated with an older text format) are auto-regenerated.
 # The version is stored in each faculty profile alongside the embedding.
-EMBEDDING_VERSION = 6    # v1 = pipe-separated, v2 = sentence-style, v3 = force regen, v4 = PubMedBert (too broad), v5 = back to MiniLM + threshold 0.40, v6 = + publication/grant titles (fix #4)
+EMBEDDING_VERSION = 7    # v1 = pipe-separated, v2 = sentence-style, v3 = force regen, v4 = PubMedBert (too broad), v5 = back to MiniLM + threshold 0.40, v6 = + publication/grant titles (fix #4), v7 = name dropped from the sentence (2026-11-09)
 
 # Cap how many evidence titles and how much total evidence text feeds the
 # embedding. Measured 2026-06-26: ~10 publication TITLES gives the best lift
@@ -151,13 +151,15 @@ def faculty_to_text(faculty: dict) -> str:
     name = faculty.get("name", "")
     dept = faculty.get("department", "")
 
-    # Opening sentence with name and department
-    if name and dept:
-        parts.append(f"{name} is a researcher in {dept}.")
-    elif name:
-        parts.append(f"{name} is a biomedical researcher.")
-    elif dept:
+    # Opening sentence with the department only (2026-11-09). The name used
+    # to be here too, and a faculty member's name carries no research signal
+    # but can collide with a funder's: "Gabriella M. Miller is a researcher in
+    # Emergency Medicine" matched the "Gabriella Miller Kids First" U24 at 70%
+    # on 10-30 and again in the 11-03 weekly. Names stay out of the vector.
+    if dept:
         parts.append(f"A researcher in {dept}.")
+    else:
+        parts.append("A biomedical researcher.")
 
     # Keywords as a natural-language research interests sentence
     keywords = faculty.get("keywords") or []
