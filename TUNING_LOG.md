@@ -69,6 +69,34 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-11-09 — Eighth wave of context terms (11-03..11-09 review)
+**Status:** live
+**Commit:** *(fill in)*
+**Change:** `context_dependent_terms` += participate, therapeutic targets,
+target engagement, core, utilization, safety, pharmacokinetics, pharmacology
+(175 distinct). No thresholds moved.
+**Why:** the 11-04 NIH day (7 grants / 86 rows). On the ADRD "Genomic and
+Biologic Therapies" U01 (RFA-NS-28-012) seven rows were anchored only on the
+call's drug-development boilerplate — "pharmacokinetics, safety" (Strickland
+80%, Schmitz, N.G. Shah, Bergeria, Nirali Shah 55%) and "pharmacokinetics,
+translation/pharmacology" (Venniro, Cassady) — plus Bloch on "target
+engagement" alone. On the NIDDK Disorders of Gastrointestinal Interoception
+pair (RFA-DK-28-213/-214) Francis matched on "disorders, participate" and Hu
+on "therapeutic targets" alone, both postings. On the Kids First Training and
+Outreach Core U24 (11-03 weekly) Wallin matched on "core, utilization".
+Replayed over all 88 keyword/both rows delivered 11-03..11-06: 14 rows go,
+all listed above; Parikh ("dementia, safety, vcid"), Njar ("pharmacokinetics,
+toxicology") and Linda Chang ("alzheimer s disease, pharmacology") keep theirs
+because a disease or discipline word remains. Not added, by Scott's call:
+"brain" (11-02) and "prognosis" (the four "prognosis"-only rows on the cancer
+assay call are oncologists). The FDA "Human and Animal Food Rapid Response
+Teams" title term stays a candidate.
+**Expected effect:** fewer keyword-only rows on drug-development and
+consortium calls; `context_filtered` rises on those; NIH disease matching
+unchanged.
+**Outcome:** *(fill in after a week)*
+**Verdict:** too early
+
 ### 2026-11-09 — Name dropped from the embedding sentence; Research Interests extractor stops leaking filler
 **Status:** live (embeddings regenerate on the first run after restart; the
 extractor change needs a scrape — next regular re-scrape ~11-10)

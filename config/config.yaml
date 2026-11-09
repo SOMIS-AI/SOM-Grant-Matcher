@@ -692,6 +692,24 @@ matching:
     - "essential"
     - "schools"
     - "rural"
+    # ── Eighth wave (2026-11-09, 11-03..11-09 review) ───────────────────────
+    # Replayed on the 88 keyword/both rows delivered 11-03..11-06: removes 14,
+    # none legitimate. Method / drug-development boilerplate on the ADRD gene
+    # therapy U01 (RFA-NS-28-012): seven rows on "pharmacokinetics, safety"
+    # (Strickland 80%, Schmitz, N. Shah, Bergeria, Nirali Shah, Venniro,
+    # Cassady) — Parikh "dementia, safety, vcid", Njar "pharmacokinetics,
+    # toxicology" and Chang "alzheimer s disease, pharmacology" KEEP because a
+    # disease/discipline word remains. NIDDK interoception pair: Francis
+    # "disorders, participate", Hu "therapeutic targets" alone. ADRD: Bloch
+    # "target engagement" alone. Kids First U24: Wallin "core, utilization".
+    - "participate"
+    - "therapeutic targets"
+    - "target engagement"
+    - "core"
+    - "utilization"
+    - "safety"
+    - "pharmacokinetics"
+    - "pharmacology"
 
   # ── Research track-record signal (Theme 2, 2026-06-23) ────────────────────
   # Weight a match by the faculty member's external publication/grant footprint,
