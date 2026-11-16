@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-09T18:21:06+00:00",
+ "updated_at": "2026-11-16T18:19:14+00:00",
  "sources": [
   {
    "filename": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-23Sept2026.xlsx",
@@ -76,6 +76,17 @@
     "duplicate": 47,
     "unparseable": 1,
     "keywords_resolved": 1
+   }
+  },
+  {
+   "filename": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16November2026.csv",
+   "imported_at": "2026-11-16T18:19:14+00:00",
+   "stats": {
+    "rows_total": 59,
+    "added": 10,
+    "duplicate": 48,
+    "unparseable": 1,
+    "keywords_resolved": 6
    }
   }
  ],
@@ -900,6 +911,170 @@
    "keywords": [
     "cancer"
    ]
+  },
+  {
+   "form_id": "50",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16November2026.csv",
+   "responded_at": "11/10/2026 7:03",
+   "verdict": "not_relevant",
+   "email": "salshanqeeti@ihv.umaryland.edu",
+   "grant": "PAR-27-014",
+   "run_date": "2026-11-10",
+   "confidence": 55,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "Development and Maintenance of Human and Animal Food Rapid Response Teams",
+   "keywords": [
+    "detection",
+    "surveillance"
+   ]
+  },
+  {
+   "form_id": "51",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16November2026.csv",
+   "responded_at": "11/10/2026 8:57",
+   "verdict": "good",
+   "email": "min.yu@som.umaryland.edu",
+   "grant": "PAR-28-042",
+   "run_date": "2026-11-10",
+   "confidence": 69,
+   "match_type": "both",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "Assay Validation of High Quality Markers for Clinical Studies in Cancer (UH2/UH3 Clinical Trial Not Allowed)",
+   "keywords": [
+    "cancer",
+    "prognosis"
+   ]
+  },
+  {
+   "form_id": "52",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16November2026.csv",
+   "responded_at": "11/10/2026 9:00",
+   "verdict": "good",
+   "email": "miroslaw.janowski@som.umaryland.edu",
+   "grant": "RFA-NS-28-012",
+   "run_date": "2026-11-10",
+   "confidence": 68,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "Genomic and Biologic Therapies for ADRD (U01 Clinical Trial Optional)",
+   "keywords": [
+    "Genome Editing"
+   ]
+  },
+  {
+   "form_id": "53",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16November2026.csv",
+   "responded_at": "11/10/2026 9:32",
+   "verdict": "good",
+   "email": "rchandra@som.umaryland.edu",
+   "grant": "RFA-NS-28-012",
+   "run_date": "2026-11-10",
+   "confidence": 52,
+   "match_type": "semantic",
+   "rater": "self",
+   "comment": "CRISPR a and CRISPRi,AAV",
+   "grant_title": "Genomic and Biologic Therapies for ADRD (U01 Clinical Trial Optional)",
+   "keywords": []
+  },
+  {
+   "form_id": "54",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16November2026.csv",
+   "responded_at": "11/10/2026 9:34",
+   "verdict": "good",
+   "email": "cadebamowo@som.umaryland.edu",
+   "grant": "PAR-28-063",
+   "run_date": "2026-11-10",
+   "confidence": 74,
+   "match_type": "semantic",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "",
+   "keywords": []
+  },
+  {
+   "form_id": "55",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16November2026.csv",
+   "responded_at": "11/10/2026 10:51",
+   "verdict": "not_relevant",
+   "email": "dgaykalova@som.umaryland.edu",
+   "grant": "PAR-28-063",
+   "run_date": "2026-11-10",
+   "confidence": 64,
+   "match_type": "both",
+   "rater": "self",
+   "comment": "The R50 mechanism is generally intended for research specialists providing sustained technical/scientific expertise.You are an independent faculty investigator running your own research program and applying for PI-driven grants (DoD, NIH, SPORE-related efforts, etc.).The only keyword match appears to be \"cancer,\" which is too broad.",
+   "grant_title": "",
+   "keywords": []
+  },
+  {
+   "form_id": "56",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16November2026.csv",
+   "responded_at": "11/10/2026 10:53",
+   "verdict": "not_relevant",
+   "email": "dgaykalova@som.umaryland.edu",
+   "grant": "RFA-CA-28-004",
+   "run_date": "2026-10-20",
+   "confidence": 63,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "NCTN Biobanks are major national infrastructures that support the NCI National Clinical Trials Network.These awards are typically aimed at groups operating large-scale biospecimen repositories tied to national clinical trials.The likely applicants are established biobanks, tissue repositories, cooperative groups, pathology networks, and institutions already embedded in NCTN operations.While you work heavily with biomarkers, cancer genomics, and biospecimens, you're not running a national biobank.",
+   "grant_title": "Limited Competition: Biospecimen Banks to support NCI National Clinical Trials Network Biospecimen Banks (NCTN Biobanks) and the NCI Early-Phase and Experimental Clinical Trials Biospecimen Bank (EET Biobank) (U24 Clinical Trial Not Allowed)",
+   "keywords": [
+    "Translational cancer research",
+    "biomarker",
+    "cancer"
+   ]
+  },
+  {
+   "form_id": "57",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16November2026.csv",
+   "responded_at": "11/10/2026 12:38",
+   "verdict": "not_relevant",
+   "email": "rmalek@som.umaryland.edu",
+   "grant": "RFA-DK-28-113",
+   "run_date": "2026-11-10",
+   "confidence": 64,
+   "match_type": "both",
+   "rater": "self",
+   "comment": "cell line research",
+   "grant_title": "",
+   "keywords": []
+  },
+  {
+   "form_id": "58",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16November2026.csv",
+   "responded_at": "11/11/2026 10:35",
+   "verdict": "good",
+   "email": "msutherland@som.umaryland.edu",
+   "grant": "HRSA-27-109",
+   "run_date": "2026-11-10",
+   "confidence": 62,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "",
+   "grant_title": "The National Rural Health Information Technology Assessment Program",
+   "keywords": [
+    "information technology"
+   ]
+  },
+  {
+   "form_id": "59",
+   "source_file": "UMSOM AI Grant Matcher App Matching Feedback and Tuning Form-16November2026.csv",
+   "responded_at": "11/11/2026 11:12",
+   "verdict": "not_relevant",
+   "email": "mitchell.wallin@som.umaryland.edu",
+   "grant": "RFA-RM-27-010",
+   "run_date": "2026-11-03",
+   "confidence": 62,
+   "match_type": "keyword",
+   "rater": "self",
+   "comment": "Pediatric focus is not in my expertise.",
+   "grant_title": "",
+   "keywords": []
   }
  ]
 }

@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-09T18:30:00+00:00",
+  "updated_at": "2026-11-16T18:00:00+00:00",
   "sources": [
     {
       "filename": "Faculty Research Keywords-15June2026.xlsx",
@@ -8107,6 +8107,9 @@
       "name": "Ramesh Chandra",
       "department": "Neurobiology",
       "keywords": [
+        "CRISPRa",
+        "CRISPRi",
+        "AAV",
         "AAV and lenti- Viral vector engineering and core technologies",
         "AAV production",
         "quality control",
@@ -8117,8 +8120,8 @@
         "Enhancer-driven AAV vector design",
         "Promoter based AAV construct screening"
       ],
-      "source_file": "Faculty Research Keywords-23Sept2026.xlsx",
-      "updated_at": "2026-09-23T19:29:00+00:00"
+      "source_file": "Faculty Research Keywords-23Sept2026.xlsx + Feedback form row 53 (2026-11-10): CRISPRa, CRISPRi, AAV",
+      "updated_at": "2026-11-16T18:00:00+00:00"
     },
     "seung.lee1@som.umaryland.edu": {
       "name": "Seung Lee",
