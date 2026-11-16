@@ -69,6 +69,32 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-11-16 — Publication identity guard; "conference support" is topicless
+**Status:** live (identity guard needs a scrape — next regular re-scrape ~11-18)
+**Commit:** *(fill in)*
+**Change:** `faculty_scraper._author_is_faculty`: PubMed keeps an article only
+when one author matches the faculty member by surname AND full given name
+(initial when the record has none); Europe PMC's name-based fallback applies
+the same test (both the per-author and the paper-level affiliation paths).
+`semantic_generic_guard.topicless_grant_patterns` += 'conference support'.
+**Why:** Rachel B. Johnson (Anesthesiology) carried a PubMed bucket of
+glioma, systemic racism, phylogeny, visual cortex, gold and consciousness —
+several "Johnson R" authors at UM campuses merged by the "Last F[Author] AND
+Maryland[Affiliation]" query — and landed on the NIBIB devices R18 (10-24),
+the Kids First genomics U24 (11-03), the NHGRI genomics UE5 (11-11) and the
+Simons neurodevelopmental conference call (11-13). Same risk for every
+common surname. The Simons "Conference Support for Rare Neurodevelopmental
+Disorder Communities" call put 7 semantic-only rows in the 11-13 digest
+(Saenz Ayala 99%); the topicless patterns had 'conference grant' and R13 but
+not this wording — tested against the archive titles, it hits only that call.
+**Expected effect:** common-surname profiles lose foreign MeSH terms after
+the next scrape (Johnson's brain/genome rows stop); conference-support
+calls deliver no semantic-only rows. Keyword counts drop slightly for
+faculty whose PubMed records carry initials only — those still pass on the
+initial.
+**Outcome:** *(fill in after the 11-18 scrape and a week of diagnostics)*
+**Verdict:** too early
+
 ### 2026-11-09 — Eighth wave of context terms (11-03..11-09 review)
 **Status:** live
 **Commit:** `9d63c80`

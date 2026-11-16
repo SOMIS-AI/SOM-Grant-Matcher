@@ -330,6 +330,11 @@ matching:
       - '\b[RU]13\b'                      # conference / scientific meeting grants
       - 'conference grant'
       - 'scientific meetings?\b'
+      # 2026-11-16: Simons "Conference Support for Rare Neurodevelopmental
+      # Disorder Communities" put 7 semantic-only rows in the 11-13 digest
+      # (Saenz Ayala 99% on "neurodevelopmental disorders"); the wording above
+      # misses it. Tested against the archive titles: hits only that call.
+      - 'conference support'
       - 'administrative supplement'
       - 'research supplements? to promote'
       - 'diversity supplement'

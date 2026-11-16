@@ -748,6 +748,40 @@ def _pubmed_name_query(name: str) -> str:
     return f'{last} {first_initial}[Author] AND "University of Maryland"[Affiliation]'
 
 
+def _author_is_faculty(fac_name: str, author_last: str, author_fore: str) -> bool:
+    """Does a publication author record belong to this faculty member?
+
+    Surname must match. When the record carries a full given name, one of the
+    faculty member's given names (any token of 3+ letters, so "T.Chase Francis"
+    matches "Chase" and "R. Frank Henn" matches "R Frank") must appear in it;
+    when the record has initials only, the first initial must match. Added
+    2026-11-16 after "Johnson R[Author] AND Maryland[Affiliation]" merged
+    several Johnsons into one Anesthesiology profile."""
+    _cred = {"md", "phd", "do", "drph", "dpt", "mph", "ms", "msc", "dsc", "scd", "dds",
+             "dmd", "mbbs", "mbchb", "mgc", "mhs", "pharmd", "dpharm", "mba", "mpp", "jd",
+             "rn", "aprn", "facp", "facs", "facog", "frcs", "frcp", "bsc", "ba", "bs", "phd"}
+    def toks(x):
+        return [t for t in re.split(r"[^a-z]+", (x or "").lower()) if t]
+    fac = [t for t in toks(_strip_credentials(fac_name or "")) if t not in _cred]
+    if len(fac) < 2:
+        return False
+    fac_last, fac_given = fac[-1], [t for t in fac[:-1] if len(t) >= 3]
+    a_last = "".join(toks(author_last))
+    if not a_last or a_last != "".join(toks(fac_last)):
+        # tolerate "Martino-Gomez" vs "Martino Gomez" vs "Martinogomez"
+        if a_last.replace(" ", "") != "".join(fac[-2:]) and a_last != fac_last:
+            return False
+    fore = toks(author_fore)
+    full = [t for t in fore if len(t) >= 3]
+    if full:
+        if not fac_given:                       # faculty known by a 1-2 letter given name
+            return bool(fore) and fore[0][0] == fac[0][0]
+        return bool(set(full) & set(fac_given))
+    # initials only ("R", "RB", "R B")
+    initials = "".join(t[0] for t in fore) if fore else ""
+    return bool(initials) and initials[0] == fac[0][0]
+
+
 def enrich_from_pubmed(session: requests.Session, faculty: dict) -> dict:
     """Query PubMed for recent publications and extract MeSH terms as keywords."""
     query = _pubmed_name_query(faculty.get("name", ""))
@@ -778,22 +812,40 @@ def enrich_from_pubmed(session: requests.Session, faculty: dict) -> dict:
         mesh_terms = set()
         kw_terms = set()
 
+        # Identity guard (2026-11-16): the esearch query is "Last F[Author] AND
+        # Maryland[Affiliation]", which merges every "Johnson R" on any UM
+        # campus into one profile. Keep an article only when one of its authors
+        # is this person by full given name (or by initial when the record has
+        # no full name).
+        articles = soup.find_all("PubmedArticle") or [soup]
+        kept = []
+        for art in articles:
+            for au in art.find_all("Author"):
+                last = au.find("LastName"); fore = au.find("ForeName") or au.find("Initials")
+                if last and _author_is_faculty(faculty.get("name", ""), last.get_text(), fore.get_text() if fore else ""):
+                    kept.append(art)
+                    break
+        if not kept:
+            logger.debug(f"  PubMed: {faculty.get('name')}: {len(articles)} article(s) found, none by this author — skipped")
+            return faculty
+        ids = ids[:len(kept)]
+
         # Capture article TITLES for the semantic embedding (fix #4). High-signal,
         # concise text that grounds the faculty vector in their actual research.
         pub_titles = [t.get_text().strip()
-                      for t in soup.find_all("ArticleTitle") if t.get_text().strip()]
+                      for art in kept for t in art.find_all("ArticleTitle") if t.get_text().strip()]
         if pub_titles:
-            _merge_evidence_text(faculty, pub_titles, f"pubmed({len(ids)}papers)")
+            _merge_evidence_text(faculty, pub_titles, f"pubmed({len(kept)}papers)")
 
-        for descriptor in soup.find_all("DescriptorName"):
-            term = descriptor.get_text().strip()
-            if term and len(term) > 3:
-                mesh_terms.add(term.lower())
-
-        for kw in soup.find_all("Keyword"):
-            term = kw.get_text().strip()
-            if term and len(term) > 3:
-                kw_terms.add(term.lower())
+        for art in kept:
+            for descriptor in art.find_all("DescriptorName"):
+                term = descriptor.get_text().strip()
+                if term and len(term) > 3:
+                    mesh_terms.add(term.lower())
+            for kw in art.find_all("Keyword"):
+                term = kw.get_text().strip()
+                if term and len(term) > 3:
+                    kw_terms.add(term.lower())
 
         # MeSH terms first (more controlled), then author keywords
         combined = list(mesh_terms) + [k for k in kw_terms if k not in mesh_terms]
@@ -1075,19 +1127,24 @@ def enrich_from_europe_pmc(session: requests.Session, faculty: dict) -> dict:
         else:
             # Name-based fallback: verify at least one author block matches
             # last-name AND has 'maryland' in its affiliation.
+            # 2026-11-16: the author must also match by GIVEN name (full name
+            # when the record has one, initial otherwise) — see _author_is_faculty.
+            def _is_me(author):
+                return _author_is_faculty(clean_name, author.get("lastName"),
+                                          author.get("firstName") or author.get("initials"))
             verified_results = []
             for paper in results:
                 author_list = paper.get("authorList", {}).get("author", [])
                 for author in author_list:
                     aff = (author.get("affiliation") or "").lower()
-                    auth_name = (author.get("lastName") or "").lower()
-                    if last_name.lower() in auth_name and "maryland" in aff:
+                    if _is_me(author) and "maryland" in aff:
                         verified_results.append(paper)
                         break
             if not verified_results:
                 for paper in results:
                     aff_str = (paper.get("affiliation") or "").lower()
-                    if "maryland" in aff_str:
+                    author_list = paper.get("authorList", {}).get("author", [])
+                    if "maryland" in aff_str and any(_is_me(a) for a in author_list):
                         verified_results.append(paper)
 
         if not verified_results:
@@ -1741,7 +1798,7 @@ ORCID_HEADERS = {
 def _strip_credentials(name: str) -> str:
     """Remove degree suffixes: 'Jane Smith, MD, PhD' → 'Jane Smith'"""
     return re.sub(
-        r",?\s*(MD|PhD|DO|DrPH|DPT|MPH|MS|DSc|DDS|DMD|MBBS|MBChB|MGC|MHS|Dpharm|MBA|MPP|JD|RN|APRN|FACP|FACS|FACOG)[\s,].*$",
+        r",?\s*(MD|PhD|DO|DrPH|DPT|MPH|MS|DSc|DDS|DMD|MBBS|MBChB|MGC|MHS|Dpharm|MBA|MPP|JD|RN|APRN|FACP|FACS|FACOG)(?:[\s,].*)?$",
         "", name, flags=re.IGNORECASE
     ).strip()
 
