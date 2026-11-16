@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-11-16 — Embedding sentence v8: department-only prefix (calibrated)
 **Status:** live (embeddings regenerate on the first run after restart)
-**Commit:** *(fill in)*
+**Commit:** `bdae974`
 **Change:** `embedder.faculty_to_text` opens with "<Department>." and nothing
 else before the keyword sentence and publication titles; EMBEDDING_VERSION
 7 -> 8. The weekly `rematch_diagnostic` excerpt now also carries
