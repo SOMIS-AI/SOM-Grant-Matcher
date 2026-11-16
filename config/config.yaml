@@ -938,6 +938,23 @@ matching:
     # Research Scholar are faculty mechanisms.
     - pattern: '\bscholarships?\b'
       reason:  'PI: student scholarship program (recipient is a student, not a faculty PI)'
+    # 2026-11-16: NCI Research Specialist (R50). Gaykalova (11-10): "generally
+    # intended for research specialists providing sustained technical/scientific
+    # expertise ... you are an independent faculty investigator". 38 rows went
+    # out on it in the 11-10 weekly, 32 semantic-only; one faculty member rated
+    # it good (Adebamowo), so the pattern is on Scott's call, not unanimous.
+    - pattern: '\bR50\b|research specialist award'
+      reason:  'PI: NCI Research Specialist (R50) - for staff/clinician scientists who are not independent investigators'
+    # 2026-11-16: "Limited Competition:" announcements are restricted to existing
+    # awardees, networks or consortia (NCTN Biobanks, ABCD-E renewal, COPE-AKI
+    # continuation, BRAIN Technology Partnerships, AnVIL, Synchrotron Resources).
+    # Gaykalova (11-10) on the NCTN Biobanks: "aimed at groups operating
+    # large-scale biospecimen repositories ... you're not running a national
+    # biobank". The archive has 25 such titles; the CTSA family is CARVED OUT
+    # because UMB holds a CTSA hub (ICTR) and is an eligible applicant for the
+    # CTSA KL2 / TL1 / research-education / collaborative-innovation calls.
+    - pattern: '^\s*limited competition\b(?!.*(?:\bCTSA\b|clinical (?:and|&) translational science))'
+      reason:  'institutional: limited competition - restricted to existing awardees or networks (CTSA-family calls excepted; UMB holds a CTSA hub)'
     # ── ACL / community-services & capacity grants ────────────────────────────
     # Administration for Community Living (ACL) and similar awards that pass the
     # biomedical pre-filter on aging/dementia/disability vocabulary but are

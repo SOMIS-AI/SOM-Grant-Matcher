@@ -69,6 +69,33 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-11-16 — R50 and "Limited Competition" ineligible; FDA food programme non-biomedical
+**Status:** live
+**Commit:** *(fill in)*
+**Change:** `ineligible_grant_patterns` += `\bR50\b|research specialist award`
+and `^\s*limited competition\b` with a negative look-ahead that exempts CTSA /
+"clinical and translational science" titles. `_NONBIO_TITLE_TERMS` += "human
+and animal food", "food rapid response".
+**Why:** the 16 Nov feedback export. Gaykalova rejected the NCI R50 Research
+Specialist (Clinician Scientist) Award with the reasoning that R50 is for
+research specialists providing sustained expertise, not independent
+investigators, and that her only keyword overlap was "cancer" — the call
+drew 12 rows on 11-04 and 38 (32 semantic-only) in the 11-10 weekly;
+Adebamowo rated it good, the one dissent. She rejected the NCTN Biobanks
+"Limited Competition" the same way ("aimed at groups operating large-scale
+biospecimen repositories ... you're not running a national biobank"); the
+archive holds 25 "Limited Competition" titles, all restricted to existing
+awardees or networks, except the CTSA family (KL2, TL1, research education,
+collaborative innovation), where UMB's ICTR hub is eligible — hence the
+carve-out. Alshanqeeti rejected the FDA "Human and Animal Food Rapid
+Response Teams" call (9 rows 11-05, 8 again in the 11-10 weekly); the title
+term hits only that posting in 1,522 archived titles.
+**Expected effect:** R50-type and limited-competition postings stop reaching
+faculty (the former alone was 38 weekly rows); `skipped` rises by a few per
+month; CTSA calls unaffected.
+**Outcome:** *(fill in after a few weeks)*
+**Verdict:** too early
+
 ### 2026-11-16 — Embedding sentence v8: department-only prefix (calibrated)
 **Status:** live (embeddings regenerate on the first run after restart)
 **Commit:** `bdae974`

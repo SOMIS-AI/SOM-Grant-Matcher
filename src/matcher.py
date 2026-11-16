@@ -551,6 +551,13 @@ _NONBIO_TITLE_TERMS = {
     "rangeland",
     "conservation innovation",     # USDA NRCS Conservation Innovation Grants (CIG)
     "on-farm",
+    # 2026-11-16: FDA "Development and Maintenance of Human and Animal Food Rapid
+    # Response Teams" (PAR-27-014) is a state food-safety agency programme; it
+    # passed on vocabulary and reached 9 faculty on 11-05 (Gingold 99% on
+    # "emergency response, environmental health, epidemiology"), 8 of them again
+    # in the 11-10 weekly; Alshanqeeti rated it not relevant.
+    "human and animal food",
+    "food rapid response",
     "soil health",
     "grazing",
     "livestock",
