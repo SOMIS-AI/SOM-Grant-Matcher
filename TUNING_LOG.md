@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-11-16 — R50 and "Limited Competition" ineligible; FDA food programme non-biomedical
 **Status:** live
-**Commit:** *(fill in)*
+**Commit:** `fc9df1f`
 **Change:** `ineligible_grant_patterns` += `\bR50\b|research specialist award`
 and `^\s*limited competition\b` with a negative look-ahead that exempts CTSA /
 "clinical and translational science" titles. `_NONBIO_TITLE_TERMS` += "human
