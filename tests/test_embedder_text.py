@@ -14,14 +14,16 @@ def test_faculty_text_has_department_and_keywords_but_not_the_name():
     txt = embedder.faculty_to_text({"name": "Gabriella M. Miller", "department": "Emergency Medicine",
                                     "keywords": ["safety net care", "hypertension"]})
     assert "Miller" not in txt and "Gabriella" not in txt
-    assert "Emergency Medicine" in txt
+    assert txt.startswith("Emergency Medicine.")
+    assert "researcher" not in txt.lower(), "v8: no 'researcher' scaffolding (it pulled vectors toward calls about researchers)"
     assert "safety net care" in txt and "hypertension" in txt
 
 
 def test_faculty_text_without_department_is_still_a_sentence():
     txt = embedder.faculty_to_text({"name": "Jane Doe", "keywords": ["malaria"]})
     assert "Doe" not in txt and "malaria" in txt and txt.endswith(".")
+    assert "researcher" not in txt.lower()
 
 
 def test_embedding_version_bumped_so_vectors_regenerate():
-    assert embedder.EMBEDDING_VERSION >= 7
+    assert embedder.EMBEDDING_VERSION >= 8

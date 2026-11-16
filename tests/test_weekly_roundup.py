@@ -193,6 +193,7 @@ def test_roundup_rematches_stored_grants_and_refilters_the_rest():
         assert audit["rematch_diagnostic"]["summary"]["grants_checked"] == 1
         assert isinstance(audit["rematch_diagnostic"]["context_filtered"], list)
         assert set(audit["rematch_diagnostic"]) >= {"summary", "track_record_gated", "faculty_capped"}
+        assert isinstance(audit["rematch_diagnostic"]["semantic_score_distributions"], list)
 
         # persist=False: the daily results file and stats are untouched
         assert Path("data/match_results.json").read_text(encoding="utf-8") == before

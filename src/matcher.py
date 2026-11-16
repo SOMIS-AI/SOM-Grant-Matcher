@@ -2420,6 +2420,10 @@ def _rematch_diag_excerpt(rd: dict) -> dict:
     out = {"summary": dict(rd.get("summary") or {})}
     for k in _REMATCH_GATE_KEYS:
         out[k] = list(rd.get(k) or [])[:40]
+    # 2026-11-16: the per-grant cosine distribution, so a shift in the semantic
+    # channel (the v7 embedding inflation went unseen for a week) shows up in
+    # the weekly file the week it happens.
+    out["semantic_score_distributions"] = list(rd.get("semantic_score_distributions") or [])[:40]
     return out
 
 

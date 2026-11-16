@@ -117,7 +117,7 @@ def is_available() -> bool:
 # Embedding format version — bump this when faculty_to_text() changes so that
 # stale embeddings (generated with an older text format) are auto-regenerated.
 # The version is stored in each faculty profile alongside the embedding.
-EMBEDDING_VERSION = 7    # v1 = pipe-separated, v2 = sentence-style, v3 = force regen, v4 = PubMedBert (too broad), v5 = back to MiniLM + threshold 0.40, v6 = + publication/grant titles (fix #4), v7 = name dropped from the sentence (2026-11-09)
+EMBEDDING_VERSION = 8    # v1 = pipe-separated, v2 = sentence-style, v3 = force regen, v4 = PubMedBert (too broad), v5 = back to MiniLM + threshold 0.40, v6 = + publication/grant titles (fix #4), v7 = name dropped (2026-11-09), v8 = department-only prefix, no 'researcher' scaffolding (2026-11-16 calibration)
 
 # Cap how many evidence titles and how much total evidence text feeds the
 # embedding. Measured 2026-06-26: ~10 publication TITLES gives the best lift
@@ -151,15 +151,17 @@ def faculty_to_text(faculty: dict) -> str:
     name = faculty.get("name", "")
     dept = faculty.get("department", "")
 
-    # Opening sentence with the department only (2026-11-09). The name used
-    # to be here too, and a faculty member's name carries no research signal
-    # but can collide with a funder's: "Gabriella M. Miller is a researcher in
-    # Emergency Medicine" matched the "Gabriella Miller Kids First" U24 at 70%
-    # on 10-30 and again in the 11-03 weekly. Names stay out of the vector.
+    # Opening: the department alone (v8, 2026-11-16). v6 began "<Name> is a
+    # researcher in <Dept>." — the name carried no research signal and collided
+    # with a funder's ("Gabriella M. Miller" vs the Kids First call, 10-30).
+    # v7 dropped the name but kept "A researcher in <Dept>.", and the local
+    # calibration on the 10 grants of the 11-10 weekly showed that scaffolding
+    # pulling every vector toward calls written ABOUT researchers (NCI R50
+    # Research Specialist: 11 -> 47 faculty above the semantic floor; 95 vs 41
+    # pairs overall). "<Dept>." + the keyword sentence + publications gives 69
+    # pairs, keeps 31 of the 41 v6 pairs and brings the R50 back to 14.
     if dept:
-        parts.append(f"A researcher in {dept}.")
-    else:
-        parts.append("A biomedical researcher.")
+        parts.append(f"{dept}.")
 
     # Keywords as a natural-language research interests sentence
     keywords = faculty.get("keywords") or []

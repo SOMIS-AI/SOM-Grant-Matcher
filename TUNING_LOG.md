@@ -69,6 +69,36 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-11-16 — Embedding sentence v8: department-only prefix (calibrated)
+**Status:** live (embeddings regenerate on the first run after restart)
+**Commit:** *(fill in)*
+**Change:** `embedder.faculty_to_text` opens with "<Department>." and nothing
+else before the keyword sentence and publication titles; EMBEDDING_VERSION
+7 -> 8. The weekly `rematch_diagnostic` excerpt now also carries
+`semantic_score_distributions`.
+**Why:** the 11-09 v7 change (name removed, "A researcher in <Dept>." kept)
+inflated the semantic channel: same 7 grants, 11-04 daily (v6) vs 11-10
+weekly re-match (v7): NCI R50 Research Specialist 12 -> 38 rows (32
+semantic-only), Assay Validation 24 -> 28, O'Brien U54 1 -> 3; 57 of 134
+weekly rows semantic-only. A local calibration (all 1313 pool members
+embedded with the production model under v6, v7 and four variants; the 10
+weekly grants' Grants.gov text; scripts in Temp\claude-gm) reproduced
+production (R50 11 vs 12 under v6, 47 vs 38 under v7) and showed the shift
+is a RESHUFFLE, not an offset (median pair change 0.000, p10/p90 -0.04/
++0.05), so no floor change restores the old set (0.47 keeps 25/41 old
+pairs). The "researcher" scaffolding was the culprit: calls written about
+researchers (R50, the NHGRI education UE5) sat closest to it. With
+"<Dept>." alone: 69 pairs >= 0.45 across the 10 grants (v6 41, v7 95),
+keeps 31/41 v6 pairs, R50 14 (p95 0.407 vs v6 0.382 / v7 0.438); the new
+R50 pairs are oncologists. Scott chose this over v8d + floor 0.46 (59
+pairs) and over reverting to v6.
+**Expected effect:** semantic-only share back near the v6 level; R50-type
+calls stop drawing 30+ semantic rows; Miller-type name collisions stay
+fixed. Slightly more semantic rows than v6 on broad calls.
+**Outcome:** *(compare the 11-17 weekly's semantic_score_distributions and
+semantic-only share with 11-04 / 11-10)*
+**Verdict:** too early
+
 ### 2026-11-16 — Publication identity guard; "conference support" is topicless
 **Status:** live (identity guard needs a scrape — next regular re-scrape ~11-18)
 **Commit:** `21f423c`
