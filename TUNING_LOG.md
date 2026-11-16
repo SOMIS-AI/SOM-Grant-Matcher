@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-11-16 — Publication identity guard; "conference support" is topicless
 **Status:** live (identity guard needs a scrape — next regular re-scrape ~11-18)
-**Commit:** *(fill in)*
+**Commit:** `21f423c`
 **Change:** `faculty_scraper._author_is_faculty`: PubMed keeps an article only
 when one author matches the faculty member by surname AND full given name
 (initial when the record has none); Europe PMC's name-based fallback applies
