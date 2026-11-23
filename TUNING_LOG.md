@@ -71,7 +71,7 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ### 2026-11-23 — Eligibility-text rule, NIC gated, ninth wave, P30 parent topicless, cross-source dedupe, PubMed robustness
 **Status:** live
-**Commit:** `PENDING`
+**Commit:** `7e07f59`
 **Change:** (1) new `matching.ineligible_eligibility_text_patterns`, matched by
 `_is_institutionally_eligible` against `grant["eligibility_desc"]` (Grants.gov
 applicantEligibilityDesc, already stored by the poller) in both the daily and
