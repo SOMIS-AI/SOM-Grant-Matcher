@@ -417,6 +417,31 @@ def commit_seen_grants() -> bool:
     return True
 
 
+def _norm_title(title: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]+", " ", (title or "").lower())).strip()
+
+
+def dedupe_across_sources(grants: list) -> tuple[list, list]:
+    """Drop later records whose normalised title repeats an earlier one.
+
+    Sources are appended in trust order (Grants.gov, then the RePORTER APIs,
+    then the external scrapers), so the first record wins. Added 2026-11-23:
+    NSF "Foundational Research in Robotics (FRR)" arrived from Grants.gov
+    (27-501) AND from the nsf_funding scraper the same morning and every
+    faculty row went out twice. The seen-id tracker cannot catch this (the ids
+    differ per source). Returns (kept, dropped)."""
+    seen, kept, dropped = set(), [], []
+    for g in grants or []:
+        key = _norm_title((g or {}).get("title")) if isinstance(g, dict) else ""
+        if key and key in seen:
+            dropped.append(g)
+            continue
+        if key:
+            seen.add(key)
+        kept.append(g)
+    return kept, dropped
+
+
 def fetch_all_sources(config: dict, defer_seen_save: bool = False) -> list:
     """
     Fetch new grants from ALL configured sources:
@@ -494,6 +519,14 @@ def fetch_all_sources(config: dict, defer_seen_save: bool = False) -> list:
         logger.info("Seen-grants save deferred — will commit after matching succeeds.")
     else:
         save_seen_grants(seen_file, seen_ids)
+
+    # Cross-source duplicates (2026-11-23): same posting from two sources.
+    all_new_grants, dupes = dedupe_across_sources(all_new_grants)
+    for g in dupes:
+        logger.info(f"  Cross-source duplicate dropped: '{(g.get('title') or '')[:70]}' "
+                    f"[{g.get('source') or g.get('agency') or '?'}]")
+    if dupes:
+        source_stats["cross_source_duplicates_dropped"] = len(dupes)
 
     # Summary
     total = len(all_new_grants)

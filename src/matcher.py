@@ -797,13 +797,26 @@ def _compile_ineligible_patterns(raw_list):
     return compiled
 
 
-def _is_institutionally_eligible(title: str, compiled_patterns) -> tuple[bool, str]:
-    """Return (eligible, reason). reason is empty when eligible."""
-    if not compiled_patterns or not title:
-        return True, ""
-    for rx, reason in compiled_patterns:
-        if rx.search(title):
-            return False, reason
+def _is_institutionally_eligible(title: str, compiled_patterns,
+                                 eligibility_text: str = "", text_patterns=None) -> tuple[bool, str]:
+    """Return (eligible, reason). reason is empty when eligible.
+
+    `compiled_patterns` run against the TITLE. `text_patterns` (2026-11-23) run
+    against the posting's own eligibility statement — grant["eligibility_desc"],
+    which grants_poller stores from Grants.gov's applicantEligibilityDesc. Two
+    National Institute of Corrections continuation NOFOs reached 13 faculty on
+    11-18 and 11-20 although that text said "This is not a request for
+    competitive applications ... Applications received from organizations other
+    than the prior award recipient will not be reviewed"; nothing in the title
+    gave it away. Patterns live in matching.ineligible_eligibility_text_patterns."""
+    if compiled_patterns and title:
+        for rx, reason in compiled_patterns:
+            if rx.search(title):
+                return False, reason
+    if text_patterns and eligibility_text:
+        for rx, reason in text_patterns:
+            if rx.search(eligibility_text):
+                return False, reason
     return True, ""
 
 
@@ -1570,6 +1583,9 @@ def find_matches(grants, faculty, config=None, persist=True):
     ineligible_patterns = _compile_ineligible_patterns(
         matching_cfg.get("ineligible_grant_patterns", [])
     )
+    ineligible_text_patterns = _compile_ineligible_patterns(
+        matching_cfg.get("ineligible_eligibility_text_patterns", [])
+    )
 
     for grant in grants:
         # ── Biomedical relevance pre-filter ──────────────────────────────────
@@ -1595,7 +1611,9 @@ def find_matches(grants, faculty, config=None, persist=True):
         # Skip grants UMB faculty are not eligible to apply for (resource-limited
         # institutions only, IDeA-state only, sole-source renewals, SuRE program,
         # NCORP Community Sites, trainee/dissertation/F-series fellowships, etc.).
-        eligible, reason = _is_institutionally_eligible(grant.get("title", ""), ineligible_patterns)
+        eligible, reason = _is_institutionally_eligible(
+            grant.get("title", ""), ineligible_patterns,
+            grant.get("eligibility_desc") or "", ineligible_text_patterns)
         if not eligible:
             logger.info(
                 f"  SKIPPED (UMB ineligible: {reason}): '{grant['title'][:60]}'"
@@ -2340,6 +2358,7 @@ def refilter_stored_results(results: list, config: dict = None) -> tuple[list, d
     produces them."""
     matching_cfg = (config or {}).get("matching", {})
     ineligible_rx = _compile_ineligible_patterns(matching_cfg.get("ineligible_grant_patterns", []))
+    ineligible_text_rx = _compile_ineligible_patterns(matching_cfg.get("ineligible_eligibility_text_patterns", []))
     corroboration = [str(a).lower().strip()
                      for a in (matching_cfg.get("corroboration_required_agencies") or [])
                      if str(a).strip()]
@@ -2368,7 +2387,8 @@ def refilter_stored_results(results: list, config: dict = None) -> tuple[list, d
             dropped["blocked_grant"] += len(r.get("matches", []))
             grants_dropped.append(f"{title[:70]} ({why})")
             continue
-        eligible, why = _is_institutionally_eligible(title, ineligible_rx)
+        eligible, why = _is_institutionally_eligible(title, ineligible_rx,
+                                                     grant.get("eligibility_desc") or "", ineligible_text_rx)
         if not eligible:
             dropped["ineligible_grant"] += len(r.get("matches", []))
             grants_dropped.append(f"{title[:70]} (ineligible: {why})")

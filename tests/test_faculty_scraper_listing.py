@@ -219,7 +219,7 @@ def test_carry_forward_fills_only_what_the_fresh_scrape_left_empty():
         {"name": "Brand New", "profile_url": "https://x/profiles/new/", "email": "", "keywords": []},
     ]
     counts = fs._carry_forward_from_cache(active, prev)
-    assert counts == {"keywords": 2, "emails": 2}, counts
+    assert counts == {"keywords": 2, "emails": 2, "pubmed": 0}, counts
     kappe = active[0]
     assert kappe["keywords"] == ["malaria", "vaccines"]
     assert kappe["keywords_by_source"] == {"PubMed": ["malaria", "vaccines"]}

@@ -25,6 +25,7 @@ import html
 import html as _htmlmod   # the listing parser shadows html with the page text
 import json
 import logging
+import os
 import re
 import time
 from collections import Counter
@@ -61,6 +62,64 @@ HEADERS = {
 PUBMED_HEADERS = {
     "User-Agent": "UMSOMGrantMatcher/1.0 (mailto:grants@yourinstitution.edu)"
 }
+# NCBI allows 3 E-utilities requests/second per IP without a key and 10 with
+# one (free, from any NCBI account: Settings -> API Key Management). Set
+# NCBI_API_KEY in the Web App's configuration to use it. 2026-11-23.
+NCBI_API_KEY = os.environ.get("NCBI_API_KEY", "").strip()
+PUBMED_SLEEP = 0.15 if NCBI_API_KEY else 0.4
+
+
+def _pubmed_get(session: requests.Session, url: str, params: dict, timeout: int,
+                attempts: int = 3, sleep=time.sleep):
+    """GET an E-utilities endpoint, retrying on 429 / 5xx / connection errors.
+
+    Added 2026-11-23: enrich_from_pubmed swallowed every request error at DEBUG
+    level, and the Azure egress IP shares NCBI's 3 req/s budget with everyone
+    else on it, so a 429 on either call silently produced a profile with no
+    PubMed bucket. Between the 11-16 and 11-19 scrapes 156 faculty lost every
+    publication title while their other keywords grew (Fertig, Junfang Wu,
+    Allan Doctor...) and 135 gained — churn, not the identity guard. Raises the
+    last error after `attempts` tries so the caller's except still records it."""
+    params = dict(params or {})
+    if NCBI_API_KEY:
+        params["api_key"] = NCBI_API_KEY
+    last_err = None
+    delay = 1.0
+    for attempt in range(1, attempts + 1):
+        try:
+            r = session.get(url, params=params, headers=PUBMED_HEADERS, timeout=timeout)
+            status = getattr(r, "status_code", 200)
+            if status == 429 or status >= 500:
+                last_err = requests.HTTPError(f"HTTP {status} from {url}")
+                retry_after = (getattr(r, "headers", None) or {}).get("Retry-After")
+                try:
+                    wait = float(retry_after) if retry_after else delay
+                except ValueError:
+                    wait = delay
+            else:
+                r.raise_for_status()
+                return r
+        except (requests.ConnectionError, requests.Timeout) as e:
+            last_err = e
+            wait = delay
+        if attempt < attempts:
+            sleep(min(wait, 10.0))
+            delay *= 2
+    raise last_err or RuntimeError(f"PubMed request failed: {url}")
+
+
+def _has_full_given_name(fore: str) -> bool:
+    """True when an author record carries a given NAME ("Rachel B"), not just initials ("RB")."""
+    return any(len(t) >= 3 for t in re.split(r"[^a-z]+", (fore or "").lower()) if t)
+
+
+def _author_affiliated_with_maryland(author_tag) -> bool:
+    """True when the author's own AffiliationInfo mentions Maryland."""
+    try:
+        text = " ".join(a.get_text() for a in author_tag.find_all("Affiliation"))
+    except Exception:
+        return False
+    return "maryland" in text.lower()
 
 DEPARTMENT_PAGES = [
     "/profiles/anesthesiology---all-faculty/",
@@ -786,27 +845,32 @@ def enrich_from_pubmed(session: requests.Session, faculty: dict) -> dict:
     """Query PubMed for recent publications and extract MeSH terms as keywords."""
     query = _pubmed_name_query(faculty.get("name", ""))
     if not query:
+        faculty["pubmed_status"] = "no_query"
         return faculty
 
+    # pubmed_status (2026-11-23) tells Pass 8c WHY there is no PubMed bucket:
+    # "error" = the request failed (carry last week's bucket forward),
+    # "no_results" / "no_author_match" = PubMed answered and there is nothing
+    # (do not carry — this is how a polluted pre-guard bucket gets cleaned).
+    faculty["pubmed_status"] = "error"
     try:
         # Search for up to 10 recent papers
-        r = session.get(PUBMED_ESEARCH, params={
+        r = _pubmed_get(session, PUBMED_ESEARCH, {
             "db": "pubmed", "term": query,
             "retmax": 10, "sort": "date",
             "retmode": "json", "datetype": "pdat",
             "reldate": 1825,  # last 5 years
-        }, headers=PUBMED_HEADERS, timeout=15)
-        r.raise_for_status()
+        }, timeout=15)
         ids = r.json().get("esearchresult", {}).get("idlist", [])
         if not ids:
+            faculty["pubmed_status"] = "no_results"
             return faculty
 
         # Fetch records in XML to get MeSH terms
-        r2 = session.get(PUBMED_EFETCH, params={
+        r2 = _pubmed_get(session, PUBMED_EFETCH, {
             "db": "pubmed", "id": ",".join(ids),
             "rettype": "xml", "retmode": "xml",
-        }, headers=PUBMED_HEADERS, timeout=20)
-        r2.raise_for_status()
+        }, timeout=20)
 
         soup = BeautifulSoup(r2.text, "xml")
         mesh_terms = set()
@@ -817,18 +881,28 @@ def enrich_from_pubmed(session: requests.Session, faculty: dict) -> dict:
         # campus into one profile. Keep an article only when one of its authors
         # is this person by full given name (or by initial when the record has
         # no full name).
+        # 2026-11-23: an initials-only record ("Wu J") can only be tied to this
+        # person through its own affiliation — without "Maryland" there it is
+        # a stranger sharing the initial (Junfang Wu was inheriting CERN
+        # particle-physics papers from "Wu J").
         articles = soup.find_all("PubmedArticle") or [soup]
         kept = []
         for art in articles:
             for au in art.find_all("Author"):
                 last = au.find("LastName"); fore = au.find("ForeName") or au.find("Initials")
-                if last and _author_is_faculty(faculty.get("name", ""), last.get_text(), fore.get_text() if fore else ""):
-                    kept.append(art)
-                    break
+                fore_txt = fore.get_text() if fore else ""
+                if not (last and _author_is_faculty(faculty.get("name", ""), last.get_text(), fore_txt)):
+                    continue
+                if not _has_full_given_name(fore_txt) and not _author_affiliated_with_maryland(au):
+                    continue
+                kept.append(art)
+                break
         if not kept:
             logger.debug(f"  PubMed: {faculty.get('name')}: {len(articles)} article(s) found, none by this author — skipped")
+            faculty["pubmed_status"] = "no_author_match"
             return faculty
         ids = ids[:len(kept)]
+        faculty["pubmed_status"] = "ok"
 
         # Capture article TITLES for the semantic embedding (fix #4). High-signal,
         # concise text that grounds the faculty vector in their actual research.
@@ -861,7 +935,8 @@ def enrich_from_pubmed(session: requests.Session, faculty: dict) -> dict:
             logger.debug(f"  PubMed: {faculty['name']} → +{len(keywords)} keywords from {len(ids)} papers")
 
     except Exception as e:
-        logger.debug(f"  PubMed lookup failed for {faculty.get('name')}: {e}")
+        faculty["pubmed_status"] = "error"
+        logger.info(f"  PubMed lookup failed for {faculty.get('name')}: {e}")
 
     return faculty
 
@@ -1556,15 +1631,18 @@ def get_faculty_profiles(config: dict, force: bool = False) -> list[dict]:
         # ── Pass 3: PubMed enrichment (ALL active, non-excluded faculty) ──────────
         active_faculty = [f for f in all_faculty
                           if not f.get("inactive") and not f.get("excluded_from_matching")]
-        logger.info(f"Pass 3/9: PubMed enrichment for all {len(active_faculty)} active faculty...")
+        logger.info(f"Pass 3/9: PubMed enrichment for all {len(active_faculty)} active faculty"
+                    f" ({'with' if NCBI_API_KEY else 'without'} an NCBI API key)...")
         for i, fac in enumerate(active_faculty, 1):
             if i % 100 == 0:
                 logger.info(f"  PubMed progress: {i}/{len(active_faculty)}")
             enrich_from_pubmed(session, fac)
-            time.sleep(0.4)  # NCBI rate limit: max 3 req/sec without API key
+            time.sleep(PUBMED_SLEEP)  # NCBI rate limit: 3 req/sec without a key, 10 with
 
         with_kw = sum(1 for f in active_faculty if f.get("keywords"))
-        logger.info(f"Pass 3 complete: {with_kw}/{len(active_faculty)} active faculty now have keywords")
+        status = Counter(f.get("pubmed_status", "unknown") for f in active_faculty)
+        logger.info(f"Pass 3 complete: {with_kw}/{len(active_faculty)} active faculty now have keywords; "
+                    f"PubMed status: {dict(status)}")
 
         _save_partial(cache_file, all_faculty, 3, started_at)
 
@@ -1733,9 +1811,9 @@ def get_faculty_profiles(config: dict, force: bool = False) -> list[dict]:
         try:
             carried = _carry_forward_from_cache(active_faculty, cache.get("faculty", []))
             logger.info(
-                f"Pass 8c: carried forward {carried['keywords']} keyword set(s) and "
-                f"{carried['emails']} email(s) from the previous cache for active faculty "
-                f"the fresh scrape left empty"
+                f"Pass 8c: carried forward {carried['keywords']} keyword set(s), "
+                f"{carried['emails']} email(s) and {carried.get('pubmed', 0)} PubMed bucket(s) "
+                f"from the previous cache for active faculty the fresh scrape left empty"
             )
         except Exception as e:
             logger.warning(f"Pass 8c (carry forward from cache) failed: {e}")
@@ -1921,13 +1999,31 @@ def _carry_forward_from_cache(active_faculty: list, prev_faculty: list) -> dict:
             by_url.setdefault(u, prev)
         if n:
             by_name.setdefault(n, prev)
-    counts = {"keywords": 0, "emails": 0}
+    counts = {"keywords": 0, "emails": 0, "pubmed": 0}
     for fac in active_faculty or []:
         u = (fac.get("profile_url") or fac.get("url") or "").strip().lower()
         n = (fac.get("name") or "").strip().lower()
         prev = by_url.get(u) or by_name.get(n)
         if not prev:
             continue
+        # 2026-11-23: per-source carry of the PubMed bucket. The whole-profile
+        # carry below only fires when the fresh scrape has NO keywords, so a
+        # person with listing keywords whose PubMed call failed (429) silently
+        # lost their publication titles — 156 did between 11-16 and 11-19. Only
+        # when the call FAILED: "no_results"/"no_author_match" means PubMed
+        # answered, and that is how a polluted pre-guard bucket gets cleaned.
+        if (fac.get("keywords") and fac.get("pubmed_status") == "error"
+                and "PubMed" not in (fac.get("keywords_by_source") or {})):
+            prev_bucket = (prev.get("keywords_by_source") or {}).get("PubMed") or []
+            if prev_bucket:
+                src = next((s for s in (prev.get("keyword_sources") or []) if str(s).startswith("pubmed(")),
+                           "pubmed(carried)")
+                _merge_keywords(fac, list(prev_bucket), src)
+                prev_titles = (prev.get("evidence_titles_by_source") or {}).get("PubMed") or []
+                if prev_titles:
+                    _merge_evidence_text(fac, list(prev_titles), src)
+                fac["pubmed_carried_from_cache"] = prev.get("pubmed_carried_from_cache") or prev.get("scraped_at") or ""
+                counts["pubmed"] += 1
         if not fac.get("keywords") and prev.get("keywords"):
             fac["keywords"] = list(prev["keywords"])
             fac["keywords_by_source"] = json.loads(json.dumps(prev.get("keywords_by_source") or {}))

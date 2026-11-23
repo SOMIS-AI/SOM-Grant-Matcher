@@ -69,6 +69,55 @@ comparable across those boundaries; ratios like `keep%` are.
 
 ## The log
 
+### 2026-11-23 — Eligibility-text rule, NIC gated, ninth wave, P30 parent topicless, cross-source dedupe, PubMed robustness
+**Status:** live
+**Commit:** `PENDING`
+**Change:** (1) new `matching.ineligible_eligibility_text_patterns`, matched by
+`_is_institutionally_eligible` against `grant["eligibility_desc"]` (Grants.gov
+applicantEligibilityDesc, already stored by the poller) in both the daily and
+the weekly re-match paths: "not a request for competitive applications",
+"other than the prior/current award recipient will not be reviewed",
+"non-competitive continuation/renewal", "restricted to the existing awardee".
+(2) `corroboration_required_agencies` += "national institute of corrections".
+(3) `context_dependent_terms` += challenges, knowledge, differences, questions,
+administration, security, behavior, modeling (181 distinct). (4)
+`topicless_grant_patterns` += `\bcenter core grants?\b`. (5)
+`grants_poller.dedupe_across_sources`: one record per normalised title across
+Grants.gov / RePORTER / external scrapers, first source wins. (6) scraper:
+`_pubmed_get` retries 429/5xx/connection errors (3 attempts, backoff,
+Retry-After honoured), optional `NCBI_API_KEY` env var (sleep 0.4 -> 0.15 s),
+`faculty["pubmed_status"]` (ok / no_results / no_author_match / error),
+initials-only author records must carry a Maryland affiliation, and Pass 8c
+carries the previous PubMed bucket + titles forward when this run's call
+FAILED (never when PubMed answered with nothing).
+**Why:** 11-17..11-23 review. Grants.gov's own eligibility text for the NIC
+"Women's Prisons" (11 rows, 11-18) and "Facilitator Training for Victim
+Offender Dialogue" (2 rows, 11-20) calls says only the prior awardee will be
+reviewed — the title rules cannot see it. The third NIC call (Behavior Change
+Trainers) delivered Lobo "behavior, modeling" and Cloeren "curriculum, risk
+management"; the two NIC rows with semantic support (Lutz, Efron) were the
+plausible ones. Ninth wave replayed over all 434 keyword/both rows delivered
+in Oct–Nov: 6 drops, 0 legitimate (Holloway "challenges, firearm" keeps).
+"NIH Research Center Core Grants" (PA-28-086) drew 7 semantic-only rows
+(Yaddanapudi 99% on "NIH funded CLARITY trial initiation"); archive scan hits
+only that title. NSF FRR went out twice (Grants.gov 27-501 + nsf_funding).
+Roster 11-16 -> 11-19: 156 faculty lost every publication title while their
+keyword counts grew (Fertig, Junfang Wu, Allan Doctor, Simard), 135 gained;
+locally all ten of Fertig's papers pass the identity guard and a second rapid
+request got a 429 that `enrich_from_pubmed` swallowed — PubMed is lossy per
+run, and the whole-profile carry only fires on an EMPTY profile. Rachel B.
+Johnson kept her 10-paper foreign bucket for exactly that reason (no listing
+keywords, PubMed failed, old bucket carried); when PubMed answers, the guard
+keeps 3 of her 10. "Wu J" initials-only records gave Junfang Wu CERN papers.
+**Expected effect:** non-competitive continuations never reach faculty
+(13 of this week's 67 rows); NIC keyword-only rows gone; ~6 generic-pair rows
+per month fewer; PA-28-086-type parents stop drawing semantic rows; no
+double digests from two sources; next scrape: evidence-title churn (lost vs
+gained vs 11-19) near zero, `Pass 3 complete ... PubMed status` mostly ok,
+Rachel B. Johnson down to anesthesia papers, Junfang Wu without physics.
+**Outcome:** *(fill in after the 11-25/26 scrape and two weeklies)*
+**Verdict:** too early
+
 ### 2026-11-16 — R50 and "Limited Competition" ineligible; FDA food programme non-biomedical
 **Status:** live
 **Commit:** `fc9df1f`

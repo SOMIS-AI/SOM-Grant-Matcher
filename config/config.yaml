@@ -286,6 +286,13 @@ matching:
     - "office on violence against women"
     - "community oriented policing"
     - "department of justice"
+    # 2026-11-23: National Institute of Corrections (DOJ's corrections
+    # training/TA arm). Three NIC calls 11-18..11-21 delivered 15 rows, 13 of
+    # them keyword-only on "challenges, knowledge", "differences, safety",
+    # "participate, questions", "behavior, modeling", "curriculum, risk
+    # management"; the two with semantic support (Lutz "incarceration", Efron
+    # trauma recidivism) are the plausible ones and pass the gate.
+    - "national institute of corrections"
 
   # ── Semantic distinctive-concept guard (2026-06-26) ───────────────────────
   # Publication-enriched embeddings (fix #4) raise recall but reintroduce the
@@ -335,6 +342,11 @@ matching:
       # (Saenz Ayala 99% on "neurodevelopmental disorders"); the wording above
       # misses it. Tested against the archive titles: hits only that call.
       - 'conference support'
+      # 2026-11-23: "NIH Research Center Core Grants" (PA-28-086, the P30 parent
+      # announcement) drew 7 semantic-only rows on 11-17 — Yaddanapudi 99% on
+      # "NIH funded CLARITY trial initiation", Malek 50% on "women's health".
+      # A parent P30 names no topic. Archive scan: hits only that title.
+      - '\bcenter core grants?\b'
       - 'administrative supplement'
       - 'research supplements? to promote'
       - 'diversity supplement'
@@ -715,6 +727,22 @@ matching:
     - "safety"
     - "pharmacokinetics"
     - "pharmacology"
+    # ── Ninth wave (2026-11-23, 11-17..11-23 review) ────────────────────────
+    # Replayed on every keyword/both row delivered in October and November
+    # (434 rows): removes 6, none legitimate — Adebajo "challenges, knowledge"
+    # and Bergeria "differences, safety" on the NIC Women's Prisons call,
+    # Francis "participate, questions" (Victim Offender Dialogue), Lobo
+    # "behavior, modeling" (Behavior Change Trainers), Biswas "administration,
+    # security" twice on the NSF robotics call. Holloway "challenges, firearm"
+    # keeps (a topic word remains).
+    - "challenges"
+    - "knowledge"
+    - "differences"
+    - "questions"
+    - "administration"
+    - "security"
+    - "behavior"
+    - "modeling"
 
   # ── Research track-record signal (Theme 2, 2026-06-23) ────────────────────
   # Weight a match by the faculty member's external publication/grant footprint,
@@ -872,6 +900,25 @@ matching:
   # caught 11/11 user-flagged ineligible grants with 0 false positives.
   # NOTE: SBIR/STTR are intentionally NOT excluded — UMSOM faculty do collaborate
   # via faculty-founded startups, so they remain in the digest.
+  # ── Eligibility-TEXT rules (2026-11-23) ──────────────────────────────────
+  # Same shape as ineligible_grant_patterns but matched against the posting's
+  # own eligibility statement (grant["eligibility_desc"], Grants.gov
+  # applicantEligibilityDesc), which the title rules never see. Added after two
+  # National Institute of Corrections "continuation" NOFOs reached 13 faculty
+  # (Women's Prisons 11-18, Facilitator Training 11-20): their text read "This
+  # is not a request for competitive applications ... Applications received
+  # from organizations other than the prior award recipient will not be
+  # reviewed or considered." A record without eligibility text is unaffected.
+  ineligible_eligibility_text_patterns:
+    - pattern: 'not a request for competitive applications'
+      reason:  'institutional: non-competitive continuation (eligibility text says it is not a request for competitive applications)'
+    - pattern: 'other than the (?:prior|current|existing|incumbent) (?:award |grant |cooperative agreement )?recipient will not be (?:reviewed|considered|accepted|funded)'
+      reason:  'institutional: non-competitive continuation (only the prior recipient will be reviewed)'
+    - pattern: '\bnon-?competitive (?:continuation|renewal|award|supplement)\b'
+      reason:  'institutional: non-competitive continuation / renewal'
+    - pattern: 'eligib\w* (?:is |are )?(?:limited|restricted) to the (?:current|existing|prior|incumbent) (?:award(?:ee)?|grant(?:ee)?|recipient)'
+      reason:  'institutional: restricted to the existing awardee'
+
   ineligible_grant_patterns:
     # Institutional restrictions
     - pattern: '\bresource[- ]?limited\b'
